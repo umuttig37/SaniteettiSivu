@@ -18,6 +18,12 @@ const text = {
       'Tilaa saniteettitarvikkeet yritykselle. Lisää koriin, täytä toimitus ja tilaa laskulla.',
     ctaShop: 'Selaa tuotteita',
     ctaAccount: 'Pyydä yritystili',
+    trustTitle: 'Luotettava yritystoimittaja',
+    trustItems: [
+      { title: 'Nopea toimitus', text: '1–3 arkipäivää varastolta.' },
+      { title: 'Laskulla', text: 'Selkeä yrityslaskutus 14 pv.' },
+      { title: 'Asiakastuki', text: 'Ma–Pe 8–16, nopea vaste.' },
+    ],
     categoriesTitle: 'Kategoriat',
     productsTitle: 'Tuotteet',
     productsNote: 'Toimitus 1–3 arkipäivässä. Lasku 14 pv.',
@@ -40,6 +46,9 @@ const text = {
       notes: 'Lisätiedot',
       order: 'Tee tilaus',
     },
+    contactTitle: 'Ota yhteyttä',
+    contactText: 'Tarvitsetko tarjouksen tai isomman erän? Autetaan nopeasti.',
+    contactCta: 'Lähetä viesti',
     adminTitle: 'Admin',
     adminNote: 'Tuotteiden lisäys (demo)',
     adminForm: {
@@ -58,6 +67,12 @@ const text = {
       'Order sanitary supplies for your business. Add to cart, fill delivery details, and order by invoice.',
     ctaShop: 'Browse products',
     ctaAccount: 'Request company account',
+    trustTitle: 'Reliable business supplier',
+    trustItems: [
+      { title: 'Fast delivery', text: '1–3 business days from stock.' },
+      { title: 'Invoice', text: 'Simple B2B billing, Net 14.' },
+      { title: 'Support', text: 'Mon–Fri 8–16, quick response.' },
+    ],
     categoriesTitle: 'Categories',
     productsTitle: 'Products',
     productsNote: 'Delivery in 1–3 business days. Net 14 days.',
@@ -80,6 +95,9 @@ const text = {
       notes: 'Notes',
       order: 'Place order',
     },
+    contactTitle: 'Contact us',
+    contactText: 'Need a quote or a larger batch? We reply quickly.',
+    contactCta: 'Send message',
     adminTitle: 'Admin',
     adminNote: 'Add products (demo)',
     adminForm: {
@@ -189,6 +207,18 @@ function App() {
           </div>
         </section>
 
+        <section className="section trust">
+          <h2>{t.trustTitle}</h2>
+          <div className="trust-grid">
+            {t.trustItems.map((item) => (
+              <div key={item.title} className="trust-card">
+                <strong>{item.title}</strong>
+                <span className="muted">{item.text}</span>
+              </div>
+            ))}
+          </div>
+        </section>
+
         <section className="section" id="categories">
           <h2>{t.categoriesTitle}</h2>
           <div className="chips">
@@ -291,6 +321,14 @@ function App() {
               {t.adminForm.save}
             </button>
           </form>
+        </section>
+
+        <section className="section contact">
+          <div>
+            <h2>{t.contactTitle}</h2>
+            <p className="muted">{t.contactText}</p>
+          </div>
+          <button className="primary">{t.contactCta}</button>
         </section>
       </main>
 

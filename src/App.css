@@ -279,3 +279,40 @@
   padding: 0.35rem 0.8rem;
   font-size: 0.9rem;
 }
+.trust {
+  background: #fff;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.trust-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.trust-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  padding: 1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.contact {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  background: linear-gradient(135deg, #eaf1ff, #fff6ec);
+  border-top: 1px solid var(--border);
+}
+
+@media (max-width: 900px) {
+  .contact {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
