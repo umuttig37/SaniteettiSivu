@@ -258,3 +258,24 @@
     grid-template-columns: 1fr;
   }
 }
+.cart-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.success {
+  background: #e8f4ec;
+  border: 1px solid #c7e6d0;
+  color: #155b2a;
+  padding: 0.6rem 0.8rem;
+  border-radius: 10px;
+  margin-top: 0.8rem;
+  font-weight: 600;
+}
+
+.ghost.small {
+  padding: 0.35rem 0.8rem;
+  font-size: 0.9rem;
+}

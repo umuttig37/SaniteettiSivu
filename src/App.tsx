@@ -25,8 +25,10 @@ const text = {
     cartTitle: 'Ostoskori',
     cartEmpty: 'Ostoskori on tyhjä',
     subtotal: 'Välisummaa',
+    clearCart: 'Tyhjennä kori',
     checkoutTitle: 'Maksupaikka (laskulla)',
     checkoutNote: 'Ei korttimaksuja. Lasku lähetetään yrityksellesi.',
+    checkoutSuccess: 'Kiitos! Tilauksen tiedot on vastaanotettu.',
     form: {
       company: 'Yrityksen nimi',
       contact: 'Yhteyshenkilö',
@@ -63,8 +65,10 @@ const text = {
     cartTitle: 'Cart',
     cartEmpty: 'Your cart is empty',
     subtotal: 'Subtotal',
+    clearCart: 'Clear cart',
     checkoutTitle: 'Invoice checkout',
     checkoutNote: 'No card payments. Invoice is sent to your company.',
+    checkoutSuccess: 'Thanks! Your order details were received.',
     form: {
       company: 'Company name',
       contact: 'Contact person',
@@ -110,14 +114,17 @@ const products = {
 function App() {
   const [lang, setLang] = useState<Lang>('fi')
   const [cart, setCart] = useState<Record<string, number>>({})
+  const [orderSent, setOrderSent] = useState(false)
   const t = useMemo(() => text[lang], [lang])
   const items = products[lang]
 
   const addToCart = (product: Product) => {
+    setOrderSent(false)
     setCart((prev) => ({ ...prev, [product.id]: (prev[product.id] ?? 0) + 1 }))
   }
 
   const removeFromCart = (product: Product) => {
+    setOrderSent(false)
     setCart((prev) => {
       const next = { ...prev }
       const count = (next[product.id] ?? 0) - 1
@@ -130,8 +137,22 @@ function App() {
     })
   }
 
+  const clearCart = () => {
+    setOrderSent(false)
+    setCart({})
+  }
+
   const cartItems = items.filter((item) => cart[item.id])
+  const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0)
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (cart[item.id] ?? 0), 0)
+
+  const handleOrder = () => {
+    if (totalItems === 0) {
+      return
+    }
+    setOrderSent(true)
+    setCart({})
+  }
 
   return (
     <div className="page">
@@ -144,7 +165,9 @@ function App() {
           <a href="#admin">{t.nav[3]}</a>
         </nav>
         <div className="actions">
-          <button className="ghost">{t.cartTitle} ({cartItems.length})</button>
+          <button className="ghost">
+            {t.cartTitle} ({totalItems})
+          </button>
           <div className="lang">
             <button className={lang === 'fi' ? 'active' : ''} onClick={() => setLang('fi')}>
               FI
@@ -199,6 +222,7 @@ function App() {
             <div>
               <h2>{t.checkoutTitle}</h2>
               <p className="muted">{t.checkoutNote}</p>
+              {orderSent && <div className="success">{t.checkoutSuccess}</div>}
               <form className="checkout-form">
                 <input placeholder={t.form.company} />
                 <input placeholder={t.form.contact} />
@@ -210,13 +234,20 @@ function App() {
                   <input placeholder={t.form.city} />
                 </div>
                 <textarea placeholder={t.form.notes} rows={3} />
-                <button className="primary" type="button">
+                <button className="primary" type="button" onClick={handleOrder}>
                   {t.form.order}
                 </button>
               </form>
             </div>
             <aside className="cart">
-              <h3>{t.cartTitle}</h3>
+              <div className="cart-header">
+                <h3>{t.cartTitle}</h3>
+                {totalItems > 0 && (
+                  <button className="ghost small" onClick={clearCart}>
+                    {t.clearCart}
+                  </button>
+                )}
+              </div>
               {cartItems.length === 0 ? (
                 <p className="muted">{t.cartEmpty}</p>
               ) : (
