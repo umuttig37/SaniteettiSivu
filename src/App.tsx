@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import './App.css'
 
 type Lang = 'fi' | 'en'
@@ -6,16 +6,27 @@ type Lang = 'fi' | 'en'
 type Product = {
   id: string
   name: string
-  tag: string
+  category: string
   price: number
   priceUnit: string
   unitNote?: string
   sku: string
-  availability: string
-  statusTone: 'ok' | 'warn' | 'low'
+  stock: number
   image: string
   description: string
-  details: string[]
+}
+
+type AdminProductForm = {
+  id: string | null
+  name: string
+  sku: string
+  category: string
+  price: string
+  priceUnit: string
+  unitNote: string
+  stock: string
+  image: string
+  description: string
 }
 
 type CheckoutForm = {
@@ -28,9 +39,6 @@ type CheckoutForm = {
   city: string
   billingCompany: string
   billingAddress: string
-  billingZip: string
-  billingCity: string
-  billingReference: string
   notes: string
 }
 
@@ -62,7 +70,7 @@ const productImages = {
 
 const text = {
   fi: {
-    nav: ['Kategoriat', 'Tuotteet', 'Tilaus', 'Kirjaudu'],
+    nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
     heroTitle: 'Saniteetti',
     heroText: 'Tilaa saniteettitarvikkeet yritykselle. Lisää koriin, täytä toimitus ja tilaa laskulla.',
     ctaShop: 'Selaa tuotteita',
@@ -108,9 +116,6 @@ const text = {
       city: 'Kaupunki',
       billingCompany: 'Laskutusyritys',
       billingAddress: 'Laskutusosoite',
-      billingZip: 'Laskutuksen postinumero',
-      billingCity: 'Laskutuskaupunki',
-      billingReference: 'Viite / ostotilausnumero',
       notes: 'Lisätiedot',
       order: 'Tee tilaus',
     },
@@ -119,7 +124,6 @@ const text = {
       inStock: 'Varastossa',
       priceLabel: 'Hinta',
       vatNote: '(alv 0%)',
-      details: 'Lisätiedot',
     },
     contactTitle: 'Ota yhteyttä',
     contactText: 'Tarvitsetko tarjouksen tai isomman erän? Autetaan nopeasti.',
@@ -152,7 +156,7 @@ const text = {
     },
   },
   en: {
-    nav: ['Categories', 'Products', 'Checkout', 'Login'],
+    nav: ['Categories', 'Products', 'Login'],
     heroTitle: 'Sanitary',
     heroText: 'Order sanitary supplies for your business. Add to cart, fill delivery details, and order by invoice.',
     ctaShop: 'Browse products',
@@ -198,9 +202,6 @@ const text = {
       city: 'City',
       billingCompany: 'Billing company',
       billingAddress: 'Billing address',
-      billingZip: 'Billing postal code',
-      billingCity: 'Billing city',
-      billingReference: 'Reference / PO number',
       notes: 'Notes',
       order: 'Place order',
     },
@@ -209,7 +210,6 @@ const text = {
       inStock: 'In stock',
       priceLabel: 'Price',
       vatNote: '(VAT 0%)',
-      details: 'Details',
     },
     contactTitle: 'Contact us',
     contactText: 'Need a quote or a larger batch? We reply quickly.',
@@ -243,174 +243,146 @@ const text = {
   },
 } as const
 
-const categories = {
-  fi: ['WC-paperit', 'Käsipyyhkeet', 'Saippuat', 'Puhdistus', 'Jätesäkit', 'Suojatarvikkeet'],
-  en: ['Toilet paper', 'Hand towels', 'Soaps', 'Cleaning', 'Waste bags', 'Protective gear'],
-}
 const products: Record<Lang, Product[]> = {
   fi: [
     {
       id: 'wc',
       name: 'Tork H2 Xpress® Multifold Soft käsipyyhe 2-ker. luonnonvalkoinen 3800 ark',
-      tag: '471103',
+      category: 'Käsipyyhkeet',
       price: 21.55,
       priceUnit: '€ / säkki',
       unitNote: '5,67 € / 1000 ark',
       sku: '471103',
-      availability: 'Varastossa',
-      statusTone: 'ok',
+      stock: 140,
       image: productImages.towel,
       description: 'Pehmeä ja imukykyinen käsipyyhe suurkulutukseen.',
-      details: ['2-kerroksinen', '3800 arkkia', 'Luonnonvalkoinen'],
     },
     {
       id: 'towel',
       name: 'Tork T4 Universal wc-paperi 2-krs 38,30m/42rll',
-      tag: '472246',
+      category: 'WC-paperit',
       price: 15.86,
       priceUnit: '€ / säkki',
       unitNote: '9,94 € / 1000 m',
       sku: '472246',
-      availability: 'Varastossa',
-      statusTone: 'ok',
+      stock: 122,
       image: productImages.wc,
       description: 'Luotettava peruspaperi yrityskäyttöön.',
-      details: ['2-kerroksinen', '42 rullaa', '38,30 m / rulla'],
     },
     {
       id: 'soap',
       name: 'Tork H3 Universal käsipyyhe C-taitto 2-krs luonnonvalkoinen 2400 ark',
-      tag: 'N953102',
+      category: 'Käsipyyhkeet',
       price: 18.68,
       priceUnit: '€ / säkki',
       unitNote: '7,78 € / 1000 ark',
       sku: 'N953102',
-      availability: 'Varastossa',
-      statusTone: 'ok',
+      stock: 96,
       image: productImages.roll,
       description: 'Laadukas taittopaperi annostelijoihin.',
-      details: ['C-taitto', '2400 arkkia', '2-kerroksinen'],
     },
     {
       id: 'spray',
       name: 'Yleispuhdistussuihke 750 ml, sitrus',
-      tag: 'S71421',
+      category: 'Puhdistus',
       price: 6.95,
       priceUnit: '€ / kpl',
       sku: 'S71421',
-      availability: 'Saatavilla',
-      statusTone: 'warn',
+      stock: 28,
       image: productImages.spray,
       description: 'Raikas ja tehokas yleispuhdistaja pinnoille.',
-      details: ['750 ml', 'Sitrustuoksu', 'Sopii päivittäiseen käyttöön'],
     },
     {
       id: 'bag',
       name: 'Jätesäkki 240 L, vahva 10 kpl',
-      tag: 'B24010',
+      category: 'Jätesäkit',
       price: 8.9,
       priceUnit: '€ / rulla',
       sku: 'B24010',
-      availability: 'Varastossa',
-      statusTone: 'ok',
+      stock: 88,
       image: productImages.trash,
       description: 'Vahvat jätesäkit isoihin astioihin.',
-      details: ['240 L', '10 kpl / rulla', 'Vahva materiaali'],
     },
     {
       id: 'soap5',
       name: 'Nestesaippua 5 L, hellävarainen',
-      tag: 'S5001',
+      category: 'Saippuat',
       price: 14.9,
       priceUnit: '€ / kanisteri',
       sku: 'S5001',
-      availability: 'Vähissä',
-      statusTone: 'low',
+      stock: 8,
       image: productImages.soap,
       description: 'Hellävarainen nestesaippua ammattilaiskäyttöön.',
-      details: ['5 L kanisteri', 'Hellävarainen', 'Sopii annostelijoihin'],
     },
   ],  en: [
     {
       id: 'wc',
       name: 'Tork H2 Xpress® Multifold Soft hand towel 2-ply 3800 sheets',
-      tag: '471103',
+      category: 'Hand towels',
       price: 21.55,
       priceUnit: '€ / pack',
       unitNote: '5.67 € / 1000 sheets',
       sku: '471103',
-      availability: 'In stock',
-      statusTone: 'ok',
+      stock: 140,
       image: productImages.towel,
       description: 'Soft and absorbent towels for heavy use.',
-      details: ['2-ply', '3800 sheets', 'Natural white'],
     },
     {
       id: 'towel',
       name: 'Tork T4 Universal toilet paper 2-ply 38.3m/42 rolls',
-      tag: '472246',
+      category: 'Toilet paper',
       price: 15.86,
       priceUnit: '€ / pack',
       unitNote: '9.94 € / 1000 m',
       sku: '472246',
-      availability: 'In stock',
-      statusTone: 'ok',
+      stock: 122,
       image: productImages.wc,
       description: 'Reliable everyday toilet paper for businesses.',
-      details: ['2-ply', '42 rolls', '38.3 m / roll'],
     },
     {
       id: 'soap',
       name: 'Tork H3 Universal C-fold hand towel 2-ply 2400 sheets',
-      tag: 'N953102',
+      category: 'Hand towels',
       price: 18.68,
       priceUnit: '€ / pack',
       unitNote: '7.78 € / 1000 sheets',
       sku: 'N953102',
-      availability: 'In stock',
-      statusTone: 'ok',
+      stock: 96,
       image: productImages.roll,
       description: 'Quality folded towels for dispensers.',
-      details: ['C-fold', '2400 sheets', '2-ply'],
     },
     {
       id: 'spray',
       name: 'All-purpose spray 750 ml, citrus',
-      tag: 'S71421',
+      category: 'Cleaning',
       price: 6.95,
       priceUnit: '€ / pc',
       sku: 'S71421',
-      availability: 'Available',
-      statusTone: 'warn',
+      stock: 28,
       image: productImages.spray,
       description: 'Fresh, effective cleaner for daily surfaces.',
-      details: ['750 ml', 'Citrus scent', 'Daily use'],
     },
     {
       id: 'bag',
       name: 'Waste bag 240 L, heavy duty 10 pcs',
-      tag: 'B24010',
+      category: 'Waste bags',
       price: 8.9,
       priceUnit: '€ / roll',
       sku: 'B24010',
-      availability: 'In stock',
-      statusTone: 'ok',
+      stock: 88,
       image: productImages.trash,
       description: 'Durable waste bags for large bins.',
-      details: ['240 L', '10 pcs / roll', 'Heavy duty'],
     },
     {
       id: 'soap5',
       name: 'Liquid soap 5 L, gentle',
-      tag: 'S5001',
+      category: 'Soaps',
       price: 14.9,
       priceUnit: '€ / canister',
       sku: 'S5001',
-      availability: 'Low stock',
-      statusTone: 'low',
+      stock: 8,
       image: productImages.soap,
       description: 'Gentle liquid soap for professional use.',
-      details: ['5 L canister', 'Skin-friendly', 'For dispensers'],
     },
   ],
 }
@@ -420,6 +392,42 @@ const adminCreds = {
   pass: 'saniteetti123',
 }
 
+const productStorageKey = 'saniteetti-products-v1'
+const categoriesStorageKey = 'saniteetti-categories-v1'
+const pageSize = 12
+const defaultCategories = ['WC-paperit', 'Käsipyyhkeet', 'Saippuat', 'Puhdistus', 'Jätesäkit']
+const vatMultiplier = 1.255
+
+const getProductIdFromUrl = () => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+  return new URLSearchParams(window.location.search).get('product')
+}
+
+const getStockTone = (stock: number): 'ok' | 'warn' | 'low' => {
+  if (stock <= 10) {
+    return 'low'
+  }
+  if (stock <= 40) {
+    return 'warn'
+  }
+  return 'ok'
+}
+
+const getStockLabel = (stock: number, lang: Lang) => {
+  if (stock <= 0) {
+    return lang === 'fi' ? 'Loppu' : 'Out of stock'
+  }
+  if (stock <= 10) {
+    return lang === 'fi' ? 'Vähissä' : 'Low stock'
+  }
+  if (stock <= 40) {
+    return lang === 'fi' ? 'Saatavilla' : 'Available'
+  }
+  return lang === 'fi' ? 'Varastossa' : 'In stock'
+}
+
 const formatPrice = (value: number, lang: Lang) => {
   return new Intl.NumberFormat(lang === 'fi' ? 'fi-FI' : 'en-GB', {
     minimumFractionDigits: 2,
@@ -427,7 +435,7 @@ const formatPrice = (value: number, lang: Lang) => {
   }).format(value)
 }
 
-const deliveryCost = (subtotal: number) => (subtotal >= 150 ? 0 : 9.9)
+const deliveryCost = (subtotal: number) => (subtotal >= 250 ? 0 : 15)
 
 const formatDelivery = (value: number, lang: Lang) => {
   if (value === 0) {
@@ -436,22 +444,81 @@ const formatDelivery = (value: number, lang: Lang) => {
   return `${formatPrice(value, lang)} €`
 }
 
+const grossPrice = (value: number) => value * vatMultiplier
+
 const getRelated = (items: Product[], currentId: string) => {
   return items.filter((item) => item.id !== currentId).slice(0, 3)
 }
 
 function App() {
   const [lang, setLang] = useState<Lang>('fi')
+  const [productCatalog, setProductCatalog] = useState<Product[]>(() => {
+    if (typeof window === 'undefined') {
+      return products.fi
+    }
+    const raw = window.localStorage.getItem(productStorageKey)
+    if (!raw) {
+      return products.fi
+    }
+    try {
+      const parsed = JSON.parse(raw) as Product[]
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    } catch {
+      // Fall back to defaults if persisted value is invalid.
+    }
+    return products.fi
+  })
+  const [categories, setCategories] = useState<string[]>(() => {
+    if (typeof window === 'undefined') {
+      return defaultCategories
+    }
+    const raw = window.localStorage.getItem(categoriesStorageKey)
+    if (!raw) {
+      return defaultCategories
+    }
+    try {
+      const parsed = JSON.parse(raw) as string[]
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed
+      }
+    } catch {
+      // Fall back to defaults if persisted value is invalid.
+    }
+    return defaultCategories
+  })
   const [cart, setCart] = useState<Record<string, number>>({})
   const [orderSent, setOrderSent] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1)
-  const [showLogin, setShowLogin] = useState(false)
+  const [isAdminPage, setIsAdminPage] = useState(false)
   const [adminUser, setAdminUser] = useState('')
   const [adminPass, setAdminPass] = useState('')
   const [adminError, setAdminError] = useState('')
   const [adminAuthed, setAdminAuthed] = useState(false)
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(null)
+  const [productQuery, setProductQuery] = useState('')
+  const [activeCategory, setActiveCategory] = useState('all')
+  const [currentPage, setCurrentPage] = useState(1)
+  const [sortBy, setSortBy] = useState<'relevance' | 'price' | 'name'>('relevance')
+  const [adminQuery, setAdminQuery] = useState('')
+  const [adminPage, setAdminPage] = useState(1)
+  const [adminCategoryName, setAdminCategoryName] = useState('')
+  const [selectedQuantity, setSelectedQuantity] = useState(1)
+  const [showContactPanel, setShowContactPanel] = useState(false)
+  const [adminProductForm, setAdminProductForm] = useState<AdminProductForm>({
+    id: null,
+    name: '',
+    sku: '',
+    category: '',
+    price: '',
+    priceUnit: lang === 'fi' ? '€ / kpl' : '€ / pc',
+    unitNote: '',
+    stock: '',
+    image: '',
+    description: '',
+  })
+  const [selectedProductId, setSelectedProductId] = useState<string | null>(() => getProductIdFromUrl())
   const [checkoutForm, setCheckoutForm] = useState<CheckoutForm>({
     company: '',
     contact: '',
@@ -462,21 +529,81 @@ function App() {
     city: '',
     billingCompany: '',
     billingAddress: '',
-    billingZip: '',
-    billingCity: '',
-    billingReference: '',
     notes: '',
   })
   const [formError, setFormError] = useState('')
   const t = useMemo(() => text[lang], [lang])
-  const items = products[lang]
-  const totalCount = 98
-  const selectedProduct = selectedProductId ? items.find((item) => item.id === selectedProductId) : null
-  const relatedProducts = selectedProduct ? getRelated(items, selectedProduct.id) : []
+  const categoriesForFilters = categories
 
-  const addToCart = (product: Product) => {
+  const filteredProducts = useMemo(() => {
+    const query = productQuery.trim().toLowerCase()
+    let next = productCatalog.filter((item) => {
+      const haystack = `${item.name} ${item.sku} ${item.description} ${item.category}`.toLowerCase()
+      const matchesQuery = query === '' || haystack.includes(query)
+      const matchesCategory = activeCategory === 'all' || item.category === activeCategory
+      return matchesQuery && matchesCategory
+    })
+
+    if (sortBy === 'price') {
+      next = [...next].sort((a, b) => a.price - b.price)
+    } else if (sortBy === 'name') {
+      next = [...next].sort((a, b) => a.name.localeCompare(b.name, lang === 'fi' ? 'fi' : 'en'))
+    }
+
+    return next
+  }, [activeCategory, lang, productCatalog, productQuery, sortBy])
+
+  const totalCount = filteredProducts.length
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
+  const safeCurrentPage = Math.min(currentPage, totalPages)
+  const listStart = (safeCurrentPage - 1) * pageSize
+  const pagedProducts = filteredProducts.slice(listStart, listStart + pageSize)
+  const selectedProduct = selectedProductId ? productCatalog.find((item) => item.id === selectedProductId) : null
+  const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : []
+
+  useEffect(() => {
+    window.localStorage.setItem(productStorageKey, JSON.stringify(productCatalog))
+  }, [productCatalog])
+
+  useEffect(() => {
+    window.localStorage.setItem(categoriesStorageKey, JSON.stringify(categories))
+  }, [categories])
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [productQuery, activeCategory, sortBy])
+
+  useEffect(() => {
+    setSelectedQuantity(1)
+  }, [selectedProductId])
+
+  useEffect(() => {
+    const onPopState = () => {
+      setSelectedProductId(getProductIdFromUrl())
+    }
+    window.addEventListener('popstate', onPopState)
+    return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    setAdminPage(1)
+  }, [adminQuery])
+
+  useEffect(() => {
+    setAdminProductForm((prev) =>
+      prev.id
+        ? prev
+        : {
+            ...prev,
+            priceUnit: lang === 'fi' ? '€ / kpl' : '€ / pc',
+          }
+    )
+  }, [lang])
+
+  const addToCart = (product: Product, quantity = 1) => {
     setOrderSent(false)
-    setCart((prev) => ({ ...prev, [product.id]: (prev[product.id] ?? 0) + 1 }))
+    const qty = Math.max(1, quantity)
+    setCart((prev) => ({ ...prev, [product.id]: (prev[product.id] ?? 0) + qty }))
   }
 
   const removeFromCart = (product: Product) => {
@@ -502,8 +629,31 @@ function App() {
     setCheckoutForm((prev) => ({ ...prev, [field]: value }))
   }
 
+  const syncProductInUrl = (productId: string | null) => {
+    const url = new URL(window.location.href)
+    if (productId) {
+      url.searchParams.set('product', productId)
+    } else {
+      url.searchParams.delete('product')
+    }
+    const next = `${url.pathname}${url.search}${url.hash}`
+    window.history.pushState({}, '', next)
+  }
+
+  const handleTopSearch = (value: string) => {
+    setProductQuery(value)
+    if (selectedProductId) {
+      setSelectedProductId(null)
+      syncProductInUrl(null)
+    }
+    setTimeout(() => {
+      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
+    }, 0)
+  }
+
   const openProduct = (productId: string) => {
     setSelectedProductId(productId)
+    syncProductInUrl(productId)
     setTimeout(() => {
       document.getElementById('product-detail')?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
@@ -511,15 +661,16 @@ function App() {
 
   const closeProduct = () => {
     setSelectedProductId(null)
+    syncProductInUrl(null)
     setTimeout(() => {
       document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
   }
 
-  const cartItems = items.filter((item) => cart[item.id])
+  const cartItems = productCatalog.filter((item) => cart[item.id])
   const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0)
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (cart[item.id] ?? 0), 0)
-  const shipping = deliveryCost(subtotal)
+  const shipping = totalItems === 0 ? 0 : deliveryCost(subtotal)
   const total = subtotal + shipping
 
   const handleNextStep = () => {
@@ -540,11 +691,11 @@ function App() {
   }
 
   const handleOrder = () => {
-    if (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity) {
+    if (!checkoutForm.billingCompany || !checkoutForm.billingAddress) {
       setFormError(
         lang === 'fi'
-          ? 'Täytä vähintään laskutusyritys, laskutusosoite, postinumero ja kaupunki.'
-          : 'Fill billing company, billing address, postal code, and city.'
+          ? 'Täytä vähintään laskutusyritys ja laskutusosoite.'
+          : 'Fill at least billing company and billing address.'
       )
       return
     }
@@ -569,6 +720,7 @@ function App() {
     if (adminUser === adminCreds.user && adminPass === adminCreds.pass) {
       setAdminAuthed(true)
       setAdminError('')
+      setIsAdminPage(true)
       return
     }
     setAdminAuthed(false)
@@ -580,7 +732,143 @@ function App() {
     setAdminUser('')
     setAdminPass('')
     setAdminError('')
+    setIsAdminPage(false)
   }
+
+  const resetAdminForm = () => {
+    setAdminProductForm({
+      id: null,
+      name: '',
+      sku: '',
+      category: '',
+      price: '',
+      priceUnit: lang === 'fi' ? '€ / kpl' : '€ / pc',
+      unitNote: '',
+      stock: '',
+      image: '',
+      description: '',
+    })
+  }
+
+  const saveAdminProduct = () => {
+    const name = adminProductForm.name.trim()
+    const sku = adminProductForm.sku.trim()
+    const category = adminProductForm.category.trim()
+    const price = Number(adminProductForm.price)
+    const stock = Number(adminProductForm.stock)
+
+    if (!name || !sku || !category || Number.isNaN(price) || Number.isNaN(stock)) {
+      setAdminError(lang === 'fi' ? 'Täytä nimi, SKU, kategoria, hinta ja varasto.' : 'Fill name, SKU, category, price and stock.')
+      return
+    }
+
+    const payload: Product = {
+      id: adminProductForm.id ?? `p-${Date.now()}`,
+      name,
+      sku,
+      category,
+      price,
+      priceUnit: adminProductForm.priceUnit.trim() || (lang === 'fi' ? '€ / kpl' : '€ / pc'),
+      unitNote: adminProductForm.unitNote.trim() || undefined,
+      stock,
+      image: adminProductForm.image.trim() || productImages.soap,
+      description: adminProductForm.description.trim() || name,
+    }
+
+    setProductCatalog((prev) => {
+      if (adminProductForm.id) {
+        return prev.map((item) => (item.id === adminProductForm.id ? { ...item, ...payload } : item))
+      }
+      return [payload, ...prev]
+    })
+    if (!categories.includes(category)) {
+      setCategories((prev) => [...prev, category])
+    }
+
+    setAdminError('')
+    resetAdminForm()
+  }
+
+  const handleAdminImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0]
+    if (!file) {
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => {
+      const result = reader.result
+      if (typeof result === 'string') {
+        setAdminProductForm((prev) => ({ ...prev, image: result }))
+      }
+    }
+    reader.readAsDataURL(file)
+    event.target.value = ''
+  }
+
+  const editProductFromAdmin = (product: Product) => {
+    setAdminProductForm({
+      id: product.id,
+      name: product.name,
+      sku: product.sku,
+      category: product.category,
+      price: String(product.price),
+      priceUnit: product.priceUnit,
+      unitNote: product.unitNote ?? '',
+      stock: String(product.stock),
+      image: product.image,
+      description: product.description,
+    })
+  }
+
+  const deleteProductFromAdmin = (productId: string) => {
+    setProductCatalog((prev) => prev.filter((item) => item.id !== productId))
+    setCart((prev) => {
+      const next = { ...prev }
+      delete next[productId]
+      return next
+    })
+    if (selectedProductId === productId) {
+      setSelectedProductId(null)
+    }
+    if (adminProductForm.id === productId) {
+      resetAdminForm()
+    }
+  }
+
+  const addCategory = () => {
+    const next = adminCategoryName.trim()
+    if (!next) {
+      return
+    }
+    if (categories.includes(next)) {
+      setAdminError(lang === 'fi' ? 'Kategoria on jo olemassa.' : 'Category already exists.')
+      return
+    }
+    setCategories((prev) => [...prev, next])
+    setAdminCategoryName('')
+    setAdminError('')
+  }
+
+  const deleteCategory = (name: string) => {
+    setCategories((prev) => prev.filter((item) => item !== name))
+    setProductCatalog((prev) =>
+      prev.map((item) => (item.category === name ? { ...item, category: lang === 'fi' ? 'Muut' : 'Other' } : item))
+    )
+    if (activeCategory === name) {
+      setActiveCategory('all')
+    }
+  }
+
+  const adminFilteredProducts = useMemo(() => {
+    const q = adminQuery.trim().toLowerCase()
+    return productCatalog.filter((item) =>
+      q === '' ? true : `${item.name} ${item.sku} ${item.category}`.toLowerCase().includes(q)
+    )
+  }, [adminQuery, productCatalog])
+
+  const adminPages = Math.max(1, Math.ceil(adminFilteredProducts.length / pageSize))
+  const safeAdminPage = Math.min(adminPage, adminPages)
+  const adminPageItems = adminFilteredProducts.slice((safeAdminPage - 1) * pageSize, safeAdminPage * pageSize)
 
   return (
     <div className="page">
@@ -589,21 +877,28 @@ function App() {
         <nav className="nav">
           <a href="#categories">{t.nav[0]}</a>
           <a href="#products">{t.nav[1]}</a>
-          <button className="nav-button" onClick={openCheckout}>
+          <button className="nav-button" onClick={() => setIsAdminPage(true)}>
             {t.nav[2]}
-          </button>
-          <button className="nav-button" onClick={() => setShowLogin(true)}>
-            {t.nav[3]}
           </button>
         </nav>
         <div className="actions">
-          <div className="top-search">
-            <span className="search-icon">Haku</span>
-            <input placeholder={t.search} />
-          </div>
-          <button className="ghost" onClick={openCheckout}>
-            {t.cartTitle} ({totalItems})
-          </button>
+          {!isAdminPage && (
+            <>
+              <div className="top-search">
+                <span className="search-icon">{lang === 'fi' ? 'Haku' : 'Search'}</span>
+                <input value={productQuery} onChange={(event) => handleTopSearch(event.target.value)} placeholder={t.search} />
+              </div>
+              <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} onClick={openCheckout}>
+                <span>{t.cartTitle}: {totalItems}</span>
+                {totalItems > 0 && <strong>{lang === 'fi' ? 'tilaa' : 'order'}</strong>}
+              </button>
+            </>
+          )}
+          {isAdminPage && (
+            <button className="ghost" onClick={() => setIsAdminPage(false)}>
+              {lang === 'fi' ? 'Takaisin kauppaan' : 'Back to store'}
+            </button>
+          )}
           <div className="lang">
             <button className={lang === 'fi' ? 'active' : ''} onClick={() => setLang('fi')}>
               FI
@@ -616,126 +911,191 @@ function App() {
       </header>
 
       <main>
-        <section className="hero" id="home">
-          <h1>{t.heroTitle}</h1>
-          <p>{t.heroText}</p>
-          <div className="cta">
-            <button className="primary">{t.ctaShop}</button>
-            <button className="ghost">{t.ctaAccount}</button>
-          </div>
-        </section>
-
-        <section className="section trust">
-          <h2>{t.trustTitle}</h2>
-          <div className="trust-grid">
-            {t.trustItems.map((item) => (
-              <div key={item.title} className="trust-card">
-                <strong>{item.title}</strong>
-                <span className="muted">{item.text}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="section" id="categories">
-          <h2>{t.categoriesTitle}</h2>
-          <div className="chips">
-            {categories[lang].map((item) => (
-              <span key={item}>{item}</span>
-            ))}
-          </div>
-        </section>
-
-        <section className="section products-section" id="products">
-          <div className="products-header">
-            <div>
-              <h2>{t.productsTitle}</h2>
-              <p className="muted">{t.productsNote}</p>
+        {isAdminPage ? (
+          <section className="section admin-page">
+            <div className="admin-page-head">
+              <h1>{t.adminTitle}</h1>
+              <p className="muted">
+                {lang === 'fi'
+                  ? 'Kirjaudu admin-tunnuksilla ja hallinnoi koko tuotekatalogia.'
+                  : 'Login with admin credentials and manage the full product catalog.'}
+              </p>
             </div>
-          </div>
-          <div className="sort sort-floating">
-            <span className="muted">{lang === 'fi' ? 'Lajittelu' : 'Sort'}</span>
-            <select defaultValue="relevance">
-              <option value="relevance">{lang === 'fi' ? 'Relevanssi' : 'Relevance'}</option>
-              <option value="price">{lang === 'fi' ? 'Hinta' : 'Price'}</option>
-              <option value="name">{lang === 'fi' ? 'Nimi' : 'Name'}</option>
-            </select>
-          </div>
-          <div className="products-meta">
-            <span className="muted">
-              {t.productsShown} 1–{items.length} / {totalCount}
-            </span>
-            <div className="meta-right">
-              <div className="pagination">
-                <button className="ghost tiny">1</button>
-                <button className="ghost tiny">2</button>
-                <button className="ghost tiny">3</button>
+            {!adminAuthed ? (
+              <div className="admin-login-page">
+                <div className="admin-login">
+                  <input
+                    placeholder={t.adminLogin.user}
+                    value={adminUser}
+                    onChange={(event) => setAdminUser(event.target.value)}
+                  />
+                  <input
+                    placeholder={t.adminLogin.pass}
+                    type="password"
+                    value={adminPass}
+                    onChange={(event) => setAdminPass(event.target.value)}
+                  />
+                  {adminError && <div className="error">{adminError}</div>}
+                  <button className="primary" type="button" onClick={handleAdminLogin}>
+                    {t.adminLogin.login}
+                  </button>
+                  <span className="muted small">{t.adminLogin.hint}</span>
+                </div>
               </div>
-            </div>
-          </div>
-          <div className="filters-bar">
-            <details className="filter-group">
-              <summary>{t.filtersTitle}</summary>
-              <div className="filter-panel">
-                <div className="filter-block">
-                  <span className="filter-title">{t.categoriesTitle}</span>
-                  <div className="filter-inline">
-                    {categories[lang].map((item) => (
-                      <label key={item} className="filter-option">
-                        <input type="checkbox" />
-                        <span>{item}</span>
-                      </label>
+            ) : (
+              <div className="admin-panel admin-page-panel">
+                <form className="admin-form admin-form-wide" onSubmit={(event) => event.preventDefault()}>
+                  <input
+                    placeholder={t.adminForm.name}
+                    value={adminProductForm.name}
+                    onChange={(event) => setAdminProductForm((prev) => ({ ...prev, name: event.target.value }))}
+                  />
+                  <div className="admin-form-row">
+                    <input
+                      placeholder="SKU"
+                      value={adminProductForm.sku}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, sku: event.target.value }))}
+                    />
+                    <input
+                      placeholder={t.adminForm.stock}
+                      type="number"
+                      min={0}
+                      value={adminProductForm.stock}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, stock: event.target.value }))}
+                    />
+                  </div>
+                  <div className="admin-form-row">
+                    <select
+                      value={adminProductForm.category}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, category: event.target.value }))}
+                    >
+                      <option value="">{lang === 'fi' ? 'Valitse kategoria' : 'Select category'}</option>
+                      {categories.map((category) => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="admin-category-row">
+                      <input
+                        placeholder={lang === 'fi' ? 'Uusi kategoria' : 'New category'}
+                        value={adminCategoryName}
+                        onChange={(event) => setAdminCategoryName(event.target.value)}
+                      />
+                      <button className="ghost tiny" type="button" onClick={addCategory}>
+                        {lang === 'fi' ? 'Lisää' : 'Add'}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="admin-form-row">
+                    <input
+                      placeholder={t.adminForm.price}
+                      type="number"
+                      min={0}
+                      step="0.01"
+                      value={adminProductForm.price}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, price: event.target.value }))}
+                    />
+                    <input
+                      placeholder={lang === 'fi' ? 'Hintayksikkö' : 'Price unit'}
+                      value={adminProductForm.priceUnit}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, priceUnit: event.target.value }))}
+                    />
+                  </div>
+                  <input
+                    placeholder={lang === 'fi' ? 'Yksikköhuomio (valinnainen)' : 'Unit note (optional)'}
+                    value={adminProductForm.unitNote}
+                    onChange={(event) => setAdminProductForm((prev) => ({ ...prev, unitNote: event.target.value }))}
+                  />
+                  <input
+                    placeholder={lang === 'fi' ? 'Kuvan URL (valinnainen)' : 'Image URL (optional)'}
+                    value={adminProductForm.image}
+                    onChange={(event) => setAdminProductForm((prev) => ({ ...prev, image: event.target.value }))}
+                  />
+                  <input type="file" accept="image/*" onChange={handleAdminImageUpload} />
+                  {adminProductForm.image && <img className="admin-image-preview" src={adminProductForm.image} alt="Product preview" />}
+                  <textarea
+                    rows={2}
+                    placeholder={lang === 'fi' ? 'Kuvaus' : 'Description'}
+                    value={adminProductForm.description}
+                    onChange={(event) => setAdminProductForm((prev) => ({ ...prev, description: event.target.value }))}
+                  />
+                  {adminError && <div className="error">{adminError}</div>}
+                  <div className="admin-actions">
+                    <button className="primary" type="button" onClick={saveAdminProduct}>
+                      {adminProductForm.id ? (lang === 'fi' ? 'Päivitä tuote' : 'Update product') : (lang === 'fi' ? 'Lisää tuote' : 'Add product')}
+                    </button>
+                    {adminProductForm.id && (
+                      <button className="ghost" type="button" onClick={resetAdminForm}>
+                        {lang === 'fi' ? 'Peru muokkaus' : 'Cancel edit'}
+                      </button>
+                    )}
+                    <button className="ghost" type="button" onClick={handleAdminLogout}>
+                      {t.adminForm.logout}
+                    </button>
+                  </div>
+                </form>
+
+                <div className="admin-list">
+                  <div className="admin-categories-list">
+                    {categories.map((category) => (
+                      <div key={category} className="admin-category-chip">
+                        <span>{category}</span>
+                        <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category)}>
+                          {lang === 'fi' ? 'Poista' : 'Delete'}
+                        </button>
+                      </div>
                     ))}
                   </div>
-                </div>
-                <div className="filter-block">
-                  <span className="filter-title">{t.product.priceLabel}</span>
-                  <div className="price-row">
-                    <input className="filter-input" placeholder="0" />
-                    <span className="muted">—</span>
-                    <input className="filter-input" placeholder="200" />
+                  <div className="admin-list-head">
+                    <input
+                      className="filter-input"
+                      placeholder={lang === 'fi' ? 'Hae tuotteita...' : 'Search products...'}
+                      value={adminQuery}
+                      onChange={(event) => setAdminQuery(event.target.value)}
+                    />
+                    <div className="pagination">
+                      <button className="ghost tiny" disabled={safeAdminPage === 1} onClick={() => setAdminPage((prev) => Math.max(1, prev - 1))}>
+                        ←
+                      </button>
+                      <button className="ghost tiny">{safeAdminPage}</button>
+                      <button className="ghost tiny" disabled={safeAdminPage === adminPages} onClick={() => setAdminPage((prev) => Math.min(adminPages, prev + 1))}>
+                        →
+                      </button>
+                    </div>
+                  </div>
+                  <div className="admin-table">
+                    {adminPageItems.map((item) => (
+                      <div key={item.id} className="admin-row">
+                        <div className="admin-row-main">
+                          <img className="admin-row-image" src={item.image} alt={item.name} />
+                          <div>
+                            <strong>{item.name}</strong>
+                            <p className="muted small">{item.sku} · {item.category}</p>
+                          </div>
+                        </div>
+                        <div className="admin-row-meta">
+                          <span>{formatPrice(item.price, lang)} €</span>
+                          <span>{lang === 'fi' ? 'Varasto' : 'Stock'}: {item.stock}</span>
+                          <button className="ghost tiny" onClick={() => editProductFromAdmin(item)}>
+                            {lang === 'fi' ? 'Muokkaa' : 'Edit'}
+                          </button>
+                          <button className="ghost tiny danger" onClick={() => deleteProductFromAdmin(item.id)}>
+                            {lang === 'fi' ? 'Poista' : 'Delete'}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    {adminPageItems.length === 0 && (
+                      <p className="muted">{lang === 'fi' ? 'Ei tuotteita tällä haulla.' : 'No products for this search.'}</p>
+                    )}
                   </div>
                 </div>
-                <button className="ghost tiny">{t.clearFilters}</button>
               </div>
-            </details>
-          </div>
-          <div className="grid products-grid">
-            {items.map((item) => (
-              <div key={item.name} className="card product-card">
-                <button className="product-link" type="button" onClick={() => openProduct(item.id)}>
-                  <img className="product-image" src={item.image} alt={item.name} loading="lazy" />
-                  <strong className="product-name">{item.name}</strong>
-                </button>
-                <div className="product-body">
-                  <span className="product-sku">{item.sku}</span>
-                  <div className="availability">
-                    <span className={`status status-${item.statusTone}`}>
-                      <span className="dot" /> {item.availability}
-                    </span>
-                  </div>
-                  <div className="price-block">
-                    <span className="price-top">
-                      {formatPrice(item.price, lang)} {item.priceUnit}
-                    </span>
-                    {item.unitNote && <span className="muted">{item.unitNote}</span>}
-                    <span className="muted">{t.product.vatNote}</span>
-                  </div>
-                </div>
-                <div className="product-actions">
-                  <button className="ghost" onClick={() => openProduct(item.id)}>
-                    {t.view}
-                  </button>
-                  <button className="ghost" onClick={() => addToCart(item)}>
-                    {t.add}
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        {selectedProduct && (
+            )}
+          </section>
+        ) : (
+        selectedProduct ? (
           <section className="section product-detail" id="product-detail">
             <button className="ghost back" onClick={closeProduct}>
               ← {t.backToProducts}
@@ -744,35 +1104,32 @@ function App() {
               <img className="detail-image" src={selectedProduct.image} alt={selectedProduct.name} />
               <div className="detail-info">
                 <h2>{selectedProduct.name}</h2>
-                <span className="product-sku">{selectedProduct.sku}</span>
                 <p className="muted">{selectedProduct.description}</p>
-                <div className="availability">
-                  <span className={`status status-${selectedProduct.statusTone}`}>
-                    <span className="dot" /> {selectedProduct.availability}
-                  </span>
-                </div>
                 <div className="price-block">
+                  <span className="muted">
+                    {formatPrice(grossPrice(selectedProduct.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                  </span>
                   <span className="price-top">
-                    {formatPrice(selectedProduct.price, lang)} {selectedProduct.priceUnit}
+                    {formatPrice(selectedProduct.price, lang)} {selectedProduct.priceUnit} {t.product.vatNote}
                   </span>
                   {selectedProduct.unitNote && <span className="muted">{selectedProduct.unitNote}</span>}
-                  <span className="muted">{t.product.vatNote}</span>
                 </div>
+                <p className="stock-note">
+                  {lang === 'fi' ? 'Varastossa' : 'In stock'}
+                </p>
                 <div className="detail-actions">
-                  <button className="primary" onClick={() => addToCart(selectedProduct)}>
+                  <div className="qty-selector">
+                    <button className="ghost tiny" onClick={() => setSelectedQuantity((prev) => Math.max(1, prev - 1))}>
+                      -
+                    </button>
+                    <span>{selectedQuantity}</span>
+                    <button className="ghost tiny" onClick={() => setSelectedQuantity((prev) => prev + 1)}>
+                      +
+                    </button>
+                  </div>
+                  <button className="primary" onClick={() => addToCart(selectedProduct, selectedQuantity)}>
                     {t.add}
                   </button>
-                  <button className="ghost" onClick={openCheckout}>
-                    {t.checkoutTitle}
-                  </button>
-                </div>
-                <div>
-                  <h4>{t.product.details}</h4>
-                  <ul className="detail-list">
-                    {selectedProduct.details.map((item) => (
-                      <li key={item}>{item}</li>
-                    ))}
-                  </ul>
                 </div>
               </div>
             </div>
@@ -791,18 +1148,156 @@ function App() {
               </div>
             </div>
           </section>
-        )}
+        ) : (
+          <>
+        <section className="hero" id="home">
+          <h1>{t.heroTitle}</h1>
+          <p>{t.heroText}</p>
+          <div className="cta">
+            <button className="primary">{t.ctaShop}</button>
+            <button className="ghost">{t.ctaAccount}</button>
+          </div>
+        </section>
+
+        <section className="section" id="categories">
+          <h2>{t.categoriesTitle}</h2>
+          <div className="category-grid">
+            <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
+              <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
+              <span className="muted">{productCatalog.length}</span>
+            </button>
+            {categoriesForFilters.map((item) => (
+              <button key={item} className={`category-card ${activeCategory === item ? 'active' : ''}`} onClick={() => setActiveCategory(item)}>
+                <strong>{item}</strong>
+                <span className="muted">{productCatalog.filter((product) => product.category === item).length}</span>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="section products-section" id="products">
+          <div className="products-header">
+            <div>
+              <h2>{t.productsTitle}</h2>
+              <p className="muted">{t.productsNote}</p>
+              <p className="muted shipping-note">
+                {lang === 'fi' ? 'Toimitus 15 € alle 250 € tilauksille, yli 250 € ilmainen.' : 'Delivery is 15 € below 250 €, free above 250 €.'}
+              </p>
+            </div>
+          </div>
+          <div className="sort sort-floating">
+            <span className="muted">{lang === 'fi' ? 'Lajittelu' : 'Sort'}</span>
+            <select value={sortBy} onChange={(event) => setSortBy(event.target.value as 'relevance' | 'price' | 'name')}>
+              <option value="relevance">{lang === 'fi' ? 'Relevanssi' : 'Relevance'}</option>
+              <option value="price">{lang === 'fi' ? 'Hinta' : 'Price'}</option>
+              <option value="name">{lang === 'fi' ? 'Nimi' : 'Name'}</option>
+            </select>
+          </div>
+          <div className="products-meta">
+            <span className="muted">
+              {t.productsShown} {totalCount === 0 ? 0 : listStart + 1}–{Math.min(listStart + pageSize, totalCount)} / {totalCount}
+            </span>
+            <div className="meta-right">
+              <div className="pagination">
+                <button className="ghost tiny" disabled={safeCurrentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
+                  ←
+                </button>
+                <button className="ghost tiny">{safeCurrentPage}</button>
+                <button className="ghost tiny" disabled={safeCurrentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
+                  →
+                </button>
+              </div>
+            </div>
+          </div>
+          <div className="filters-bar">
+            <details className="filter-group">
+              <summary>{t.filtersTitle}</summary>
+              <div className="filter-panel">
+                <div className="filter-block">
+                  <span className="filter-title">{t.categoriesTitle}</span>
+                  <div className="filter-inline">
+                    <button className={`ghost tiny ${activeCategory === 'all' ? 'active-filter' : ''}`} onClick={() => setActiveCategory('all')}>
+                      {lang === 'fi' ? 'Kaikki' : 'All'}
+                    </button>
+                    {categoriesForFilters.map((item) => (
+                      <button
+                        key={item}
+                        className={`ghost tiny ${activeCategory === item ? 'active-filter' : ''}`}
+                        onClick={() => setActiveCategory(item)}
+                      >
+                        {item}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div className="filter-block">
+                  <span className="filter-title">{t.search}</span>
+                  <input className="filter-input" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={t.search} />
+                </div>
+                <button className="ghost tiny" onClick={() => { setProductQuery(''); setActiveCategory('all') }}>{t.clearFilters}</button>
+              </div>
+            </details>
+          </div>
+          <div className="grid products-grid">
+            {pagedProducts.map((item) => (
+              <div key={item.id} className="card product-card">
+                <button className="product-card-button" type="button" onClick={() => openProduct(item.id)}>
+                  <div className="product-link">
+                    <img className="product-image" src={item.image} alt={item.name} loading="lazy" />
+                    <strong className="product-name">{item.name}</strong>
+                  </div>
+                  <div className="product-body">
+                    <div className="availability">
+                      <span className={`status status-${getStockTone(item.stock)}`}>
+                        <span className="dot" /> {getStockLabel(item.stock, lang)}
+                      </span>
+                    </div>
+                    <div className="price-block">
+                      <span className="muted">
+                        {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                      </span>
+                      <span className="price-top">
+                        {formatPrice(item.price, lang)} {item.priceUnit} {t.product.vatNote}
+                      </span>
+                      {item.unitNote && <span className="muted">{item.unitNote}</span>}
+                    </div>
+                  </div>
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
 
         <section className="section contact">
-          <div>
-            <h2>{t.contactTitle}</h2>
-            <p className="muted">{t.contactText}</p>
-          </div>
-          <button className="primary">{t.contactCta}</button>
+          <button className="contact-toggle" onClick={() => setShowContactPanel((prev) => !prev)}>
+            {t.contactTitle}
+          </button>
+          {showContactPanel ? (
+            <div className="contact-layout">
+              <div className="contact-info">
+                <div className="contact-info-card">
+                  <strong>{lang === 'fi' ? 'Sähköposti' : 'Email'}</strong>
+                  <a href="mailto:umut.uygur30@gmail.com">umut.uygur30@gmail.com</a>
+                </div>
+                <div className="contact-info-card">
+                  <strong>{lang === 'fi' ? 'Puhelinnumerot' : 'Phone numbers'}</strong>
+                  <a href={`tel:${t.footer.phone.replace(/\s+/g, '')}`}>{t.footer.phone}</a>
+                  <span className="muted">{lang === 'fi' ? 'Ma-Pe 8:00-17:00' : 'Mon-Fri 8:00-17:00'}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div>
+              <h2>{t.contactTitle}</h2>
+              <p className="muted">{t.contactText}</p>
+            </div>
+          )}
         </section>
+          </>
+        ))}
       </main>
 
-      <footer className="footer">
+      {!isAdminPage && <footer className="footer">
         <div>
           <strong>{t.footer.brand}</strong>
           <p>{t.footer.service}</p>
@@ -814,9 +1309,9 @@ function App() {
           <p>{t.footer.hours}</p>
           <p>{t.footer.legal}</p>
         </div>
-      </footer>
+      </footer>}
 
-      {showCheckout && (
+      {showCheckout && !isAdminPage && (
         <div className="checkout-overlay">
           <div className="checkout-backdrop" onClick={closeCheckout} />
           <section className="checkout-panel" id="checkout">
@@ -899,26 +1394,6 @@ function App() {
                             onChange={(e) => updateForm('billingAddress', e.target.value)}
                           />
                         </div>
-                        <div className="form-row">
-                          <div className="field">
-                            <label>{t.form.billingZip}</label>
-                            <input value={checkoutForm.billingZip} onChange={(e) => updateForm('billingZip', e.target.value)} />
-                          </div>
-                          <div className="field">
-                            <label>{t.form.billingCity}</label>
-                            <input
-                              value={checkoutForm.billingCity}
-                              onChange={(e) => updateForm('billingCity', e.target.value)}
-                            />
-                          </div>
-                        </div>
-                        <div className="field">
-                          <label>{t.form.billingReference}</label>
-                          <input
-                            value={checkoutForm.billingReference}
-                            onChange={(e) => updateForm('billingReference', e.target.value)}
-                          />
-                        </div>
                         <div className="field">
                           <label>{t.form.notes}</label>
                           <textarea rows={3} value={checkoutForm.notes} onChange={(e) => updateForm('notes', e.target.value)} />
@@ -951,9 +1426,11 @@ function App() {
                   <div className="cart-items">
                     {cartItems.map((item) => (
                       <div key={item.id} className="cart-item">
-                        <div>
+                        <div className="cart-item-info">
                           <strong>{item.name}</strong>
-                          <span className="tag">{item.tag}</span>
+                          <span className="tag">
+                            {formatPrice(item.price, lang)} {item.priceUnit}
+                          </span>
                         </div>
                         <div className="cart-actions">
                           <button className="ghost" onClick={() => removeFromCart(item)}>
@@ -975,7 +1452,7 @@ function App() {
                   </div>
                   <div>
                     <span>{t.delivery}</span>
-                    <strong>{formatDelivery(shipping, lang)}</strong>
+                    <strong>{totalItems === 0 ? '-' : formatDelivery(shipping, lang)}</strong>
                   </div>
                   <div className="cart-total">
                     <span>{t.total}</span>
@@ -984,57 +1461,10 @@ function App() {
                 </div>
               </aside>
             </div>
-          </section>
+        </section>
         </div>
       )}
 
-      {showLogin && (
-        <div className="modal">
-          <div className="modal-backdrop" onClick={() => setShowLogin(false)} />
-          <div className="modal-card">
-            <button className="ghost close" onClick={() => setShowLogin(false)}>
-              ✕
-            </button>
-            <h3>{adminAuthed ? t.adminTitle : t.adminLogin.title}</h3>
-            {adminAuthed && <p className="muted">{t.adminNote}</p>}
-            {!adminAuthed ? (
-              <div className="admin-login">
-                <input
-                  placeholder={t.adminLogin.user}
-                  value={adminUser}
-                  onChange={(event) => setAdminUser(event.target.value)}
-                />
-                <input
-                  placeholder={t.adminLogin.pass}
-                  type="password"
-                  value={adminPass}
-                  onChange={(event) => setAdminPass(event.target.value)}
-                />
-                {adminError && <div className="error">{adminError}</div>}
-                <button className="primary" type="button" onClick={handleAdminLogin}>
-                  {t.adminLogin.login}
-                </button>
-                <span className="muted small">{t.adminLogin.hint}</span>
-              </div>
-            ) : (
-              <form className="admin-form">
-                <input placeholder={t.adminForm.name} />
-                <input placeholder={t.adminForm.price} />
-                <input placeholder={t.adminForm.category} />
-                <input placeholder={t.adminForm.stock} />
-                <div className="admin-actions">
-                  <button className="primary" type="button">
-                    {t.adminForm.save}
-                  </button>
-                  <button className="ghost" type="button" onClick={handleAdminLogout}>
-                    {t.adminForm.logout}
-                  </button>
-                </div>
-              </form>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   )
 }
