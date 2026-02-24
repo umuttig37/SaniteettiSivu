@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
 import './App.css'
+import brandLogo from './assets/paperitukkuLogo.jpg'
 
 type Lang = 'fi' | 'en'
 
@@ -13,6 +14,7 @@ type Product = {
   sku: string
   stock: number
   image: string
+  images: string[]
   description: string
 }
 
@@ -25,7 +27,7 @@ type AdminProductForm = {
   priceUnit: string
   unitNote: string
   stock: string
-  image: string
+  images: string[]
   description: string
 }
 
@@ -71,7 +73,7 @@ const productImages = {
 const text = {
   fi: {
     nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
-    heroTitle: 'Saniteetti',
+    heroTitle: 'Paperitukku',
     heroText: 'Tilaa saniteettitarvikkeet yritykselle. Lisää koriin, täytä toimitus ja tilaa laskulla.',
     ctaShop: 'Selaa tuotteita',
     ctaAccount: 'Pyydä yritystili',
@@ -146,18 +148,18 @@ const text = {
       logout: 'Kirjaudu ulos',
     },
     footer: {
-      brand: 'Saniteetti',
+      brand: 'Paperitukku',
       service: 'Asiakaspalvelu',
-      phone: '010 123 4567',
-      email: 'myynti@saniteetti.fi',
-      address: 'Teollisuustie 12, 00510 Helsinki',
-      hours: 'Ma–Pe 8–16',
-      legal: 'Y-tunnus 1234567-8',
+      phone: '+358 44 978 2446',
+      email: 'suomenpaperitukku@gmail.com',
+      address: 'Säynetie 16, 01490 Vantaa',
+      hours: '',
+      legal: '3590057-8',
     },
   },
   en: {
     nav: ['Categories', 'Products', 'Login'],
-    heroTitle: 'Sanitary',
+    heroTitle: 'Paperitukku',
     heroText: 'Order sanitary supplies for your business. Add to cart, fill delivery details, and order by invoice.',
     ctaShop: 'Browse products',
     ctaAccount: 'Request company account',
@@ -232,13 +234,13 @@ const text = {
       logout: 'Log out',
     },
     footer: {
-      brand: 'Saniteetti',
+      brand: 'Paperitukku',
       service: 'Customer service',
-      phone: '+358 10 123 4567',
-      email: 'sales@saniteetti.fi',
-      address: 'Industrial Road 12, 00510 Helsinki',
-      hours: 'Mon–Fri 8–16',
-      legal: 'VAT 1234567-8',
+      phone: '+358 44 978 2446',
+      email: 'suomenpaperitukku@gmail.com',
+      address: 'Säynetie 16, 01490 Vantaa',
+      hours: '',
+      legal: '3590057-8',
     },
   },
 } as const
@@ -255,6 +257,7 @@ const products: Record<Lang, Product[]> = {
       sku: '471103',
       stock: 140,
       image: productImages.towel,
+      images: [productImages.towel],
       description: 'Pehmeä ja imukykyinen käsipyyhe suurkulutukseen.',
     },
     {
@@ -267,6 +270,7 @@ const products: Record<Lang, Product[]> = {
       sku: '472246',
       stock: 122,
       image: productImages.wc,
+      images: [productImages.wc],
       description: 'Luotettava peruspaperi yrityskäyttöön.',
     },
     {
@@ -279,6 +283,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'N953102',
       stock: 96,
       image: productImages.roll,
+      images: [productImages.roll],
       description: 'Laadukas taittopaperi annostelijoihin.',
     },
     {
@@ -290,6 +295,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'S71421',
       stock: 28,
       image: productImages.spray,
+      images: [productImages.spray],
       description: 'Raikas ja tehokas yleispuhdistaja pinnoille.',
     },
     {
@@ -301,6 +307,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'B24010',
       stock: 88,
       image: productImages.trash,
+      images: [productImages.trash],
       description: 'Vahvat jätesäkit isoihin astioihin.',
     },
     {
@@ -312,6 +319,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'S5001',
       stock: 8,
       image: productImages.soap,
+      images: [productImages.soap],
       description: 'Hellävarainen nestesaippua ammattilaiskäyttöön.',
     },
   ],  en: [
@@ -325,6 +333,7 @@ const products: Record<Lang, Product[]> = {
       sku: '471103',
       stock: 140,
       image: productImages.towel,
+      images: [productImages.towel],
       description: 'Soft and absorbent towels for heavy use.',
     },
     {
@@ -337,6 +346,7 @@ const products: Record<Lang, Product[]> = {
       sku: '472246',
       stock: 122,
       image: productImages.wc,
+      images: [productImages.wc],
       description: 'Reliable everyday toilet paper for businesses.',
     },
     {
@@ -349,6 +359,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'N953102',
       stock: 96,
       image: productImages.roll,
+      images: [productImages.roll],
       description: 'Quality folded towels for dispensers.',
     },
     {
@@ -360,6 +371,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'S71421',
       stock: 28,
       image: productImages.spray,
+      images: [productImages.spray],
       description: 'Fresh, effective cleaner for daily surfaces.',
     },
     {
@@ -371,6 +383,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'B24010',
       stock: 88,
       image: productImages.trash,
+      images: [productImages.trash],
       description: 'Durable waste bags for large bins.',
     },
     {
@@ -382,6 +395,7 @@ const products: Record<Lang, Product[]> = {
       sku: 'S5001',
       stock: 8,
       image: productImages.soap,
+      images: [productImages.soap],
       description: 'Gentle liquid soap for professional use.',
     },
   ],
@@ -446,6 +460,17 @@ const formatDelivery = (value: number, lang: Lang) => {
 
 const grossPrice = (value: number) => value * vatMultiplier
 
+const normalizeProduct = (product: Product): Product => {
+  const images = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image]
+  return {
+    ...product,
+    image: images[0],
+    images,
+  }
+}
+
+const getProductImage = (product: Product) => (product.images && product.images.length > 0 ? product.images[0] : product.image)
+
 const getRelated = (items: Product[], currentId: string) => {
   return items.filter((item) => item.id !== currentId).slice(0, 3)
 }
@@ -454,7 +479,7 @@ function App() {
   const [lang, setLang] = useState<Lang>('fi')
   const [productCatalog, setProductCatalog] = useState<Product[]>(() => {
     if (typeof window === 'undefined') {
-      return products.fi
+      return products.fi.map(normalizeProduct)
     }
     const raw = window.localStorage.getItem(productStorageKey)
     if (!raw) {
@@ -463,12 +488,12 @@ function App() {
     try {
       const parsed = JSON.parse(raw) as Product[]
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
+        return parsed.map(normalizeProduct)
       }
     } catch {
       // Fall back to defaults if persisted value is invalid.
     }
-    return products.fi
+    return products.fi.map(normalizeProduct)
   })
   const [categories, setCategories] = useState<string[]>(() => {
     if (typeof window === 'undefined') {
@@ -505,6 +530,8 @@ function App() {
   const [adminPage, setAdminPage] = useState(1)
   const [adminCategoryName, setAdminCategoryName] = useState('')
   const [selectedQuantity, setSelectedQuantity] = useState(1)
+  const [detailImageIndex, setDetailImageIndex] = useState(0)
+  const [adminImageUrl, setAdminImageUrl] = useState('')
   const [showContactPanel, setShowContactPanel] = useState(false)
   const [adminProductForm, setAdminProductForm] = useState<AdminProductForm>({
     id: null,
@@ -515,7 +542,7 @@ function App() {
     priceUnit: lang === 'fi' ? '€ / kpl' : '€ / pc',
     unitNote: '',
     stock: '',
-    image: '',
+    images: [],
     description: '',
   })
   const [selectedProductId, setSelectedProductId] = useState<string | null>(() => getProductIdFromUrl())
@@ -559,6 +586,7 @@ function App() {
   const listStart = (safeCurrentPage - 1) * pageSize
   const pagedProducts = filteredProducts.slice(listStart, listStart + pageSize)
   const selectedProduct = selectedProductId ? productCatalog.find((item) => item.id === selectedProductId) : null
+  const selectedProductImages = selectedProduct ? (selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]) : []
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : []
 
   useEffect(() => {
@@ -575,6 +603,7 @@ function App() {
 
   useEffect(() => {
     setSelectedQuantity(1)
+    setDetailImageIndex(0)
   }, [selectedProductId])
 
   useEffect(() => {
@@ -667,6 +696,29 @@ function App() {
     }, 0)
   }
 
+  const goPrevDetailImage = () => {
+    if (selectedProductImages.length <= 1) {
+      return
+    }
+    setDetailImageIndex((prev) => (prev - 1 + selectedProductImages.length) % selectedProductImages.length)
+  }
+
+  const goNextDetailImage = () => {
+    if (selectedProductImages.length <= 1) {
+      return
+    }
+    setDetailImageIndex((prev) => (prev + 1) % selectedProductImages.length)
+  }
+
+  const goHome = () => {
+    setIsAdminPage(false)
+    setSelectedProductId(null)
+    syncProductInUrl(null)
+    setTimeout(() => {
+      document.getElementById('home')?.scrollIntoView({ behavior: 'smooth' })
+    }, 0)
+  }
+
   const cartItems = productCatalog.filter((item) => cart[item.id])
   const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0)
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (cart[item.id] ?? 0), 0)
@@ -709,11 +761,13 @@ function App() {
     setShowCheckout(true)
     setCheckoutStep(1)
     setFormError('')
+    setOrderSent(false)
   }
 
   const closeCheckout = () => {
     setShowCheckout(false)
     setFormError('')
+    setOrderSent(false)
   }
 
   const handleAdminLogin = () => {
@@ -745,9 +799,10 @@ function App() {
       priceUnit: lang === 'fi' ? '€ / kpl' : '€ / pc',
       unitNote: '',
       stock: '',
-      image: '',
+      images: [],
       description: '',
     })
+    setAdminImageUrl('')
   }
 
   const saveAdminProduct = () => {
@@ -771,7 +826,8 @@ function App() {
       priceUnit: adminProductForm.priceUnit.trim() || (lang === 'fi' ? '€ / kpl' : '€ / pc'),
       unitNote: adminProductForm.unitNote.trim() || undefined,
       stock,
-      image: adminProductForm.image.trim() || productImages.soap,
+      image: adminProductForm.images[0] ?? productImages.soap,
+      images: adminProductForm.images.length > 0 ? adminProductForm.images : [productImages.soap],
       description: adminProductForm.description.trim() || name,
     }
 
@@ -789,19 +845,34 @@ function App() {
     resetAdminForm()
   }
 
-  const handleAdminImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0]
-    if (!file) {
+  const addAdminImageFromUrl = () => {
+    const next = adminImageUrl.trim()
+    if (!next) {
       return
     }
-    const reader = new FileReader()
-    reader.onload = () => {
-      const result = reader.result
-      if (typeof result === 'string') {
-        setAdminProductForm((prev) => ({ ...prev, image: result }))
-      }
+    setAdminProductForm((prev) => ({ ...prev, images: [...prev.images, next] }))
+    setAdminImageUrl('')
+  }
+
+  const removeAdminImage = (index: number) => {
+    setAdminProductForm((prev) => ({ ...prev, images: prev.images.filter((_, idx) => idx !== index) }))
+  }
+
+  const handleAdminImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? [])
+    if (files.length === 0) {
+      return
     }
-    reader.readAsDataURL(file)
+    files.forEach((file) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const result = reader.result
+        if (typeof result === 'string') {
+          setAdminProductForm((prev) => ({ ...prev, images: [...prev.images, result] }))
+        }
+      }
+      reader.readAsDataURL(file)
+    })
     event.target.value = ''
   }
 
@@ -815,9 +886,10 @@ function App() {
       priceUnit: product.priceUnit,
       unitNote: product.unitNote ?? '',
       stock: String(product.stock),
-      image: product.image,
+      images: product.images ?? [product.image],
       description: product.description,
     })
+    setAdminImageUrl('')
   }
 
   const deleteProductFromAdmin = (productId: string) => {
@@ -873,7 +945,9 @@ function App() {
   return (
     <div className="page">
       <header className="top">
-        <div className="brand">Saniteetti</div>
+        <button className="brand" onClick={goHome} aria-label="Paperitukku etusivu">
+          <img src={brandLogo} alt="Paperitukku" />
+        </button>
         <nav className="nav">
           <a href="#categories">{t.nav[0]}</a>
           <a href="#products">{t.nav[1]}</a>
@@ -1007,13 +1081,29 @@ function App() {
                     value={adminProductForm.unitNote}
                     onChange={(event) => setAdminProductForm((prev) => ({ ...prev, unitNote: event.target.value }))}
                   />
-                  <input
-                    placeholder={lang === 'fi' ? 'Kuvan URL (valinnainen)' : 'Image URL (optional)'}
-                    value={adminProductForm.image}
-                    onChange={(event) => setAdminProductForm((prev) => ({ ...prev, image: event.target.value }))}
-                  />
-                  <input type="file" accept="image/*" onChange={handleAdminImageUpload} />
-                  {adminProductForm.image && <img className="admin-image-preview" src={adminProductForm.image} alt="Product preview" />}
+                  <div className="admin-image-row">
+                    <input
+                      placeholder={lang === 'fi' ? 'Kuvan URL (valinnainen)' : 'Image URL (optional)'}
+                      value={adminImageUrl}
+                      onChange={(event) => setAdminImageUrl(event.target.value)}
+                    />
+                    <button className="ghost tiny" type="button" onClick={addAdminImageFromUrl}>
+                      {lang === 'fi' ? 'Lisää kuva' : 'Add image'}
+                    </button>
+                  </div>
+                  <input type="file" accept="image/*" multiple onChange={handleAdminImageUpload} />
+                  {adminProductForm.images.length > 0 && (
+                    <div className="admin-image-grid">
+                      {adminProductForm.images.map((image, index) => (
+                        <div key={`${image}-${index}`} className="admin-image-item">
+                          <img className="admin-image-preview" src={image} alt={`Product preview ${index + 1}`} />
+                          <button className="ghost tiny danger" type="button" onClick={() => removeAdminImage(index)}>
+                            {lang === 'fi' ? 'Poista' : 'Remove'}
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                   <textarea
                     rows={2}
                     placeholder={lang === 'fi' ? 'Kuvaus' : 'Description'}
@@ -1068,7 +1158,7 @@ function App() {
                     {adminPageItems.map((item) => (
                       <div key={item.id} className="admin-row">
                         <div className="admin-row-main">
-                          <img className="admin-row-image" src={item.image} alt={item.name} />
+                          <img className="admin-row-image" src={getProductImage(item)} alt={item.name} />
                           <div>
                             <strong>{item.name}</strong>
                             <p className="muted small">{item.sku} · {item.category}</p>
@@ -1101,7 +1191,40 @@ function App() {
               ← {t.backToProducts}
             </button>
             <div className="detail-layout">
-              <img className="detail-image" src={selectedProduct.image} alt={selectedProduct.name} />
+              <div className="detail-media">
+                <div className="detail-image-wrap">
+                  <img
+                    key={selectedProductImages[detailImageIndex] ?? getProductImage(selectedProduct)}
+                    className="detail-image detail-image-fade"
+                    src={selectedProductImages[detailImageIndex] ?? getProductImage(selectedProduct)}
+                    alt={selectedProduct.name}
+                  />
+                  {selectedProductImages.length > 1 && (
+                    <>
+                      <button className="detail-arrow detail-arrow-left" type="button" onClick={goPrevDetailImage} aria-label={lang === 'fi' ? 'Edellinen kuva' : 'Previous image'}>
+                        ‹
+                      </button>
+                      <button className="detail-arrow detail-arrow-right" type="button" onClick={goNextDetailImage} aria-label={lang === 'fi' ? 'Seuraava kuva' : 'Next image'}>
+                        ›
+                      </button>
+                    </>
+                  )}
+                </div>
+                {selectedProductImages.length > 1 && (
+                  <div className="detail-thumbs">
+                    {selectedProductImages.map((image, index) => (
+                      <button
+                        key={`${image}-${index}`}
+                        className={`detail-thumb ${detailImageIndex === index ? 'active' : ''}`}
+                        type="button"
+                        onClick={() => setDetailImageIndex(index)}
+                      >
+                        <img src={image} alt={`${selectedProduct.name} ${index + 1}`} />
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
               <div className="detail-info">
                 <h2>{selectedProduct.name}</h2>
                 <p className="muted">{selectedProduct.description}</p>
@@ -1138,7 +1261,7 @@ function App() {
               <div className="grid related-grid">
                 {relatedProducts.map((item) => (
                   <div key={item.id} className="card related-card">
-                    <img className="product-image" src={item.image} alt={item.name} />
+                    <img className="product-image" src={getProductImage(item)} alt={item.name} />
                     <strong className="product-name">{item.name}</strong>
                     <button className="ghost" onClick={() => openProduct(item.id)}>
                       {t.view}
@@ -1243,7 +1366,7 @@ function App() {
               <div key={item.id} className="card product-card">
                 <button className="product-card-button" type="button" onClick={() => openProduct(item.id)}>
                   <div className="product-link">
-                    <img className="product-image" src={item.image} alt={item.name} loading="lazy" />
+                    <img className="product-image" src={getProductImage(item)} alt={item.name} loading="lazy" />
                     <strong className="product-name">{item.name}</strong>
                   </div>
                   <div className="product-body">
@@ -1277,7 +1400,7 @@ function App() {
               <div className="contact-info">
                 <div className="contact-info-card">
                   <strong>{lang === 'fi' ? 'Sähköposti' : 'Email'}</strong>
-                  <a href="mailto:umut.uygur30@gmail.com">umut.uygur30@gmail.com</a>
+                  <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
                 </div>
                 <div className="contact-info-card">
                   <strong>{lang === 'fi' ? 'Puhelinnumerot' : 'Phone numbers'}</strong>
@@ -1306,7 +1429,7 @@ function App() {
         </div>
         <div>
           <p>{t.footer.address}</p>
-          <p>{t.footer.hours}</p>
+          {t.footer.hours ? <p>{t.footer.hours}</p> : null}
           <p>{t.footer.legal}</p>
         </div>
       </footer>}
@@ -1318,27 +1441,64 @@ function App() {
             <div className="checkout-top">
               <div>
                 <h2>{t.checkoutTitle}</h2>
-                <p className="muted">{t.checkoutNote}</p>
+                <p className="muted">
+                  {orderSent
+                    ? (lang === 'fi' ? 'Tilauksesi on vastaanotettu.' : 'Your order has been received.')
+                    : t.checkoutNote}
+                </p>
               </div>
               <button className="ghost small" onClick={closeCheckout}>
                 {t.checkoutClose}
               </button>
             </div>
 
-            <div className="checkout-steps">
-              <div className={`step-chip ${checkoutStep === 1 ? 'active' : 'done'}`}>
-                <span>1</span>
-                <strong>{t.checkoutStepInfo}</strong>
+            {!orderSent && (
+              <div className="checkout-steps">
+                <div className={`step-chip ${checkoutStep === 1 ? 'active' : 'done'}`}>
+                  <span>1</span>
+                  <strong>{t.checkoutStepInfo}</strong>
+                </div>
+                <div className={`step-chip ${checkoutStep === 2 ? 'active' : ''}`}>
+                  <span>2</span>
+                  <strong>{t.checkoutStepBilling}</strong>
+                </div>
               </div>
-              <div className={`step-chip ${checkoutStep === 2 ? 'active' : ''}`}>
-                <span>2</span>
-                <strong>{t.checkoutStepBilling}</strong>
-              </div>
-            </div>
+            )}
 
             <div className="checkout">
               <div>
-                {orderSent && <div className="success">{t.checkoutSuccess}</div>}
+                {orderSent && (
+                  <div className="order-success-shell">
+                    <div className="order-confetti" aria-hidden="true">
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                      <span />
+                    </div>
+                    <div className="success order-success">
+                      <div className="order-success-check" aria-hidden="true">✓</div>
+                      <h3>{lang === 'fi' ? 'Tilaus valmis' : 'Order complete'}</h3>
+                      <p>{t.checkoutSuccess}</p>
+                      <div className="order-success-actions">
+                        <button className="primary" type="button" onClick={closeCheckout}>
+                          {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'}
+                        </button>
+                        <button
+                          className="ghost"
+                          type="button"
+                          onClick={() => {
+                            closeCheckout()
+                            goHome()
+                          }}
+                        >
+                          {lang === 'fi' ? 'Takaisin kotisivuun' : 'Back to home'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {formError && <div className="error">{formError}</div>}
                 {!orderSent && (
                   <form className="checkout-form">
@@ -1411,7 +1571,8 @@ function App() {
                   </form>
                 )}
               </div>
-              <aside className="cart">
+              {!orderSent && (
+                <aside className="cart">
                 <div className="cart-header">
                   <h3>{t.cartTitle}</h3>
                   {totalItems > 0 && (
@@ -1459,7 +1620,8 @@ function App() {
                     <strong>{formatPrice(total, lang)} €</strong>
                   </div>
                 </div>
-              </aside>
+                </aside>
+              )}
             </div>
         </section>
         </div>
