@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from 'react'
+import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo.jpg'
+import heroBgImage from './assets/high-angle-hand-disinfecting-laptop-desk.jpg'
 
 type Lang = 'fi' | 'en'
 
@@ -44,6 +45,40 @@ type CheckoutForm = {
   notes: string
 }
 
+type OrderStatus = 'new' | 'shipped'
+
+type AdminOrderItem = {
+  productId: string
+  name: string
+  quantity: number
+  unitPrice: number
+  priceUnit: string
+}
+
+type AdminOrder = {
+  id: string
+  lang?: Lang
+  status: OrderStatus
+  createdAt: string
+  shippedAt: string | null
+  customer: {
+    company: string
+    contact: string
+    email: string
+    phone: string
+    address: string
+    zip: string
+    city: string
+    billingCompany: string
+    billingAddress: string
+    notes: string
+  }
+  items: AdminOrderItem[]
+  subtotal: number
+  shipping: number
+  total: number
+}
+
 const svgData = (label: string, color: string) => {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="420" height="300" viewBox="0 0 420 300">
   <defs>
@@ -70,11 +105,58 @@ const productImages = {
   trash: svgData('Jätesäkki', '#fff1f1'),
 } as const
 
-const text = {
+
+const fixMojibake = (value: string) => {
+  const pairs: Array<[string, string]> = [
+    ['\u00C3\u0192\u00C2\u00A4', '\u00E4'],
+    ['\u00C3\u0192\u00C2\u00B6', '\u00F6'],
+    ['\u00C3\u0192\u00C2\u00A5', '\u00E5'],
+    ['\u00C3\u0192\u00E2\u20AC\u017E', '\u00C4'],
+    ['\u00C3\u0192\u00E2\u20AC\u201C', '\u00D6'],
+    ['\u00C3\u0192\u00E2\u20AC\u00A6', '\u00C5'],
+    ['\u00C3\u00A4', '\u00E4'],
+    ['\u00C3\u00B6', '\u00F6'],
+    ['\u00C3\u00A5', '\u00E5'],
+    ['\u00C3\u201E', '\u00C4'],
+    ['\u00C3\u2013', '\u00D6'],
+    ['\u00C3\u2026', '\u00C5'],
+    ['\u00C3\u2014', '\u00D7'],
+    ['\u00C3\u201A\u00C2\u00B7', '\u00B7'],
+    ['\u00C2\u00B7', '\u00B7'],
+    ['\u00E2\u201A\u00AC', '\u20AC'],
+    ['\u00E2\u20AC\u201C', '\u2013'],
+    ['\u00E2\u20AC\u201D', '\u2014'],
+  ]
+
+  return pairs.reduce((current, [fromEscaped, toEscaped]) => {
+    const from = JSON.parse(`"${fromEscaped}"`) as string
+    const to = JSON.parse(`"${toEscaped}"`) as string
+    return current.split(from).join(to)
+  }, value)
+}
+
+const deepFixText = <T,>(input: T): T => {
+  if (typeof input === 'string') {
+    return fixMojibake(input) as T
+  }
+  if (Array.isArray(input)) {
+    return input.map((item) => deepFixText(item)) as T
+  }
+  if (input && typeof input === 'object') {
+    const result: Record<string, unknown> = {}
+    for (const [key, value] of Object.entries(input as Record<string, unknown>)) {
+      result[key] = deepFixText(value)
+    }
+    return result as T
+  }
+  return input
+}
+
+const rawText = {
   fi: {
     nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
-    heroTitle: 'Paperitukku',
-    heroText: 'Tilaa saniteettitarvikkeet yritykselle. Lisää koriin, täytä toimitus ja tilaa laskulla.',
+    heroTitle: 'Tervetuloa Paperitukkuun',
+    heroText: 'Tilaa laskulla saniteettitarvikkeet, paperituotteet ja paljon muuta helposti.',
     ctaShop: 'Selaa tuotteita',
     ctaAccount: 'Pyydä yritystili',
     trustTitle: 'Luotettava yritystoimittaja',
@@ -130,14 +212,14 @@ const text = {
     contactTitle: 'Ota yhteyttä',
     contactText: 'Tarvitsetko tarjouksen tai isomman erän? Autetaan nopeasti.',
     contactCta: 'Lähetä viesti',
-    adminTitle: 'Admin',
+    adminTitle: 'Kirjaudu',
     adminNote: 'Tuotteiden lisäys (demo)',
     adminLogin: {
       title: 'Kirjaudu',
       user: 'Käyttäjä',
       pass: 'Salasana',
       login: 'Kirjaudu',
-      hint: 'Demo: admin / saniteetti123',
+      hint: '',
     },
     adminForm: {
       name: 'Tuotteen nimi',
@@ -216,14 +298,14 @@ const text = {
     contactTitle: 'Contact us',
     contactText: 'Need a quote or a larger batch? We reply quickly.',
     contactCta: 'Send message',
-    adminTitle: 'Admin',
+    adminTitle: 'Login',
     adminNote: 'Add products (demo)',
     adminLogin: {
       title: 'Login',
       user: 'Username',
       pass: 'Password',
       login: 'Login',
-      hint: 'Demo: admin / saniteetti123',
+      hint: '',
     },
     adminForm: {
       name: 'Product name',
@@ -244,6 +326,8 @@ const text = {
     },
   },
 } as const
+
+const text = deepFixText(rawText)
 
 const products: Record<Lang, Product[]> = {
   fi: [
@@ -449,6 +533,17 @@ const formatPrice = (value: number, lang: Lang) => {
   }).format(value)
 }
 
+const formatDateTime = (value: string, lang: Lang) => {
+  const locale = lang === 'fi' ? 'fi-FI' : 'en-GB'
+  return new Intl.DateTimeFormat(locale, {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  }).format(new Date(value))
+}
+
 const deliveryCost = (subtotal: number) => (subtotal >= 250 ? 0 : 15)
 
 const formatDelivery = (value: number, lang: Lang) => {
@@ -559,6 +654,13 @@ function App() {
     notes: '',
   })
   const [formError, setFormError] = useState('')
+  const [placingOrder, setPlacingOrder] = useState(false)
+  const [lastOrderId, setLastOrderId] = useState('')
+  const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
+  const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
+  const [adminOrdersError, setAdminOrdersError] = useState('')
+  const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
+  const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
   const categoriesForFilters = categories
 
@@ -617,6 +719,13 @@ function App() {
   useEffect(() => {
     setAdminPage(1)
   }, [adminQuery])
+
+  useEffect(() => {
+    if (isAdminPage && adminAuthed) {
+      void loadAdminOrders()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdminPage, adminAuthed])
 
   useEffect(() => {
     setAdminProductForm((prev) =>
@@ -719,6 +828,17 @@ function App() {
     }, 0)
   }
 
+  const goToSection = (sectionId: 'categories' | 'products') => {
+    setIsAdminPage(false)
+    if (selectedProductId) {
+      setSelectedProductId(null)
+      syncProductInUrl(null)
+    }
+    setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' })
+    }, 0)
+  }
+
   const cartItems = productCatalog.filter((item) => cart[item.id])
   const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0)
   const subtotal = cartItems.reduce((sum, item) => sum + item.price * (cart[item.id] ?? 0), 0)
@@ -742,7 +862,7 @@ function App() {
     setCheckoutStep(2)
   }
 
-  const handleOrder = () => {
+  const handleOrder = async () => {
     if (!checkoutForm.billingCompany || !checkoutForm.billingAddress) {
       setFormError(
         lang === 'fi'
@@ -752,9 +872,45 @@ function App() {
       return
     }
     setFormError('')
-    setOrderSent(true)
-    setCart({})
-    setCheckoutStep(1)
+    setPlacingOrder(true)
+    try {
+      const payload = {
+        lang,
+        customer: checkoutForm,
+        items: cartItems.map((item) => ({
+          productId: item.id,
+          name: item.name,
+          quantity: cart[item.id] ?? 0,
+          unitPrice: item.price,
+          priceUnit: item.priceUnit,
+        })),
+        subtotal,
+        shipping,
+        total,
+      }
+
+      const response = await fetch('/api/orders', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      })
+      const data = (await response.json()) as { orderId?: string; message?: string }
+      if (!response.ok) {
+        setFormError(data.message ?? (lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.'))
+        return
+      }
+
+      setLastOrderId(data.orderId ?? '')
+      setOrderSent(true)
+      setCart({})
+      setCheckoutStep(1)
+    } catch {
+      setFormError(lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
+    } finally {
+      setPlacingOrder(false)
+    }
   }
 
   const openCheckout = () => {
@@ -762,12 +918,14 @@ function App() {
     setCheckoutStep(1)
     setFormError('')
     setOrderSent(false)
+    setLastOrderId('')
   }
 
   const closeCheckout = () => {
     setShowCheckout(false)
     setFormError('')
     setOrderSent(false)
+    setLastOrderId('')
   }
 
   const handleAdminLogin = () => {
@@ -787,6 +945,56 @@ function App() {
     setAdminPass('')
     setAdminError('')
     setIsAdminPage(false)
+    setAdminOrders([])
+    setAdminOrdersError('')
+  }
+
+  const adminAuthHeaders = () => ({
+    'x-admin-user': adminCreds.user,
+    'x-admin-pass': adminCreds.pass,
+  })
+
+  const loadAdminOrders = async () => {
+    setAdminOrdersLoading(true)
+    setAdminOrdersError('')
+    try {
+      const response = await fetch('/api/orders', {
+        headers: adminAuthHeaders(),
+      })
+      const payload = (await response.json()) as { orders?: AdminOrder[]; message?: string }
+      if (!response.ok) {
+        setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.'))
+        return
+      }
+      setAdminOrders(Array.isArray(payload.orders) ? payload.orders : [])
+    } catch {
+      setAdminOrdersError(lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.')
+    } finally {
+      setAdminOrdersLoading(false)
+    }
+  }
+
+  const markOrderShipped = async (orderId: string) => {
+    setShipActionOrderId(orderId)
+    setAdminOrdersError('')
+    try {
+      const response = await fetch(`/api/orders/${orderId}/shipped`, {
+        method: 'POST',
+        headers: adminAuthHeaders(),
+      })
+      const payload = (await response.json()) as { order?: AdminOrder; message?: string }
+      if (!response.ok) {
+        setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Lähetysviestin lähetys epäonnistui.' : 'Failed to send shipped email.'))
+        return
+      }
+      if (payload.order) {
+        setAdminOrders((prev) => prev.map((item) => (item.id === orderId ? payload.order! : item)))
+      }
+    } catch {
+      setAdminOrdersError(lang === 'fi' ? 'Lähetysviestin lähetys epäonnistui.' : 'Failed to send shipped email.')
+    } finally {
+      setShipActionOrderId(null)
+    }
   }
 
   const resetAdminForm = () => {
@@ -949,8 +1157,12 @@ function App() {
           <img src={brandLogo} alt="Paperitukku" />
         </button>
         <nav className="nav">
-          <a href="#categories">{t.nav[0]}</a>
-          <a href="#products">{t.nav[1]}</a>
+          <button className="nav-button" onClick={() => goToSection('categories')}>
+            {t.nav[0]}
+          </button>
+          <button className="nav-button" onClick={() => goToSection('products')}>
+            {t.nav[1]}
+          </button>
           <button className="nav-button" onClick={() => setIsAdminPage(true)}>
             {t.nav[2]}
           </button>
@@ -969,7 +1181,7 @@ function App() {
             </>
           )}
           {isAdminPage && (
-            <button className="ghost" onClick={() => setIsAdminPage(false)}>
+            <button className="ghost" onClick={() => goToSection('products')}>
               {lang === 'fi' ? 'Takaisin kauppaan' : 'Back to store'}
             </button>
           )}
@@ -991,8 +1203,8 @@ function App() {
               <h1>{t.adminTitle}</h1>
               <p className="muted">
                 {lang === 'fi'
-                  ? 'Kirjaudu admin-tunnuksilla ja hallinnoi koko tuotekatalogia.'
-                  : 'Login with admin credentials and manage the full product catalog.'}
+                  ? 'Kirjaudu sisään hallintapaneeliin.'
+                  : 'Sign in to the management panel.'}
               </p>
             </div>
             {!adminAuthed ? (
@@ -1013,7 +1225,7 @@ function App() {
                   <button className="primary" type="button" onClick={handleAdminLogin}>
                     {t.adminLogin.login}
                   </button>
-                  <span className="muted small">{t.adminLogin.hint}</span>
+                  {t.adminLogin.hint ? <span className="muted small">{t.adminLogin.hint}</span> : null}
                 </div>
               </div>
             ) : (
@@ -1180,6 +1392,66 @@ function App() {
                       <p className="muted">{lang === 'fi' ? 'Ei tuotteita tällä haulla.' : 'No products for this search.'}</p>
                     )}
                   </div>
+
+                  <div className="admin-orders">
+                    <div className="admin-orders-head">
+                      <h3>{lang === 'fi' ? 'Tilaukset' : 'Orders'}</h3>
+                      <button className="ghost tiny" type="button" onClick={() => void loadAdminOrders()} disabled={adminOrdersLoading}>
+                        {lang === 'fi' ? 'P?ivit?' : 'Refresh'}
+                      </button>
+                    </div>
+                    {adminOrdersError && <div className="error">{adminOrdersError}</div>}
+                    {adminOrdersLoading ? (
+                      <p className="muted">{lang === 'fi' ? 'Haetaan tilauksia...' : 'Loading orders...'}</p>
+                    ) : adminOrders.length === 0 ? (
+                      <p className="muted">{lang === 'fi' ? 'Ei tilauksia viel?.' : 'No orders yet.'}</p>
+                    ) : (
+                      <div className="admin-orders-list">
+                        {adminOrders.map((order) => (
+                          <div key={order.id} className="admin-order-card">
+                            <div className="admin-order-top">
+                              <div>
+                                <strong>{order.id}</strong>
+                                <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
+                              </div>
+                              <span className={`order-badge ${order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
+                                {order.status === 'shipped'
+                                  ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
+                                  : (lang === 'fi' ? 'Uusi' : 'New')}
+                              </span>
+                            </div>
+                            <p className="small">
+                              <strong>{order.customer.company}</strong> {'\u00B7'} {order.customer.contact} {'\u00B7'} {order.customer.email}
+                            </p>
+                            <p className="muted small">{order.customer.address}, {order.customer.zip} {order.customer.city}</p>
+                            <div className="admin-order-items">
+                              {order.items.map((item) => (
+                                <div key={`${order.id}-${item.productId}-${item.name}`} className="admin-order-item">
+                                  <span>{item.name}</span>
+                                  <span>{item.quantity} {'\u00D7'} {formatPrice(item.unitPrice, lang)} {'\u20AC'}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="admin-order-footer">
+                              <strong>{lang === 'fi' ? 'Yhteens\u00E4' : 'Total'}: {formatPrice(order.total, lang)} {'\u20AC'}</strong>
+                              <button
+                                className="ghost tiny"
+                                type="button"
+                                disabled={order.status === 'shipped' || shipActionOrderId === order.id}
+                                onClick={() => void markOrderShipped(order.id)}
+                              >
+                                {order.status === 'shipped'
+                                  ? (lang === 'fi' ? 'L\u00E4hetetty' : 'Shipped')
+                                  : shipActionOrderId === order.id
+                                    ? (lang === 'fi' ? 'L\u00E4hetet\u00E4\u00E4n...' : 'Sending...')
+                                    : (lang === 'fi' ? 'Merkitse matkalla + email' : 'Mark shipped + email')}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -1273,17 +1545,17 @@ function App() {
           </section>
         ) : (
           <>
-        <section className="hero" id="home">
+        <section className="hero" id="home" style={heroStyle}>
           <h1>{t.heroTitle}</h1>
           <p>{t.heroText}</p>
           <div className="cta">
-            <button className="primary">{t.ctaShop}</button>
-            <button className="ghost">{t.ctaAccount}</button>
+            <button className="primary" onClick={() => goToSection('products')}>
+              {t.ctaShop}
+            </button>
           </div>
         </section>
 
         <section className="section" id="categories">
-          <h2>{t.categoriesTitle}</h2>
           <div className="category-grid">
             <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
               <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
@@ -1481,6 +1753,7 @@ function App() {
                       <div className="order-success-check" aria-hidden="true">✓</div>
                       <h3>{lang === 'fi' ? 'Tilaus valmis' : 'Order complete'}</h3>
                       <p>{t.checkoutSuccess}</p>
+                      {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
                       <div className="order-success-actions">
                         <button className="primary" type="button" onClick={closeCheckout}>
                           {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'}
@@ -1562,8 +1835,8 @@ function App() {
                           <button className="ghost" type="button" onClick={() => setCheckoutStep(1)}>
                             {t.checkoutBack}
                           </button>
-                          <button className="primary" type="button" onClick={handleOrder}>
-                            {t.form.order}
+                          <button className="primary" type="button" onClick={handleOrder} disabled={placingOrder}>
+                            {placingOrder ? (lang === 'fi' ? 'Lähetetään...' : 'Sending...') : (lang === 'fi' ? 'Lähetä tilaus' : 'Send order')}
                           </button>
                         </div>
                       </>
