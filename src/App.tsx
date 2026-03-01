@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
-import brandLogo from './assets/paperitukkuLogo.jpg'
+import brandLogo from './assets/paperitukkuLogo.png'
 import heroBgImage from './assets/high-angle-hand-disinfecting-laptop-desk.jpg'
 
 type Lang = 'fi' | 'en'
@@ -43,6 +43,12 @@ type CheckoutForm = {
   billingCompany: string
   billingAddress: string
   notes: string
+}
+
+type CategoryDef = {
+  id: string
+  nameFi: string
+  nameEn: string
 }
 
 type OrderStatus = 'new' | 'shipped'
@@ -155,7 +161,7 @@ const deepFixText = <T,>(input: T): T => {
 const rawText = {
   fi: {
     nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
-    heroTitle: 'Tervetuloa Paperitukkuun',
+    heroTitle: 'Tervetuloa Suomen Paperitukkuun',
     heroText: 'Tilaa laskulla saniteettitarvikkeet, paperituotteet ja paljon muuta helposti.',
     ctaShop: 'Selaa tuotteita',
     ctaAccount: 'Pyydä yritystili',
@@ -230,7 +236,7 @@ const rawText = {
       logout: 'Kirjaudu ulos',
     },
     footer: {
-      brand: 'Paperitukku',
+      brand: 'Suomen Paperitukku',
       service: 'Asiakaspalvelu',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
@@ -241,7 +247,7 @@ const rawText = {
   },
   en: {
     nav: ['Categories', 'Products', 'Login'],
-    heroTitle: 'Paperitukku',
+    heroTitle: 'Suomen Paperitukku',
     heroText: 'Order sanitary supplies for your business. Add to cart, fill delivery details, and order by invoice.',
     ctaShop: 'Browse products',
     ctaAccount: 'Request company account',
@@ -316,7 +322,7 @@ const rawText = {
       logout: 'Log out',
     },
     footer: {
-      brand: 'Paperitukku',
+      brand: 'Suomen Paperitukku',
       service: 'Customer service',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
@@ -492,9 +498,21 @@ const adminCreds = {
 
 const productStorageKey = 'saniteetti-products-v1'
 const categoriesStorageKey = 'saniteetti-categories-v1'
-const pageSize = 12
-const defaultCategories = ['WC-paperit', 'Käsipyyhkeet', 'Saippuat', 'Puhdistus', 'Jätesäkit']
+const pageSize = 16
+const defaultCategories: CategoryDef[] = [
+  { id: 'WC-paperit', nameFi: 'WC-paperit', nameEn: 'Toilet paper' },
+  { id: 'K?sipyyhkeet', nameFi: 'K?sipyyhkeet', nameEn: 'Hand towels' },
+  { id: 'Saippuat', nameFi: 'Saippuat', nameEn: 'Soaps' },
+  { id: 'Puhdistus', nameFi: 'Puhdistus', nameEn: 'Cleaning' },
+  { id: 'J?tes?kit', nameFi: 'J?tes?kit', nameEn: 'Waste bags' },
+]
 const vatMultiplier = 1.255
+const categoryAliases = defaultCategories.reduce<Record<string, string>>((acc, item) => {
+  acc[item.id] = item.id
+  acc[item.nameFi] = item.id
+  acc[item.nameEn] = item.id
+  return acc
+}, { Other: 'Muut', Muut: 'Muut' })
 
 const getProductIdFromUrl = () => {
   if (typeof window === 'undefined') {
@@ -555,10 +573,32 @@ const formatDelivery = (value: number, lang: Lang) => {
 
 const grossPrice = (value: number) => value * vatMultiplier
 
+const normalizeCategoryId = (rawCategory: string) => {
+  const trimmed = rawCategory.trim()
+  if (!trimmed) {
+    return 'Muut'
+  }
+  return categoryAliases[trimmed] ?? trimmed
+}
+
+const normalizeCategoryDef = (item: CategoryDef | string): CategoryDef => {
+  if (typeof item === 'string') {
+    const id = normalizeCategoryId(item)
+    return { id, nameFi: id, nameEn: id }
+  }
+  const id = normalizeCategoryId(item.id || item.nameFi || item.nameEn)
+  return {
+    id,
+    nameFi: item.nameFi?.trim() || id,
+    nameEn: item.nameEn?.trim() || item.nameFi?.trim() || id,
+  }
+}
+
 const normalizeProduct = (product: Product): Product => {
   const images = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image]
   return {
     ...product,
+    category: normalizeCategoryId(product.category),
     image: images[0],
     images,
   }
@@ -578,7 +618,7 @@ function App() {
     }
     const raw = window.localStorage.getItem(productStorageKey)
     if (!raw) {
-      return products.fi
+      return products.fi.map(normalizeProduct)
     }
     try {
       const parsed = JSON.parse(raw) as Product[]
@@ -590,7 +630,7 @@ function App() {
     }
     return products.fi.map(normalizeProduct)
   })
-  const [categories, setCategories] = useState<string[]>(() => {
+  const [categories, setCategories] = useState<CategoryDef[]>(() => {
     if (typeof window === 'undefined') {
       return defaultCategories
     }
@@ -599,9 +639,9 @@ function App() {
       return defaultCategories
     }
     try {
-      const parsed = JSON.parse(raw) as string[]
+      const parsed = JSON.parse(raw) as Array<string | CategoryDef>
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed
+        return parsed.map(normalizeCategoryDef)
       }
     } catch {
       // Fall back to defaults if persisted value is invalid.
@@ -624,6 +664,7 @@ function App() {
   const [adminQuery, setAdminQuery] = useState('')
   const [adminPage, setAdminPage] = useState(1)
   const [adminCategoryName, setAdminCategoryName] = useState('')
+  const [adminCategoryNameEn, setAdminCategoryNameEn] = useState('')
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [detailImageIndex, setDetailImageIndex] = useState(0)
   const [adminImageUrl, setAdminImageUrl] = useState('')
@@ -663,11 +704,27 @@ function App() {
   const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
   const categoriesForFilters = categories
+  const categoryMap = useMemo(() => {
+    return categories.reduce<Record<string, CategoryDef>>((acc, item) => {
+      acc[item.id] = item
+      return acc
+    }, {})
+  }, [categories])
+  const getCategoryLabel = (categoryId: string) => {
+    const match = categoryMap[categoryId]
+    if (!match) {
+      return categoryId
+    }
+    return lang === 'fi' ? match.nameFi : match.nameEn
+  }
 
   const filteredProducts = useMemo(() => {
     const query = productQuery.trim().toLowerCase()
     let next = productCatalog.filter((item) => {
-      const haystack = `${item.name} ${item.sku} ${item.description} ${item.category}`.toLowerCase()
+      const categoryTerms = categoryMap[item.category]
+        ? `${categoryMap[item.category].nameFi} ${categoryMap[item.category].nameEn}`
+        : item.category
+      const haystack = `${item.name} ${item.sku} ${item.description} ${item.category} ${categoryTerms}`.toLowerCase()
       const matchesQuery = query === '' || haystack.includes(query)
       const matchesCategory = activeCategory === 'all' || item.category === activeCategory
       return matchesQuery && matchesCategory
@@ -680,7 +737,7 @@ function App() {
     }
 
     return next
-  }, [activeCategory, lang, productCatalog, productQuery, sortBy])
+  }, [activeCategory, categoryMap, lang, productCatalog, productQuery, sortBy])
 
   const totalCount = filteredProducts.length
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
@@ -1016,7 +1073,7 @@ function App() {
   const saveAdminProduct = () => {
     const name = adminProductForm.name.trim()
     const sku = adminProductForm.sku.trim()
-    const category = adminProductForm.category.trim()
+    const category = normalizeCategoryId(adminProductForm.category)
     const price = Number(adminProductForm.price)
     const stock = Number(adminProductForm.stock)
 
@@ -1045,8 +1102,8 @@ function App() {
       }
       return [payload, ...prev]
     })
-    if (!categories.includes(category)) {
-      setCategories((prev) => [...prev, category])
+    if (!categories.some((item) => item.id === category)) {
+      setCategories((prev) => [...prev, { id: category, nameFi: category, nameEn: category }])
     }
 
     setAdminError('')
@@ -1116,35 +1173,46 @@ function App() {
   }
 
   const addCategory = () => {
-    const next = adminCategoryName.trim()
-    if (!next) {
+    const nameFi = adminCategoryName.trim()
+    const nameEn = adminCategoryNameEn.trim()
+    if (!nameFi) {
       return
     }
-    if (categories.includes(next)) {
+    if (categories.some((item) => item.id === nameFi || item.nameFi === nameFi || item.nameEn === nameEn)) {
       setAdminError(lang === 'fi' ? 'Kategoria on jo olemassa.' : 'Category already exists.')
       return
     }
-    setCategories((prev) => [...prev, next])
+    setCategories((prev) => [...prev, { id: nameFi, nameFi, nameEn: nameEn || nameFi }])
     setAdminCategoryName('')
+    setAdminCategoryNameEn('')
     setAdminError('')
   }
 
-  const deleteCategory = (name: string) => {
-    setCategories((prev) => prev.filter((item) => item !== name))
+  const deleteCategory = (categoryId: string) => {
+    setCategories((prev) => {
+      const next = prev.filter((item) => item.id !== categoryId)
+      if (!next.some((item) => item.id === 'Muut')) {
+        next.push({ id: 'Muut', nameFi: 'Muut', nameEn: 'Other' })
+      }
+      return next
+    })
     setProductCatalog((prev) =>
-      prev.map((item) => (item.category === name ? { ...item, category: lang === 'fi' ? 'Muut' : 'Other' } : item))
+      prev.map((item) => (item.category === categoryId ? { ...item, category: 'Muut' } : item))
     )
-    if (activeCategory === name) {
+    if (activeCategory === categoryId) {
       setActiveCategory('all')
     }
   }
 
   const adminFilteredProducts = useMemo(() => {
     const q = adminQuery.trim().toLowerCase()
-    return productCatalog.filter((item) =>
-      q === '' ? true : `${item.name} ${item.sku} ${item.category}`.toLowerCase().includes(q)
-    )
-  }, [adminQuery, productCatalog])
+    return productCatalog.filter((item) => {
+      const categoryTerms = categoryMap[item.category]
+        ? `${categoryMap[item.category].nameFi} ${categoryMap[item.category].nameEn}`
+        : item.category
+      return q === '' ? true : `${item.name} ${item.sku} ${item.category} ${categoryTerms}`.toLowerCase().includes(q)
+    })
+  }, [adminQuery, categoryMap, productCatalog])
 
   const adminPages = Math.max(1, Math.ceil(adminFilteredProducts.length / pageSize))
   const safeAdminPage = Math.min(adminPage, adminPages)
@@ -1153,8 +1221,8 @@ function App() {
   return (
     <div className="page">
       <header className="top">
-        <button className="brand" onClick={goHome} aria-label="Paperitukku etusivu">
-          <img src={brandLogo} alt="Paperitukku" />
+        <button className="brand" onClick={goHome} aria-label="Suomen Paperitukku etusivu">
+          <img src={brandLogo} alt="Suomen Paperitukku" />
         </button>
         <nav className="nav">
           <button className="nav-button" onClick={() => goToSection('categories')}>
@@ -1257,16 +1325,21 @@ function App() {
                     >
                       <option value="">{lang === 'fi' ? 'Valitse kategoria' : 'Select category'}</option>
                       {categories.map((category) => (
-                        <option key={category} value={category}>
-                          {category}
+                        <option key={category.id} value={category.id}>
+                          {lang === 'fi' ? category.nameFi : category.nameEn}
                         </option>
                       ))}
                     </select>
                     <div className="admin-category-row">
                       <input
-                        placeholder={lang === 'fi' ? 'Uusi kategoria' : 'New category'}
+                        placeholder={lang === 'fi' ? 'Uusi kategoria (FI)' : 'New category (FI)'}
                         value={adminCategoryName}
                         onChange={(event) => setAdminCategoryName(event.target.value)}
+                      />
+                      <input
+                        placeholder={lang === 'fi' ? 'Kategorian nimi (EN)' : 'Category name (EN)'}
+                        value={adminCategoryNameEn}
+                        onChange={(event) => setAdminCategoryNameEn(event.target.value)}
                       />
                       <button className="ghost tiny" type="button" onClick={addCategory}>
                         {lang === 'fi' ? 'Lisää' : 'Add'}
@@ -1341,9 +1414,9 @@ function App() {
                 <div className="admin-list">
                   <div className="admin-categories-list">
                     {categories.map((category) => (
-                      <div key={category} className="admin-category-chip">
-                        <span>{category}</span>
-                        <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category)}>
+                      <div key={category.id} className="admin-category-chip">
+                        <span>{category.nameFi} / {category.nameEn}</span>
+                        <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category.id)}>
                           {lang === 'fi' ? 'Poista' : 'Delete'}
                         </button>
                       </div>
@@ -1373,7 +1446,7 @@ function App() {
                           <img className="admin-row-image" src={getProductImage(item)} alt={item.name} />
                           <div>
                             <strong>{item.name}</strong>
-                            <p className="muted small">{item.sku} · {item.category}</p>
+                            <p className="muted small">{item.sku} · {getCategoryLabel(item.category)}</p>
                           </div>
                         </div>
                         <div className="admin-row-meta">
@@ -1562,9 +1635,9 @@ function App() {
               <span className="muted">{productCatalog.length}</span>
             </button>
             {categoriesForFilters.map((item) => (
-              <button key={item} className={`category-card ${activeCategory === item ? 'active' : ''}`} onClick={() => setActiveCategory(item)}>
-                <strong>{item}</strong>
-                <span className="muted">{productCatalog.filter((product) => product.category === item).length}</span>
+              <button key={item.id} className={`category-card ${activeCategory === item.id ? 'active' : ''}`} onClick={() => setActiveCategory(item.id)}>
+                <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
+                <span className="muted">{productCatalog.filter((product) => product.category === item.id).length}</span>
               </button>
             ))}
           </div>
@@ -1616,11 +1689,11 @@ function App() {
                     </button>
                     {categoriesForFilters.map((item) => (
                       <button
-                        key={item}
-                        className={`ghost tiny ${activeCategory === item ? 'active-filter' : ''}`}
-                        onClick={() => setActiveCategory(item)}
+                        key={item.id}
+                        className={`ghost tiny ${activeCategory === item.id ? 'active-filter' : ''}`}
+                        onClick={() => setActiveCategory(item.id)}
                       >
-                        {item}
+                        {lang === 'fi' ? item.nameFi : item.nameEn}
                       </button>
                     ))}
                   </div>

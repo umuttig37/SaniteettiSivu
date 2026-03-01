@@ -18,12 +18,14 @@ html {
   justify-content: space-between;
   gap: 1.5rem;
   padding: 1.1rem 2.5rem;
+  height: 100px;
   border-bottom: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.92);
   backdrop-filter: blur(8px);
   position: sticky;
   top: 0;
   z-index: 10;
+  overflow: hidden;
 }
 
 .brand {
@@ -36,9 +38,10 @@ html {
 }
 
 .brand img {
-  height: 84px;
+  height: 142px;
   width: auto;
   display: block;
+  margin: -22px 0;
   transition: transform 0.22s ease;
 }
 
@@ -834,8 +837,13 @@ html {
 
 .admin-category-row {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
   gap: 0.5rem;
+  align-items: center;
+}
+
+.admin-category-row input {
+  min-width: 0;
 }
 
 .admin-login {
@@ -1237,7 +1245,8 @@ html {
   }
 
   .brand img {
-    height: 64px;
+    height: 112px;
+    margin: -12px 0;
   }
 
   .products-grid {
