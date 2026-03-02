@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
-import brandLogo from './assets/paperitukkuLogo.png'
+import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/high-angle-hand-disinfecting-laptop-desk.jpg'
 
 type Lang = 'fi' | 'en'
@@ -1231,9 +1231,6 @@ function App() {
           <button className="nav-button" onClick={() => goToSection('products')}>
             {t.nav[1]}
           </button>
-          <button className="nav-button" onClick={() => setIsAdminPage(true)}>
-            {t.nav[2]}
-          </button>
         </nav>
         <div className="actions">
           {!isAdminPage && (
@@ -1271,7 +1268,7 @@ function App() {
               <h1>{t.adminTitle}</h1>
               <p className="muted">
                 {lang === 'fi'
-                  ? 'Kirjaudu sisään hallintapaneeliin.'
+                  ? 'Kirjaudu sisään'
                   : 'Sign in to the management panel.'}
               </p>
             </div>
@@ -1771,6 +1768,16 @@ function App() {
           <p>{t.footer.service}</p>
           <p>{t.footer.phone}</p>
           <p>{t.footer.email}</p>
+          <button
+            className="footer-admin-link"
+            type="button"
+            onClick={() => {
+              setIsAdminPage(true)
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+          >
+            {t.nav[2]}
+          </button>
         </div>
         <div>
           <p>{t.footer.address}</p>
