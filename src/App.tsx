@@ -204,7 +204,10 @@ const rawText = {
     ],
     categoriesTitle: 'Kategoriat',
     productsTitle: 'Tuotteet',
-    productsNote: 'Toimitus 1–3 arkipäivässä. Lasku 14 pv.',
+    productsNote: 'Toimitus arkipäivässä',
+    productsBillingNote: 'Maksu laskulla 14 pv',
+    productsShippingNote: 'Toimitus: 15 € alle 250 € tilauksille',
+    productsFreeShippingNote: 'Ilmainen toimitus yli 250 € tilauksille',
     productsShown: 'Näkyvillä',
     filtersTitle: 'Rajaa tuotteita',
     clearFilters: 'Tyhjennä kaikki',
@@ -290,7 +293,10 @@ const rawText = {
     ],
     categoriesTitle: 'Categories',
     productsTitle: 'Products',
-    productsNote: 'Delivery in 1–3 business days. Net 14 days.',
+    productsNote: 'Delivery on business days',
+    productsBillingNote: 'Payment by invoice in 14 days',
+    productsShippingNote: 'Delivery: 15 € for orders below 250 €',
+    productsFreeShippingNote: 'Free delivery for orders above 250 €',
     productsShown: 'Showing',
     filtersTitle: 'Filters',
     clearFilters: 'Clear all',
@@ -2303,9 +2309,9 @@ function App() {
             <div>
               <h2>{t.productsTitle}</h2>
               <p className="muted">{t.productsNote}</p>
-              <p className="muted shipping-note">
-                {lang === 'fi' ? 'Toimitus 15 € alle 250 € tilauksille, yli 250 € ilmainen.' : 'Delivery is 15 € below 250 €, free above 250 €.'}
-              </p>
+              <p className="muted">{t.productsBillingNote}</p>
+              <p className="muted shipping-note">{t.productsShippingNote}</p>
+              <p className="muted shipping-note">{t.productsFreeShippingNote}</p>
             </div>
           </div>
           <div className="sort sort-floating">

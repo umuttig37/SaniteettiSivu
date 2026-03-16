@@ -251,7 +251,10 @@ const renderHomeMarkup = ({ catalog }) => {
           <div class="products-header">
             <div>
               <h2>Tuotteet</h2>
-              <p class="muted">WC-paperit, käsipaperit ja saniteettitarvikkeet yrityksille nopeasti koko Suomeen.</p>
+              <p class="muted">Toimitus arkipäivässä</p>
+              <p class="muted">Maksu laskulla 14 pv</p>
+              <p class="muted shipping-note">Toimitus: 15 € alle 250 € tilauksille</p>
+              <p class="muted shipping-note">Ilmainen toimitus yli 250 € tilauksille</p>
             </div>
           </div>
           <div class="grid products-grid">
