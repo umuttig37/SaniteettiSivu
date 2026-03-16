@@ -295,6 +295,8 @@ const normalizeIncomingProduct = (body, productId = null) => {
     images: Array.isArray(body.images) ? body.images.filter((item) => typeof item === 'string' && item.trim() !== '') : [],
     image: body.image,
     description: String(body.description ?? '').trim(),
+    featured: Boolean(body.featured),
+    featuredRank: body.featured ? Number(body.featuredRank ?? 0) : undefined,
     seoTitle: String(body.seoTitle ?? '').trim() || undefined,
     metaDescription: String(body.metaDescription ?? '').trim() || undefined,
     searchKeywords: searchKeywords.length > 0 ? searchKeywords : undefined,

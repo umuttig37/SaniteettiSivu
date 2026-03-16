@@ -75,6 +75,30 @@ const formatPrice = (value) =>
 
 const stripTags = (value) => String(value ?? '').replace(/<[^>]*>/g, '').trim()
 
+const compareFeaturedPriority = (a, b) => {
+  const aFeatured = Boolean(a?.featured)
+  const bFeatured = Boolean(b?.featured)
+
+  if (aFeatured !== bFeatured) {
+    return aFeatured ? -1 : 1
+  }
+
+  if (aFeatured && bFeatured) {
+    const rankDiff = Number(a?.featuredRank ?? 999) - Number(b?.featuredRank ?? 999)
+    if (rankDiff !== 0) {
+      return rankDiff
+    }
+  }
+
+  return String(a?.name ?? '').localeCompare(String(b?.name ?? ''), 'fi')
+}
+
+const getFeaturedProducts = (products, limit = 4) =>
+  [...products]
+    .filter((item) => item?.featured)
+    .sort(compareFeaturedPriority)
+    .slice(0, limit)
+
 const productSeo = (siteUrl, product, category) => {
   const canonical = absoluteUrl(siteUrl, `/tuote/${product.slug}`)
   const title = product.seoTitle || `${product.name} | Suomen Paperitukku`
@@ -173,7 +197,11 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     },
   }
 
-  const featuredProducts = catalog.products.slice(0, 8).map((product, index) => ({
+  const homeProducts = getFeaturedProducts(catalog.products, 8)
+  const itemListProducts =
+    homeProducts.length > 0 ? homeProducts : [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
+
+  const featuredProducts = itemListProducts.map((product, index) => ({
     '@type': 'ListItem',
     position: index + 1,
     url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
@@ -200,7 +228,7 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
   const itemList = {
     '@context': 'https://schema.org',
     '@type': 'ItemList',
-    name: 'Suosittuja tuotteita',
+    name: homeProducts.length > 0 ? 'Suosittelemme juuri nyt' : 'Suosittuja tuotteita',
     itemListElement: featuredProducts,
   }
 
@@ -210,7 +238,8 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
 const getProductAlt = (product) => `${product.name} yrityksille`
 
 const renderHomeMarkup = ({ catalog }) => {
-  const productCards = catalog.products.slice(0, 8)
+  const featuredCards = getFeaturedProducts(catalog.products, 4)
+  const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
   const categories = catalog.categories.filter((item) => item.id !== 'muut')
 
   return `
@@ -246,6 +275,48 @@ const renderHomeMarkup = ({ catalog }) => {
               .join('')}
           </div>
         </section>
+
+        ${
+          featuredCards.length > 0
+            ? `
+              <section class="section featured-section">
+                <div class="products-header">
+                  <div>
+                    <h2>Suosittelemme juuri nyt</h2>
+                    <p class="muted">Nosta tärkeimmät tuotteet näkyviin administa ja järjestä ne haluamaasi järjestykseen.</p>
+                  </div>
+                </div>
+                <div class="grid featured-grid">
+                  ${featuredCards
+                    .map(
+                      (product) => `
+                        <article class="card product-card featured-card">
+                          <a class="product-card-button" href="/tuote/${encodeURIComponent(product.slug)}">
+                            <div class="product-link">
+                              <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" />
+                              <h3 class="product-name">${escapeHtml(product.name)}</h3>
+                            </div>
+                            <div class="product-body">
+                              <div class="availability">
+                                <span class="status ${product.stock > 0 ? 'status-ok' : 'status-low'}">
+                                  <span class="dot"></span> ${product.stock > 0 ? 'Varastossa' : 'Loppu'}
+                                </span>
+                              </div>
+                              <div class="price-block">
+                                <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
+                                <span class="price-top">${formatPrice(product.price)} ${escapeHtml(product.priceUnit)} (alv 0%)</span>
+                              </div>
+                            </div>
+                          </a>
+                        </article>
+                      `,
+                    )
+                    .join('')}
+                </div>
+              </section>
+            `
+            : ''
+        }
 
         <section class="section products-section" id="products">
           <div class="products-header">

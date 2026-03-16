@@ -21,6 +21,8 @@ type Product = {
   seoTitle?: string
   metaDescription?: string
   searchKeywords?: string[]
+  featured?: boolean
+  featuredRank?: number
   createdAt?: string
   updatedAt?: string
 }
@@ -39,6 +41,8 @@ type AdminProductForm = {
   seoTitle: string
   metaDescription: string
   searchKeywords: string
+  featured: boolean
+  featuredRank: string
 }
 
 type CheckoutForm = {
@@ -208,6 +212,8 @@ const rawText = {
     productsBillingNote: 'Maksu laskulla 14 pv',
     productsShippingNote: 'Toimitus: 15 € alle 250 € tilauksille',
     productsFreeShippingNote: 'Ilmainen toimitus yli 250 € tilauksille',
+    featuredTitle: 'Suosittelemme juuri nyt',
+    featuredText: 'Nosta tärkeimmät tuotteet näkyviin administa ja järjestä ne haluamaasi järjestykseen.',
     productsShown: 'Näkyvillä',
     filtersTitle: 'Rajaa tuotteita',
     clearFilters: 'Tyhjennä kaikki',
@@ -297,6 +303,8 @@ const rawText = {
     productsBillingNote: 'Payment by invoice in 14 days',
     productsShippingNote: 'Delivery: 15 € for orders below 250 €',
     productsFreeShippingNote: 'Free delivery for orders above 250 €',
+    featuredTitle: 'Recommended right now',
+    featuredText: 'Highlight priority products from admin and control their display order.',
     productsShown: 'Showing',
     filtersTitle: 'Filters',
     clearFilters: 'Clear all',
@@ -667,6 +675,8 @@ const normalizeProduct = (product: Product): Product => {
     searchKeywords: Array.isArray(product.searchKeywords)
       ? product.searchKeywords.map((item) => item.trim()).filter(Boolean)
       : [],
+    featured: Boolean(product.featured),
+    featuredRank: Number.isFinite(Number(product.featuredRank)) ? Number(product.featuredRank) : 999,
   }
 }
 
@@ -682,6 +692,30 @@ const normalizeCatalog = (payload?: Partial<CatalogPayload> | null): CatalogPayl
 const getInitialCatalog = () => normalizeCatalog(typeof window !== 'undefined' ? window.__INITIAL_CATALOG__ : null)
 
 const getProductHref = (product: Product) => `/tuote/${encodeURIComponent(product.slug || slugify(product.name || product.id) || product.id)}`
+
+const compareFeaturedPriority = (a: Product, b: Product) => {
+  const aFeatured = Boolean(a.featured)
+  const bFeatured = Boolean(b.featured)
+
+  if (aFeatured !== bFeatured) {
+    return aFeatured ? -1 : 1
+  }
+
+  if (aFeatured && bFeatured) {
+    const rankDiff = (a.featuredRank ?? 999) - (b.featuredRank ?? 999)
+    if (rankDiff !== 0) {
+      return rankDiff
+    }
+  }
+
+  return a.name.localeCompare(b.name, 'fi')
+}
+
+const getFeaturedProducts = (items: Product[], limit = 4) =>
+  [...items]
+    .filter((item) => item.featured)
+    .sort(compareFeaturedPriority)
+    .slice(0, limit)
 
 const getCategoryHref = (category: CategoryDef) => `/?category=${encodeURIComponent(category.slug)}`
 
@@ -798,7 +832,7 @@ const applyHomeSeo = (products: Product[] = []) => {
   upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: `${siteUrl}/` })
   upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: `${siteUrl}/` })
 
-  const featuredProducts = products.slice(0, 8).map((product, index) => ({
+  const featuredProducts = (getFeaturedProducts(products, 8).length > 0 ? getFeaturedProducts(products, 8) : [...products].sort(compareFeaturedPriority).slice(0, 8)).map((product, index) => ({
     '@type': 'ListItem',
     position: index + 1,
     url: `${siteUrl}${getProductHref(product)}`,
@@ -1009,6 +1043,8 @@ function App() {
     seoTitle: '',
     metaDescription: '',
     searchKeywords: '',
+    featured: false,
+    featuredRank: '',
   })
   const [adminSeoTouched, setAdminSeoTouched] = useState(false)
   const [adminMetaTouched, setAdminMetaTouched] = useState(false)
@@ -1081,7 +1117,9 @@ function App() {
       return matchesQuery && matchesCategory
     })
 
-    if (sortBy === 'price') {
+    if (sortBy === 'relevance') {
+      next = [...next].sort(compareFeaturedPriority)
+    } else if (sortBy === 'price') {
       next = [...next].sort((a, b) => a.price - b.price)
     } else if (sortBy === 'name') {
       next = [...next].sort((a, b) => a.name.localeCompare(b.name, lang === 'fi' ? 'fi' : 'en'))
@@ -1098,7 +1136,8 @@ function App() {
   const selectedProduct = routeState.slug ? productCatalog.find((item) => item.slug === routeState.slug) ?? null : null
   const selectedCategory = selectedProduct ? categoryMap[selectedProduct.category] : undefined
   const selectedProductImages = selectedProduct ? (selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]) : []
-  const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : []
+  const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : [] 
+  const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 4), [productCatalog])
 
   useEffect(() => {
     let active = true
@@ -1552,6 +1591,8 @@ function App() {
       seoTitle: '',
       metaDescription: '',
       searchKeywords: '',
+      featured: false,
+      featuredRank: '',
     })
     setAdminImageUrl('')
     setAdminSeoTouched(false)
@@ -1587,6 +1628,8 @@ function App() {
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean),
+      featured: adminProductForm.featured,
+      featuredRank: adminProductForm.featured ? Number(adminProductForm.featuredRank || 0) : undefined,
     }
 
     try {
@@ -1666,6 +1709,8 @@ function App() {
       seoTitle: product.seoTitle ?? generatedTitle,
       metaDescription: product.metaDescription ?? generatedDescription,
       searchKeywords: (product.searchKeywords ?? []).join(', ') || generatedKeywords,
+      featured: Boolean(product.featured),
+      featuredRank: product.featured ? String(product.featuredRank ?? 0) : '',
     })
     setAdminImageUrl('')
     setAdminSeoTouched(Boolean(product.seoTitle && product.seoTitle !== generatedTitle))
@@ -1764,7 +1809,7 @@ function App() {
         ? `${categoryMap[item.category].nameFi} ${categoryMap[item.category].nameEn}`
         : item.category
       return q === '' ? true : `${item.name} ${item.sku} ${item.category} ${categoryTerms}`.toLowerCase().includes(q)
-    })
+    }).sort(compareFeaturedPriority)
   }, [adminQuery, categoryMap, productCatalog])
 
   const adminPages = Math.max(1, Math.ceil(adminFilteredProducts.length / pageSize))
@@ -1933,6 +1978,30 @@ function App() {
                       onChange={(event) => setAdminProductForm((prev) => ({ ...prev, priceUnit: event.target.value }))}
                     />
                   </div>
+                  <div className="admin-form-row admin-priority-row">
+                    <label className="admin-check">
+                      <input
+                        type="checkbox"
+                        checked={adminProductForm.featured}
+                        onChange={(event) =>
+                          setAdminProductForm((prev) => ({
+                            ...prev,
+                            featured: event.target.checked,
+                            featuredRank: event.target.checked ? (prev.featuredRank || '1') : '',
+                          }))
+                        }
+                      />
+                      <span>{lang === 'fi' ? 'Nosta suosituksi etusivulle' : 'Show in featured section'}</span>
+                    </label>
+                    <input
+                      placeholder={lang === 'fi' ? 'Järjestys (1 = ensimmäinen)' : 'Order (1 = first)'}
+                      type="number"
+                      min={1}
+                      value={adminProductForm.featuredRank}
+                      disabled={!adminProductForm.featured}
+                      onChange={(event) => setAdminProductForm((prev) => ({ ...prev, featuredRank: event.target.value }))}
+                    />
+                  </div>
                   <input
                     placeholder={lang === 'fi' ? 'Yksikköhuomio (valinnainen)' : 'Unit note (optional)'}
                     value={adminProductForm.unitNote}
@@ -2072,6 +2141,7 @@ function App() {
                           <div>
                             <strong>{item.name}</strong>
                             <p className="muted small">{item.sku} · {getCategoryLabel(item.category)}</p>
+                            {item.featured && <p className="admin-featured-badge">{lang === 'fi' ? 'Suositeltu' : 'Featured'} #{item.featuredRank ?? 0}</p>}
                           </div>
                         </div>
                         <div className="admin-row-meta">
@@ -2303,6 +2373,52 @@ function App() {
             ))}
           </div>
         </section>
+
+        {featuredHomeProducts.length > 0 && (
+          <section className="section featured-section">
+            <div className="products-header">
+              <div>
+                <h2>{t.featuredTitle}</h2>
+                <p className="muted">{t.featuredText}</p>
+              </div>
+            </div>
+            <div className="grid featured-grid">
+              {featuredHomeProducts.map((item) => (
+                <div key={`featured-${item.id}`} className="card product-card featured-card">
+                  <a
+                    className="product-card-button"
+                    href={getProductHref(item)}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      openProduct(item)
+                    }}
+                  >
+                    <div className="product-link">
+                      <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
+                      <strong className="product-name">{item.name}</strong>
+                    </div>
+                    <div className="product-body">
+                      <div className="availability">
+                        <span className={`status status-${getStockTone(item.stock)}`}>
+                          <span className="dot" /> {getStockLabel(item.stock, lang)}
+                        </span>
+                      </div>
+                      <div className="price-block">
+                        <span className="muted">
+                          {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                        </span>
+                        <span className="price-top">
+                          {formatPrice(item.price, lang)} {item.priceUnit} {t.product.vatNote}
+                        </span>
+                        {item.unitNote && <span className="muted">{item.unitNote}</span>}
+                      </div>
+                    </div>
+                  </a>
+                </div>
+              ))}
+            </div>
+          </section>
+        )}
 
         <section className="section products-section" id="products">
           <div className="products-header">

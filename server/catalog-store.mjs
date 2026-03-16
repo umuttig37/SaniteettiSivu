@@ -134,6 +134,8 @@ const normalizeProduct = (product, categories, products) => {
     image: primaryImage,
     images: images.length > 0 ? images : [primaryImage],
     description: String(product?.description ?? product?.name ?? '').trim(),
+    featured: Boolean(product?.featured),
+    featuredRank: Number.isFinite(Number(product?.featuredRank)) ? Number(product.featuredRank) : 999,
     seoTitle: (() => {
       const customSeoTitle = String(product?.seoTitle ?? '').trim()
       return customSeoTitle && !customSeoTitle.includes('\u2026') ? customSeoTitle : buildSeoTitle(product, categoryId)
