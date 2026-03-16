@@ -169,10 +169,23 @@ const normalizeCatalog = (catalog) => {
 
 export const ensureCatalogStore = () => {
   ensureDataDir()
+  const seed = fs.existsSync(seedFile) ? normalizeCatalog(readJson(seedFile)) : normalizeCatalog(fallbackCatalog)
+
   if (!fs.existsSync(catalogFile)) {
-    const seed = fs.existsSync(seedFile) ? readJson(seedFile) : fallbackCatalog
-    const normalized = normalizeCatalog(seed)
-    writeJson(catalogFile, normalized)
+    writeJson(catalogFile, seed)
+    return
+  }
+
+  try {
+    const current = normalizeCatalog(readJson(catalogFile))
+    const hasOnlyFallbackCategory = current.categories.length === 1 && current.categories[0]?.id === 'muut'
+    const shouldBootstrapFromSeed = current.products.length === 0 && hasOnlyFallbackCategory && seed.products.length > 0
+
+    if (shouldBootstrapFromSeed) {
+      writeJson(catalogFile, seed)
+    }
+  } catch {
+    writeJson(catalogFile, seed)
   }
 }
 
