@@ -1,0 +1,153 @@
+{
+  "categories": [
+    {
+      "id": "wc-paperit",
+      "slug": "wc-paperit",
+      "nameFi": "WC-paperit",
+      "nameEn": "Toilet paper"
+    },
+    {
+      "id": "kasipyyhkeet",
+      "slug": "kasipyyhkeet",
+      "nameFi": "Käsipyyhkeet",
+      "nameEn": "Hand towels"
+    },
+    {
+      "id": "saippuat",
+      "slug": "saippuat",
+      "nameFi": "Saippuat",
+      "nameEn": "Soaps"
+    },
+    {
+      "id": "puhdistus",
+      "slug": "puhdistus",
+      "nameFi": "Puhdistus",
+      "nameEn": "Cleaning"
+    },
+    {
+      "id": "jatesakit",
+      "slug": "jatesakit",
+      "nameFi": "Jätesäkit",
+      "nameEn": "Waste bags"
+    },
+    {
+      "id": "muut",
+      "slug": "muut",
+      "nameFi": "Muut",
+      "nameEn": "Other"
+    }
+  ],
+  "products": [
+    {
+      "id": "wc",
+      "slug": "tork-h2-xpress-multifold-soft-kasipyyhe-2-ker-luonnonvalkoinen-3800-ark",
+      "name": "Tork H2 Xpress Multifold Soft käsipyyhe 2-ker. luonnonvalkoinen 3800 ark",
+      "category": "kasipyyhkeet",
+      "price": 21.55,
+      "priceUnit": "€ / säkki",
+      "unitNote": "5,67 € / 1000 ark",
+      "sku": "471103",
+      "stock": 140,
+      "image": "/products/hand-towel.svg",
+      "images": [
+        "/products/hand-towel.svg"
+      ],
+      "description": "Pehmeä ja imukykyinen käsipyyhe suurkulutukseen.",
+      "metaDescription": "Tork H2 Xpress Multifold Soft käsipyyhe yrityksille. Hinta 21,55 € / säkki, toimitus nopeasti laskulla.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "towel",
+      "slug": "tork-t4-universal-wc-paperi-2-krs-38-30m-42rll",
+      "name": "Tork T4 Universal wc-paperi 2-krs 38,30m/42rll",
+      "category": "wc-paperit",
+      "price": 15.86,
+      "priceUnit": "€ / säkki",
+      "unitNote": "9,94 € / 1000 m",
+      "sku": "472246",
+      "stock": 122,
+      "image": "/products/toilet-paper.svg",
+      "images": [
+        "/products/toilet-paper.svg"
+      ],
+      "description": "Luotettava peruspaperi yrityskäyttöön.",
+      "metaDescription": "Tork T4 Universal wc-paperi yrityksille. Hinta 15,86 € / säkki, nopea toimitus ja lasku 14 pv.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "soap",
+      "slug": "tork-h3-universal-kasipyyhe-c-taitto-2-krs-luonnonvalkoinen-2400-ark",
+      "name": "Tork H3 Universal käsipyyhe C-taitto 2-krs luonnonvalkoinen 2400 ark",
+      "category": "kasipyyhkeet",
+      "price": 18.68,
+      "priceUnit": "€ / säkki",
+      "unitNote": "7,78 € / 1000 ark",
+      "sku": "N953102",
+      "stock": 96,
+      "image": "/products/c-fold-towel.svg",
+      "images": [
+        "/products/c-fold-towel.svg"
+      ],
+      "description": "Laadukas taittopaperi annostelijoihin.",
+      "metaDescription": "Tork H3 Universal C-taitto käsipyyhe yrityksille. Hinta 18,68 € / säkki ja toimitus 1-3 arkipäivässä.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "spray",
+      "slug": "yleispuhdistussuihke-750-ml-sitrus",
+      "name": "Yleispuhdistussuihke 750 ml, sitrus",
+      "category": "puhdistus",
+      "price": 6.95,
+      "priceUnit": "€ / kpl",
+      "sku": "S71421",
+      "stock": 28,
+      "image": "/products/cleaning-spray.svg",
+      "images": [
+        "/products/cleaning-spray.svg"
+      ],
+      "description": "Raikas ja tehokas yleispuhdistaja pinnoille.",
+      "metaDescription": "Yleispuhdistussuihke 750 ml yrityksille. Hinta 6,95 € / kpl, sitruksen tuoksu ja nopea toimitus.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "bag",
+      "slug": "jatesakki-240-l-vahva-10-kpl",
+      "name": "Jätesäkki 240 L, vahva 10 kpl",
+      "category": "jatesakit",
+      "price": 8.9,
+      "priceUnit": "€ / rulla",
+      "sku": "B24010",
+      "stock": 88,
+      "image": "/products/waste-bag.svg",
+      "images": [
+        "/products/waste-bag.svg"
+      ],
+      "description": "Vahvat jätesäkit isoihin astioihin.",
+      "metaDescription": "Jätesäkki 240 litraa yrityksille. Hinta 8,90 € / rulla ja vahva laatu ammattikäyttöön.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    },
+    {
+      "id": "soap5",
+      "slug": "nestesaippua-5-l-hellavarainen",
+      "name": "Nestesaippua 5 L, hellävarainen",
+      "category": "saippuat",
+      "price": 14.9,
+      "priceUnit": "€ / kanisteri",
+      "sku": "S5001",
+      "stock": 8,
+      "image": "/products/liquid-soap.svg",
+      "images": [
+        "/products/liquid-soap.svg"
+      ],
+      "description": "Hellävarainen nestesaippua ammattilaiskäyttöön.",
+      "metaDescription": "Nestesaippua 5 litraa yrityksille. Hinta 14,90 € / kanisteri ja hellävarainen koostumus päivittäiseen käyttöön.",
+      "createdAt": "2026-03-15T00:00:00.000Z",
+      "updatedAt": "2026-03-15T00:00:00.000Z"
+    }
+  ]
+}

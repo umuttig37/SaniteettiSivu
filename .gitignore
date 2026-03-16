@@ -14,6 +14,7 @@ dist-ssr
 .env.*
 !*.env.example
 data/orders.json
+data/catalog.json
 
 
 

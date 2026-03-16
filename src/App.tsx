@@ -7,6 +7,7 @@ type Lang = 'fi' | 'en'
 
 type Product = {
   id: string
+  slug?: string
   name: string
   category: string
   price: number
@@ -17,6 +18,11 @@ type Product = {
   image: string
   images: string[]
   description: string
+  seoTitle?: string
+  metaDescription?: string
+  searchKeywords?: string[]
+  createdAt?: string
+  updatedAt?: string
 }
 
 type AdminProductForm = {
@@ -30,6 +36,9 @@ type AdminProductForm = {
   stock: string
   images: string[]
   description: string
+  seoTitle: string
+  metaDescription: string
+  searchKeywords: string
 }
 
 type CheckoutForm = {
@@ -47,8 +56,30 @@ type CheckoutForm = {
 
 type CategoryDef = {
   id: string
+  slug: string
   nameFi: string
   nameEn: string
+}
+
+type CatalogPayload = {
+  products: Product[]
+  categories: CategoryDef[]
+}
+
+type RouteState = {
+  type: 'home' | 'product'
+  slug: string | null
+  categorySlug: string | null
+  searchQuery: string | null
+  legacyProductId: string | null
+}
+
+declare global {
+  interface Window {
+    __INITIAL_CATALOG__?: CatalogPayload
+    __INITIAL_ROUTE__?: { type?: string; slug?: string } | null
+    __SITE_URL__?: string
+  }
 }
 
 type OrderStatus = 'new' | 'shipped'
@@ -496,29 +527,47 @@ const adminCreds = {
   pass: 'saniteetti123',
 }
 
-const productStorageKey = 'saniteetti-products-v1'
-const categoriesStorageKey = 'saniteetti-categories-v1'
 const pageSize = 16
 const defaultCategories: CategoryDef[] = [
-  { id: 'WC-paperit', nameFi: 'WC-paperit', nameEn: 'Toilet paper' },
-  { id: 'K?sipyyhkeet', nameFi: 'K?sipyyhkeet', nameEn: 'Hand towels' },
-  { id: 'Saippuat', nameFi: 'Saippuat', nameEn: 'Soaps' },
-  { id: 'Puhdistus', nameFi: 'Puhdistus', nameEn: 'Cleaning' },
-  { id: 'J?tes?kit', nameFi: 'J?tes?kit', nameEn: 'Waste bags' },
+  { id: 'wc-paperit', slug: 'wc-paperit', nameFi: 'WC-paperit', nameEn: 'Toilet paper' },
+  { id: 'kasipyyhkeet', slug: 'kasipyyhkeet', nameFi: 'Käsipyyhkeet', nameEn: 'Hand towels' },
+  { id: 'saippuat', slug: 'saippuat', nameFi: 'Saippuat', nameEn: 'Soaps' },
+  { id: 'puhdistus', slug: 'puhdistus', nameFi: 'Puhdistus', nameEn: 'Cleaning' },
+  { id: 'jatesakit', slug: 'jatesakit', nameFi: 'Jätesäkit', nameEn: 'Waste bags' },
+  { id: 'muut', slug: 'muut', nameFi: 'Muut', nameEn: 'Other' },
 ]
 const vatMultiplier = 1.255
 const categoryAliases = defaultCategories.reduce<Record<string, string>>((acc, item) => {
   acc[item.id] = item.id
+  acc[item.slug] = item.id
   acc[item.nameFi] = item.id
   acc[item.nameEn] = item.id
   return acc
-}, { Other: 'Muut', Muut: 'Muut' })
+}, { Other: 'muut', Muut: 'muut' })
 
-const getProductIdFromUrl = () => {
+const slugify = (value: string) =>
+  value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-{2,}/g, '-')
+
+const getRouteFromUrl = (): RouteState => {
   if (typeof window === 'undefined') {
-    return null
+    return { type: 'home', slug: null, categorySlug: null, searchQuery: null, legacyProductId: null }
   }
-  return new URLSearchParams(window.location.search).get('product')
+  const url = new URL(window.location.href)
+  const productMatch = url.pathname.match(/^\/tuote\/([^/]+)\/?$/)
+
+  return {
+    type: productMatch ? 'product' : 'home',
+    slug: productMatch ? decodeURIComponent(productMatch[1]) : null,
+    categorySlug: url.searchParams.get('category'),
+    searchQuery: url.searchParams.get('q'),
+    legacyProductId: url.searchParams.get('product'),
+  }
 }
 
 const getStockTone = (stock: number): 'ok' | 'warn' | 'low' => {
@@ -576,19 +625,24 @@ const grossPrice = (value: number) => value * vatMultiplier
 const normalizeCategoryId = (rawCategory: string) => {
   const trimmed = rawCategory.trim()
   if (!trimmed) {
-    return 'Muut'
+    return 'muut'
   }
-  return categoryAliases[trimmed] ?? trimmed
+  const alias = categoryAliases[trimmed]
+  if (alias) {
+    return alias
+  }
+  return slugify(trimmed) || 'muut'
 }
 
 const normalizeCategoryDef = (item: CategoryDef | string): CategoryDef => {
   if (typeof item === 'string') {
     const id = normalizeCategoryId(item)
-    return { id, nameFi: id, nameEn: id }
+    return { id, slug: id, nameFi: item, nameEn: item }
   }
-  const id = normalizeCategoryId(item.id || item.nameFi || item.nameEn)
+  const id = normalizeCategoryId(item.id || item.slug || item.nameFi || item.nameEn)
   return {
     id,
+    slug: item.slug?.trim() || id,
     nameFi: item.nameFi?.trim() || id,
     nameEn: item.nameEn?.trim() || item.nameFi?.trim() || id,
   }
@@ -598,56 +652,322 @@ const normalizeProduct = (product: Product): Product => {
   const images = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image]
   return {
     ...product,
+    slug: product.slug?.trim() || slugify(product.name || product.id) || product.id,
     category: normalizeCategoryId(product.category),
     image: images[0],
     images,
+    seoTitle: product.seoTitle?.trim() || undefined,
+    metaDescription: product.metaDescription?.trim() || undefined,
+    searchKeywords: Array.isArray(product.searchKeywords)
+      ? product.searchKeywords.map((item) => item.trim()).filter(Boolean)
+      : [],
   }
 }
 
+const normalizeCatalog = (payload?: Partial<CatalogPayload> | null): CatalogPayload => ({
+  categories: Array.isArray(payload?.categories) && payload.categories.length > 0
+    ? payload.categories.map(normalizeCategoryDef)
+    : defaultCategories,
+  products: Array.isArray(payload?.products)
+    ? payload.products.map(normalizeProduct)
+    : [],
+})
+
+const getInitialCatalog = () => normalizeCatalog(typeof window !== 'undefined' ? window.__INITIAL_CATALOG__ : null)
+
+const getProductHref = (product: Product) => `/tuote/${encodeURIComponent(product.slug || slugify(product.name || product.id) || product.id)}`
+
+const getCategoryHref = (category: CategoryDef) => `/?category=${encodeURIComponent(category.slug)}`
+
 const getProductImage = (product: Product) => (product.images && product.images.length > 0 ? product.images[0] : product.image)
+const getProductAlt = (product: Product) => `${product.name} yrityksille`
 
 const getRelated = (items: Product[], currentId: string) => {
   return items.filter((item) => item.id !== currentId).slice(0, 3)
 }
 
+const getSiteUrl = () => {
+  return (typeof window !== 'undefined' ? window.__SITE_URL__ : '') || 'https://suomenpaperitukku.fi'
+}
+
+const seoHintByCategory: Record<string, { fi: string; en: string }> = {
+  'wc-paperit': { fi: 'edullinen wc-paperi', en: 'toilet paper for businesses' },
+  kasipyyhkeet: { fi: 'laadukas käsipyyhe', en: 'hand towel for businesses' },
+  saippuat: { fi: 'ammattitason saippua', en: 'soap for businesses' },
+  puhdistus: { fi: 'tehokas puhdistusaine', en: 'cleaning product for businesses' },
+  jatesakit: { fi: 'kestävä jätesäkki', en: 'durable waste bag' },
+}
+
+const shortenText = (value: string, maxLength: number) => {
+  const trimmed = value.trim()
+  if (trimmed.length <= maxLength) {
+    return trimmed
+  }
+  return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trim()}…`
+}
+
+const buildSeoTitle = (name: string, categoryId: string, lang: Lang) => {
+  if (!name.trim()) {
+    return ''
+  }
+  const suffix = seoHintByCategory[categoryId]?.[lang] || (lang === 'fi' ? 'yrityksille nopeasti' : 'for businesses')
+  return `${name} – ${suffix} | Suomen Paperitukku`
+}
+
+const buildMetaDescription = (name: string, description: string, categoryLabel: string, lang: Lang) => {
+  if (!name.trim()) {
+    return ''
+  }
+  const base =
+    lang === 'fi'
+      ? `${name}. ${description || `${categoryLabel} yrityksille.`} Tilaa laskulla nopeasti Suomen Paperitukusta.`
+      : `${name}. ${description || `${categoryLabel} for businesses.`} Fast invoice ordering from Suomen Paperitukku.`
+  return shortenText(base, 155)
+}
+
+const buildSearchKeywords = (name: string, categoryLabel: string, sku: string) => {
+  if (!name.trim()) {
+    return []
+  }
+  const rawParts = [
+    name,
+    categoryLabel,
+    sku,
+    ...name.split(/[,.]/g).map((item) => item.trim()),
+    ...name.split(/\s+/g).slice(0, 4),
+  ]
+
+  return Array.from(
+    new Set(
+      rawParts
+        .map((item) => item.trim())
+        .filter((item) => item.length >= 3),
+    ),
+  )
+}
+
+const upsertMeta = (selector: string, attributes: Record<string, string>) => {
+  let element = document.head.querySelector(selector) as HTMLMetaElement | HTMLLinkElement | null
+  if (!element) {
+    const tagName = selector.startsWith('link') ? 'link' : 'meta'
+    element = document.createElement(tagName) as HTMLMetaElement | HTMLLinkElement
+    document.head.appendChild(element)
+  }
+  Object.entries(attributes).forEach(([key, value]) => {
+    element?.setAttribute(key, value)
+  })
+}
+
+const applyStructuredData = (data: unknown[]) => {
+  let script = document.head.querySelector('script[data-seo="structured-data"]') as HTMLScriptElement | null
+  if (!script) {
+    script = document.createElement('script')
+    script.type = 'application/ld+json'
+    script.dataset.seo = 'structured-data'
+    document.head.appendChild(script)
+  }
+  script.textContent = JSON.stringify(data)
+}
+
+const publicRobotsContent = 'index,follow,max-image-preview:large'
+const adminRobotsContent = 'noindex,nofollow,noarchive'
+const homeSeoTitle = 'Suomen Paperitukku \u2013 WC-paperit ja saniteettitarvikkeet yrityksille'
+const homeSeoDescription =
+  'Suomen Paperitukku toimittaa wc-paperit, k\u00E4sipaperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.'
+
+const applyHomeSeo = (products: Product[] = []) => {
+  const siteUrl = getSiteUrl()
+  document.title = homeSeoTitle
+  upsertMeta('meta[name="description"]', { name: 'description', content: homeSeoDescription })
+  upsertMeta('meta[name="robots"]', { name: 'robots', content: publicRobotsContent })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: homeSeoTitle })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: homeSeoDescription })
+  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: `${siteUrl}/` })
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: homeSeoTitle })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: homeSeoDescription })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: `${siteUrl}/` })
+  upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: `${siteUrl}/` })
+
+  const featuredProducts = products.slice(0, 8).map((product, index) => ({
+    '@type': 'ListItem',
+    position: index + 1,
+    url: `${siteUrl}${getProductHref(product)}`,
+    item: {
+      '@type': 'Product',
+      name: product.name,
+      image: `${siteUrl}${product.images[0] || product.image}`,
+      description: product.metaDescription || product.description,
+      sku: product.sku,
+      brand: {
+        '@type': 'Brand',
+        name: 'Suomen Paperitukku',
+      },
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: 'EUR',
+        price: product.price.toFixed(2),
+        availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        url: `${siteUrl}${getProductHref(product)}`,
+      },
+    },
+  }))
+
+  applyStructuredData([
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Organization',
+      name: 'Suomen Paperitukku',
+      url: `${siteUrl}/`,
+      logo: `${siteUrl}/brand-logo.png`,
+      email: 'suomenpaperitukku@gmail.com',
+      telephone: '+358449782446',
+      address: {
+        '@type': 'PostalAddress',
+        streetAddress: 'S\u00E4ynetie 16',
+        postalCode: '01490',
+        addressLocality: 'Vantaa',
+        addressCountry: 'FI',
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: 'Suomen Paperitukku',
+      url: `${siteUrl}/`,
+      potentialAction: {
+        '@type': 'SearchAction',
+        target: `${siteUrl}/?q={search_term_string}`,
+        'query-input': 'required name=search_term_string',
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'ItemList',
+      name: 'Suosittuja tuotteita',
+      itemListElement: featuredProducts,
+    },
+  ])
+}
+
+const applyAdminSeo = (lang: Lang, adminAuthed: boolean) => {
+  const siteUrl = getSiteUrl()
+  const title = adminAuthed
+    ? (lang === 'fi' ? 'Hallinta | Suomen Paperitukku' : 'Admin | Suomen Paperitukku')
+    : (lang === 'fi' ? 'Kirjaudu sis\u00E4\u00E4n | Suomen Paperitukku' : 'Sign in | Suomen Paperitukku')
+  const description = adminAuthed
+    ? (lang === 'fi'
+        ? 'Suomen Paperitukun hallintapaneeli tuotteiden ja tilausten k\u00E4sittelyyn.'
+        : 'Suomen Paperitukku admin for managing products and orders.')
+    : (lang === 'fi'
+        ? 'Kirjaudu Suomen Paperitukun hallintaan.'
+        : 'Sign in to Suomen Paperitukku admin.')
+
+  document.title = title
+  upsertMeta('meta[name="description"]', { name: 'description', content: description })
+  upsertMeta('meta[name="robots"]', { name: 'robots', content: adminRobotsContent })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: description })
+  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: `${siteUrl}/` })
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: `${siteUrl}/` })
+  upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: `${siteUrl}/` })
+  applyStructuredData([])
+}
+
+const applyProductSeo = (product: Product, category: CategoryDef | undefined) => {
+  const siteUrl = getSiteUrl()
+  const canonical = `${siteUrl}${getProductHref(product)}`
+  const description =
+    product.metaDescription ||
+    buildMetaDescription(product.name, product.description, category?.nameFi ?? product.category, 'fi')
+  const ogImage = `${siteUrl}/og/product/${encodeURIComponent(product.slug || slugify(product.name || product.id) || product.id)}.svg`
+  const title = product.seoTitle || buildSeoTitle(product.name, product.category, 'fi')
+  const keywords = (product.searchKeywords ?? []).join(', ')
+
+  document.title = title
+  upsertMeta('meta[name="description"]', { name: 'description', content: description })
+  upsertMeta('meta[name="keywords"]', { name: 'keywords', content: keywords })
+  upsertMeta('meta[name="robots"]', { name: 'robots', content: publicRobotsContent })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: description })
+  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonical })
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: ogImage })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'product' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: ogImage })
+  upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: canonical })
+  upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: canonical })
+  applyStructuredData([
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        {
+          '@type': 'ListItem',
+          position: 1,
+          name: 'Etusivu',
+          item: `${siteUrl}/`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 2,
+          name: category?.nameFi ?? 'Tuotteet',
+          item: `${siteUrl}${category ? getCategoryHref(category) : '/'}`,
+        },
+        {
+          '@type': 'ListItem',
+          position: 3,
+          name: product.name,
+          item: canonical,
+        },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Product',
+      name: product.name,
+      description,
+      sku: product.sku,
+      image: [`${siteUrl}${product.images[0] || product.image}`].filter(Boolean),
+      category: category?.nameFi ?? product.category,
+      keywords,
+      brand: {
+        '@type': 'Brand',
+        name: 'Suomen Paperitukku',
+      },
+      offers: {
+        '@type': 'Offer',
+        priceCurrency: 'EUR',
+        price: product.price.toFixed(2),
+        availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+        url: canonical,
+        seller: {
+          '@type': 'Organization',
+          name: 'Suomen Paperitukku',
+        },
+      },
+    },
+  ])
+}
+
 function App() {
+  const initialCatalog = getInitialCatalog()
+  const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
   const [lang, setLang] = useState<Lang>('fi')
-  const [productCatalog, setProductCatalog] = useState<Product[]>(() => {
-    if (typeof window === 'undefined') {
-      return products.fi.map(normalizeProduct)
-    }
-    const raw = window.localStorage.getItem(productStorageKey)
-    if (!raw) {
-      return products.fi.map(normalizeProduct)
-    }
-    try {
-      const parsed = JSON.parse(raw) as Product[]
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(normalizeProduct)
-      }
-    } catch {
-      // Fall back to defaults if persisted value is invalid.
-    }
-    return products.fi.map(normalizeProduct)
-  })
-  const [categories, setCategories] = useState<CategoryDef[]>(() => {
-    if (typeof window === 'undefined') {
-      return defaultCategories
-    }
-    const raw = window.localStorage.getItem(categoriesStorageKey)
-    if (!raw) {
-      return defaultCategories
-    }
-    try {
-      const parsed = JSON.parse(raw) as Array<string | CategoryDef>
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed.map(normalizeCategoryDef)
-      }
-    } catch {
-      // Fall back to defaults if persisted value is invalid.
-    }
-    return defaultCategories
-  })
+  const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
+  const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
+  const [, setCatalogLoading] = useState(initialCatalog.products.length === 0)
   const [cart, setCart] = useState<Record<string, number>>({})
   const [orderSent, setOrderSent] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
@@ -657,7 +977,7 @@ function App() {
   const [adminPass, setAdminPass] = useState('')
   const [adminError, setAdminError] = useState('')
   const [adminAuthed, setAdminAuthed] = useState(false)
-  const [productQuery, setProductQuery] = useState('')
+  const [productQuery, setProductQuery] = useState(() => getRouteFromUrl().searchQuery ?? '')
   const [activeCategory, setActiveCategory] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
   const [sortBy, setSortBy] = useState<'relevance' | 'price' | 'name'>('relevance')
@@ -680,8 +1000,20 @@ function App() {
     stock: '',
     images: [],
     description: '',
+    seoTitle: '',
+    metaDescription: '',
+    searchKeywords: '',
   })
-  const [selectedProductId, setSelectedProductId] = useState<string | null>(() => getProductIdFromUrl())
+  const [adminSeoTouched, setAdminSeoTouched] = useState(false)
+  const [adminMetaTouched, setAdminMetaTouched] = useState(false)
+  const [adminKeywordsTouched, setAdminKeywordsTouched] = useState(false)
+  const [routeState, setRouteState] = useState<RouteState>(() => {
+    const next = getRouteFromUrl()
+    if (initialRoute?.type === 'product' && initialRoute.slug) {
+      return { ...next, type: 'product', slug: initialRoute.slug }
+    }
+    return next
+  })
   const [checkoutForm, setCheckoutForm] = useState<CheckoutForm>({
     company: '',
     contact: '',
@@ -717,6 +1049,19 @@ function App() {
     }
     return lang === 'fi' ? match.nameFi : match.nameEn
   }
+  const adminCategoryLabel = adminProductForm.category ? (categoryMap[adminProductForm.category]?.nameFi ?? adminProductForm.category) : 'tuote'
+  const generatedAdminSeoTitle = buildSeoTitle(adminProductForm.name.trim(), adminProductForm.category, 'fi')
+  const generatedAdminMetaDescription = buildMetaDescription(
+    adminProductForm.name.trim(),
+    adminProductForm.description.trim(),
+    adminCategoryLabel,
+    'fi',
+  )
+  const generatedAdminKeywords = buildSearchKeywords(
+    adminProductForm.name.trim(),
+    adminCategoryLabel,
+    adminProductForm.sku.trim(),
+  ).join(', ')
 
   const filteredProducts = useMemo(() => {
     const query = productQuery.trim().toLowerCase()
@@ -744,17 +1089,44 @@ function App() {
   const safeCurrentPage = Math.min(currentPage, totalPages)
   const listStart = (safeCurrentPage - 1) * pageSize
   const pagedProducts = filteredProducts.slice(listStart, listStart + pageSize)
-  const selectedProduct = selectedProductId ? productCatalog.find((item) => item.id === selectedProductId) : null
+  const selectedProduct = routeState.slug ? productCatalog.find((item) => item.slug === routeState.slug) ?? null : null
+  const selectedCategory = selectedProduct ? categoryMap[selectedProduct.category] : undefined
   const selectedProductImages = selectedProduct ? (selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]) : []
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : []
 
   useEffect(() => {
-    window.localStorage.setItem(productStorageKey, JSON.stringify(productCatalog))
-  }, [productCatalog])
+    let active = true
 
-  useEffect(() => {
-    window.localStorage.setItem(categoriesStorageKey, JSON.stringify(categories))
-  }, [categories])
+    const loadCatalog = async () => {
+      try {
+        const response = await fetch('/api/catalog')
+        const payload = normalizeCatalog((await response.json()) as CatalogPayload)
+        if (!active) {
+          return
+        }
+        setProductCatalog(payload.products)
+        setCategories(payload.categories)
+      } catch {
+        if (!active) {
+          return
+        }
+        if (initialCatalog.products.length === 0) {
+          setProductCatalog(products.fi.map(normalizeProduct))
+          setCategories(defaultCategories)
+        }
+      } finally {
+        if (active) {
+          setCatalogLoading(false)
+        }
+      }
+    }
+
+    void loadCatalog()
+
+    return () => {
+      active = false
+    }
+  }, [initialCatalog.products.length])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -763,14 +1135,62 @@ function App() {
   useEffect(() => {
     setSelectedQuantity(1)
     setDetailImageIndex(0)
-  }, [selectedProductId])
+  }, [routeState.slug])
 
   useEffect(() => {
     const onPopState = () => {
-      setSelectedProductId(getProductIdFromUrl())
+      setRouteState(getRouteFromUrl())
     }
     window.addEventListener('popstate', onPopState)
     return () => window.removeEventListener('popstate', onPopState)
+  }, [])
+
+  useEffect(() => {
+    const currentCategory = routeState.categorySlug
+    if (!currentCategory) {
+      return
+    }
+    const match = categories.find((item) => item.slug === currentCategory || item.id === currentCategory)
+    if (match) {
+      setActiveCategory(match.id)
+    }
+  }, [categories, routeState.categorySlug])
+
+  useEffect(() => {
+    if (routeState.type === 'home') {
+      setProductQuery(routeState.searchQuery ?? '')
+    }
+  }, [routeState.searchQuery, routeState.type])
+
+  useEffect(() => {
+    if (routeState.legacyProductId && productCatalog.length > 0) {
+      const match = productCatalog.find((item) => item.id === routeState.legacyProductId)
+      if (match) {
+        window.history.replaceState({}, '', getProductHref(match))
+        setRouteState(getRouteFromUrl())
+      }
+    }
+  }, [productCatalog, routeState.legacyProductId])
+
+  useEffect(() => {
+    document.documentElement.lang = lang
+  }, [lang])
+
+  useEffect(() => {
+    if (isAdminPage) {
+      applyAdminSeo(lang, adminAuthed)
+      return
+    }
+    if (selectedProduct) {
+      applyProductSeo(selectedProduct, selectedCategory)
+      return
+    }
+    applyHomeSeo(productCatalog)
+  }, [adminAuthed, isAdminPage, productCatalog, selectedCategory, selectedProduct, lang])
+
+  useEffect(() => {
+    document.getElementById('ssr-root')?.remove()
+    document.getElementById('root')?.removeAttribute('data-booting')
   }, [])
 
   useEffect(() => {
@@ -794,6 +1214,37 @@ function App() {
           }
     )
   }, [lang])
+
+  useEffect(() => {
+    setAdminProductForm((prev) => {
+      const next = { ...prev }
+      let changed = false
+
+      if (!adminSeoTouched && prev.seoTitle !== generatedAdminSeoTitle) {
+        next.seoTitle = generatedAdminSeoTitle
+        changed = true
+      }
+
+      if (!adminMetaTouched && prev.metaDescription !== generatedAdminMetaDescription) {
+        next.metaDescription = generatedAdminMetaDescription
+        changed = true
+      }
+
+      if (!adminKeywordsTouched && prev.searchKeywords !== generatedAdminKeywords) {
+        next.searchKeywords = generatedAdminKeywords
+        changed = true
+      }
+
+      return changed ? next : prev
+    })
+  }, [
+    adminKeywordsTouched,
+    adminMetaTouched,
+    adminSeoTouched,
+    generatedAdminKeywords,
+    generatedAdminMetaDescription,
+    generatedAdminSeoTitle,
+  ])
 
   const addToCart = (product: Product, quantity = 1) => {
     setOrderSent(false)
@@ -824,38 +1275,58 @@ function App() {
     setCheckoutForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  const syncProductInUrl = (productId: string | null) => {
+  const syncProductInUrl = (product: Product | null) => {
     const url = new URL(window.location.href)
-    if (productId) {
-      url.searchParams.set('product', productId)
+    if (product) {
+      url.pathname = getProductHref(product)
+      url.search = ''
+      url.hash = ''
     } else {
+      url.pathname = '/'
       url.searchParams.delete('product')
+      if (activeCategory !== 'all' && categoryMap[activeCategory]) {
+        url.searchParams.set('category', categoryMap[activeCategory].slug)
+      } else {
+        url.searchParams.delete('category')
+      }
+      if (productQuery.trim()) {
+        url.searchParams.set('q', productQuery.trim())
+      } else {
+        url.searchParams.delete('q')
+      }
     }
     const next = `${url.pathname}${url.search}${url.hash}`
     window.history.pushState({}, '', next)
+    setRouteState(getRouteFromUrl())
   }
 
   const handleTopSearch = (value: string) => {
     setProductQuery(value)
-    if (selectedProductId) {
-      setSelectedProductId(null)
+    if (selectedProduct) {
       syncProductInUrl(null)
+    } else {
+      const url = new URL(window.location.href)
+      if (value.trim()) {
+        url.searchParams.set('q', value.trim())
+      } else {
+        url.searchParams.delete('q')
+      }
+      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
+      setRouteState(getRouteFromUrl())
     }
     setTimeout(() => {
       document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
   }
 
-  const openProduct = (productId: string) => {
-    setSelectedProductId(productId)
-    syncProductInUrl(productId)
+  const openProduct = (product: Product) => {
+    syncProductInUrl(product)
     setTimeout(() => {
       document.getElementById('product-detail')?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
   }
 
   const closeProduct = () => {
-    setSelectedProductId(null)
     syncProductInUrl(null)
     setTimeout(() => {
       document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
@@ -878,8 +1349,9 @@ function App() {
 
   const goHome = () => {
     setIsAdminPage(false)
-    setSelectedProductId(null)
-    syncProductInUrl(null)
+    setActiveCategory('all')
+    window.history.pushState({}, '', '/')
+    setRouteState(getRouteFromUrl())
     setTimeout(() => {
       document.getElementById('home')?.scrollIntoView({ behavior: 'smooth' })
     }, 0)
@@ -887,8 +1359,7 @@ function App() {
 
   const goToSection = (sectionId: 'categories' | 'products') => {
     setIsAdminPage(false)
-    if (selectedProductId) {
-      setSelectedProductId(null)
+    if (selectedProduct) {
       syncProductInUrl(null)
     }
     setTimeout(() => {
@@ -1007,9 +1478,15 @@ function App() {
   }
 
   const adminAuthHeaders = () => ({
-    'x-admin-user': adminCreds.user,
-    'x-admin-pass': adminCreds.pass,
+    'x-admin-user': adminUser || adminCreds.user,
+    'x-admin-pass': adminPass || adminCreds.pass,
   })
+
+  const syncCatalogState = (payload: CatalogPayload) => {
+    const normalized = normalizeCatalog(payload)
+    setProductCatalog(normalized.products)
+    setCategories(normalized.categories)
+  }
 
   const loadAdminOrders = async () => {
     setAdminOrdersLoading(true)
@@ -1066,11 +1543,17 @@ function App() {
       stock: '',
       images: [],
       description: '',
+      seoTitle: '',
+      metaDescription: '',
+      searchKeywords: '',
     })
     setAdminImageUrl('')
+    setAdminSeoTouched(false)
+    setAdminMetaTouched(false)
+    setAdminKeywordsTouched(false)
   }
 
-  const saveAdminProduct = () => {
+  const saveAdminProduct = async () => {
     const name = adminProductForm.name.trim()
     const sku = adminProductForm.sku.trim()
     const category = normalizeCategoryId(adminProductForm.category)
@@ -1082,8 +1565,7 @@ function App() {
       return
     }
 
-    const payload: Product = {
-      id: adminProductForm.id ?? `p-${Date.now()}`,
+    const payload = {
       name,
       sku,
       category,
@@ -1091,23 +1573,36 @@ function App() {
       priceUnit: adminProductForm.priceUnit.trim() || (lang === 'fi' ? '€ / kpl' : '€ / pc'),
       unitNote: adminProductForm.unitNote.trim() || undefined,
       stock,
-      image: adminProductForm.images[0] ?? productImages.soap,
-      images: adminProductForm.images.length > 0 ? adminProductForm.images : [productImages.soap],
+      images: adminProductForm.images.length > 0 ? adminProductForm.images : ['/products/liquid-soap.svg'],
       description: adminProductForm.description.trim() || name,
+      seoTitle: adminProductForm.seoTitle.trim(),
+      metaDescription: adminProductForm.metaDescription.trim(),
+      searchKeywords: adminProductForm.searchKeywords
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
     }
 
-    setProductCatalog((prev) => {
-      if (adminProductForm.id) {
-        return prev.map((item) => (item.id === adminProductForm.id ? { ...item, ...payload } : item))
+    try {
+      const response = await fetch(adminProductForm.id ? `/api/admin/products/${adminProductForm.id}` : '/api/admin/products', {
+        method: adminProductForm.id ? 'PUT' : 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...adminAuthHeaders(),
+        },
+        body: JSON.stringify(payload),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Tuotteen tallennus epäonnistui.' : 'Failed to save product.'))
+        return
       }
-      return [payload, ...prev]
-    })
-    if (!categories.some((item) => item.id === category)) {
-      setCategories((prev) => [...prev, { id: category, nameFi: category, nameEn: category }])
+      syncCatalogState(result.catalog)
+      setAdminError('')
+      resetAdminForm()
+    } catch {
+      setAdminError(lang === 'fi' ? 'Tuotteen tallennus epäonnistui.' : 'Failed to save product.')
     }
-
-    setAdminError('')
-    resetAdminForm()
   }
 
   const addAdminImageFromUrl = () => {
@@ -1142,6 +1637,15 @@ function App() {
   }
 
   const editProductFromAdmin = (product: Product) => {
+    const generatedTitle = buildSeoTitle(product.name, product.category, 'fi')
+    const generatedDescription = buildMetaDescription(
+      product.name,
+      product.description,
+      categoryMap[product.category]?.nameFi ?? product.category,
+      'fi',
+    )
+    const generatedKeywords = buildSearchKeywords(product.name, categoryMap[product.category]?.nameFi ?? product.category, product.sku).join(', ')
+
     setAdminProductForm({
       id: product.id,
       name: product.name,
@@ -1153,54 +1657,97 @@ function App() {
       stock: String(product.stock),
       images: product.images ?? [product.image],
       description: product.description,
+      seoTitle: product.seoTitle ?? generatedTitle,
+      metaDescription: product.metaDescription ?? generatedDescription,
+      searchKeywords: (product.searchKeywords ?? []).join(', ') || generatedKeywords,
     })
     setAdminImageUrl('')
+    setAdminSeoTouched(Boolean(product.seoTitle && product.seoTitle !== generatedTitle))
+    setAdminMetaTouched(Boolean(product.metaDescription && product.metaDescription !== generatedDescription))
+    setAdminKeywordsTouched(Boolean(product.searchKeywords?.length && product.searchKeywords.join(', ') !== generatedKeywords))
   }
 
-  const deleteProductFromAdmin = (productId: string) => {
-    setProductCatalog((prev) => prev.filter((item) => item.id !== productId))
+  const deleteProductFromAdmin = async (productId: string) => {
+    try {
+      const response = await fetch(`/api/admin/products/${productId}`, {
+        method: 'DELETE',
+        headers: adminAuthHeaders(),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Tuotteen poisto epäonnistui.' : 'Failed to delete product.'))
+        return
+      }
+      syncCatalogState(result.catalog)
+      setAdminError('')
+    } catch {
+      setAdminError(lang === 'fi' ? 'Tuotteen poisto epäonnistui.' : 'Failed to delete product.')
+      return
+    }
     setCart((prev) => {
       const next = { ...prev }
       delete next[productId]
       return next
     })
-    if (selectedProductId === productId) {
-      setSelectedProductId(null)
+    if (selectedProduct?.id === productId) {
+      syncProductInUrl(null)
     }
     if (adminProductForm.id === productId) {
       resetAdminForm()
     }
   }
 
-  const addCategory = () => {
+  const addCategory = async () => {
     const nameFi = adminCategoryName.trim()
     const nameEn = adminCategoryNameEn.trim()
     if (!nameFi) {
       return
     }
-    if (categories.some((item) => item.id === nameFi || item.nameFi === nameFi || item.nameEn === nameEn)) {
+    if (categories.some((item) => item.nameFi === nameFi || item.nameEn === nameEn)) {
       setAdminError(lang === 'fi' ? 'Kategoria on jo olemassa.' : 'Category already exists.')
       return
     }
-    setCategories((prev) => [...prev, { id: nameFi, nameFi, nameEn: nameEn || nameFi }])
-    setAdminCategoryName('')
-    setAdminCategoryNameEn('')
-    setAdminError('')
+    try {
+      const response = await fetch('/api/admin/categories', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...adminAuthHeaders(),
+        },
+        body: JSON.stringify({ nameFi, nameEn }),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian lisäys epäonnistui.' : 'Failed to add category.'))
+        return
+      }
+      syncCatalogState(result.catalog)
+      setAdminCategoryName('')
+      setAdminCategoryNameEn('')
+      setAdminError('')
+    } catch {
+      setAdminError(lang === 'fi' ? 'Kategorian lisäys epäonnistui.' : 'Failed to add category.')
+    }
   }
 
-  const deleteCategory = (categoryId: string) => {
-    setCategories((prev) => {
-      const next = prev.filter((item) => item.id !== categoryId)
-      if (!next.some((item) => item.id === 'Muut')) {
-        next.push({ id: 'Muut', nameFi: 'Muut', nameEn: 'Other' })
+  const deleteCategory = async (categoryId: string) => {
+    try {
+      const response = await fetch(`/api/admin/categories/${categoryId}`, {
+        method: 'DELETE',
+        headers: adminAuthHeaders(),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian poisto epäonnistui.' : 'Failed to delete category.'))
+        return
       }
-      return next
-    })
-    setProductCatalog((prev) =>
-      prev.map((item) => (item.category === categoryId ? { ...item, category: 'Muut' } : item))
-    )
-    if (activeCategory === categoryId) {
-      setActiveCategory('all')
+      syncCatalogState(result.catalog)
+      if (activeCategory === categoryId) {
+        setActiveCategory('all')
+      }
+      setAdminError('')
+    } catch {
+      setAdminError(lang === 'fi' ? 'Kategorian poisto epäonnistui.' : 'Failed to delete category.')
     }
   }
 
@@ -1221,16 +1768,38 @@ function App() {
   return (
     <div className="page">
       <header className="top">
-        <button className="brand" onClick={goHome} aria-label="Suomen Paperitukku etusivu">
-          <img src={brandLogo} alt="Suomen Paperitukku" />
-        </button>
-        <nav className="nav">
-          <button className="nav-button" onClick={() => goToSection('categories')}>
+        <a
+          className="brand"
+          href="/"
+          aria-label="Suomen Paperitukku etusivu"
+          onClick={(event) => {
+            event.preventDefault()
+            goHome()
+          }}
+        >
+          <img src={brandLogo} alt="Suomen Paperitukku logo" />
+        </a>
+        <nav className="nav" aria-label={lang === 'fi' ? 'Päänavigaatio' : 'Main navigation'}>
+          <a
+            className="nav-button"
+            href="/#categories"
+            onClick={(event) => {
+              event.preventDefault()
+              goToSection('categories')
+            }}
+          >
             {t.nav[0]}
-          </button>
-          <button className="nav-button" onClick={() => goToSection('products')}>
+          </a>
+          <a
+            className="nav-button"
+            href="/#products"
+            onClick={(event) => {
+              event.preventDefault()
+              goToSection('products')
+            }}
+          >
             {t.nav[1]}
-          </button>
+          </a>
         </nav>
         <div className="actions">
           {!isAdminPage && (
@@ -1392,6 +1961,59 @@ function App() {
                     value={adminProductForm.description}
                     onChange={(event) => setAdminProductForm((prev) => ({ ...prev, description: event.target.value }))}
                   />
+                  <div className="admin-seo-box">
+                    <div className="admin-seo-head">
+                      <strong>{lang === 'fi' ? 'SEO' : 'SEO'}</strong>
+                      <div className="admin-seo-tools">
+                        <span className="muted small">
+                          {lang === 'fi' ? 'Täyttyy automaattisesti, mutta on muokattavissa.' : 'Filled automatically, but editable.'}
+                        </span>
+                        <button
+                          className="ghost tiny"
+                          type="button"
+                          onClick={() => {
+                            setAdminSeoTouched(false)
+                            setAdminMetaTouched(false)
+                            setAdminKeywordsTouched(false)
+                            setAdminProductForm((prev) => ({
+                              ...prev,
+                              seoTitle: generatedAdminSeoTitle,
+                              metaDescription: generatedAdminMetaDescription,
+                              searchKeywords: generatedAdminKeywords,
+                            }))
+                          }}
+                        >
+                          {lang === 'fi' ? 'Palauta automaattinen' : 'Reset automatic'}
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      placeholder={lang === 'fi' ? 'SEO-otsikko' : 'SEO title'}
+                      value={adminProductForm.seoTitle}
+                      onChange={(event) => {
+                        setAdminSeoTouched(true)
+                        setAdminProductForm((prev) => ({ ...prev, seoTitle: event.target.value }))
+                      }}
+                    />
+                    <textarea
+                      rows={3}
+                      placeholder={lang === 'fi' ? 'Meta description' : 'Meta description'}
+                      value={adminProductForm.metaDescription}
+                      onChange={(event) => {
+                        setAdminMetaTouched(true)
+                        setAdminProductForm((prev) => ({ ...prev, metaDescription: event.target.value }))
+                      }}
+                    />
+                    <textarea
+                      rows={2}
+                      placeholder={lang === 'fi' ? 'Hakutermit, erottele pilkulla' : 'Search keywords, comma separated'}
+                      value={adminProductForm.searchKeywords}
+                      onChange={(event) => {
+                        setAdminKeywordsTouched(true)
+                        setAdminProductForm((prev) => ({ ...prev, searchKeywords: event.target.value }))
+                      }}
+                    />
+                  </div>
                   {adminError && <div className="error">{adminError}</div>}
                   <div className="admin-actions">
                     <button className="primary" type="button" onClick={saveAdminProduct}>
@@ -1440,7 +2062,7 @@ function App() {
                     {adminPageItems.map((item) => (
                       <div key={item.id} className="admin-row">
                         <div className="admin-row-main">
-                          <img className="admin-row-image" src={getProductImage(item)} alt={item.name} />
+                          <img className="admin-row-image" src={getProductImage(item)} alt={getProductAlt(item)} />
                           <div>
                             <strong>{item.name}</strong>
                             <p className="muted small">{item.sku} · {getCategoryLabel(item.category)}</p>
@@ -1467,14 +2089,14 @@ function App() {
                     <div className="admin-orders-head">
                       <h3>{lang === 'fi' ? 'Tilaukset' : 'Orders'}</h3>
                       <button className="ghost tiny" type="button" onClick={() => void loadAdminOrders()} disabled={adminOrdersLoading}>
-                        {lang === 'fi' ? 'P?ivit?' : 'Refresh'}
+                        {lang === 'fi' ? 'P\u00E4ivit\u00E4' : 'Refresh'}
                       </button>
                     </div>
                     {adminOrdersError && <div className="error">{adminOrdersError}</div>}
                     {adminOrdersLoading ? (
                       <p className="muted">{lang === 'fi' ? 'Haetaan tilauksia...' : 'Loading orders...'}</p>
                     ) : adminOrders.length === 0 ? (
-                      <p className="muted">{lang === 'fi' ? 'Ei tilauksia viel?.' : 'No orders yet.'}</p>
+                      <p className="muted">{lang === 'fi' ? 'Ei tilauksia viel\u00E4.' : 'No orders yet.'}</p>
                     ) : (
                       <div className="admin-orders-list">
                         {adminOrders.map((order) => (
@@ -1529,6 +2151,32 @@ function App() {
         ) : (
         selectedProduct ? (
           <section className="section product-detail" id="product-detail">
+            <nav className="breadcrumbs" aria-label="Breadcrumb">
+              <a href="/" onClick={(event) => { event.preventDefault(); goHome() }}>
+                {lang === 'fi' ? 'Etusivu' : 'Home'}
+              </a>
+              <span aria-hidden="true">/</span>
+              {selectedCategory ? (
+                <a
+                  href={getCategoryHref(selectedCategory)}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    window.history.pushState({}, '', getCategoryHref(selectedCategory))
+                    setRouteState(getRouteFromUrl())
+                    setActiveCategory(selectedCategory.id)
+                    setTimeout(() => {
+                      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
+                    }, 0)
+                  }}
+                >
+                  {lang === 'fi' ? selectedCategory.nameFi : selectedCategory.nameEn}
+                </a>
+              ) : (
+                <span>{lang === 'fi' ? 'Tuotteet' : 'Products'}</span>
+              )}
+              <span aria-hidden="true">/</span>
+              <span>{selectedProduct.name}</span>
+            </nav>
             <button className="ghost back" onClick={closeProduct}>
               ← {t.backToProducts}
             </button>
@@ -1539,7 +2187,7 @@ function App() {
                     key={selectedProductImages[detailImageIndex] ?? getProductImage(selectedProduct)}
                     className="detail-image detail-image-fade"
                     src={selectedProductImages[detailImageIndex] ?? getProductImage(selectedProduct)}
-                    alt={selectedProduct.name}
+                    alt={getProductAlt(selectedProduct)}
                   />
                   {selectedProductImages.length > 1 && (
                     <>
@@ -1561,14 +2209,14 @@ function App() {
                         type="button"
                         onClick={() => setDetailImageIndex(index)}
                       >
-                        <img src={image} alt={`${selectedProduct.name} ${index + 1}`} />
+                        <img src={image} alt={`${getProductAlt(selectedProduct)} ${index + 1}`} />
                       </button>
                     ))}
                   </div>
                 )}
               </div>
               <div className="detail-info">
-                <h2>{selectedProduct.name}</h2>
+                <h1>{selectedProduct.name}</h1>
                 <p className="muted">{selectedProduct.description}</p>
                 <div className="price-block">
                   <span className="muted">
@@ -1603,9 +2251,18 @@ function App() {
               <div className="grid related-grid">
                 {relatedProducts.map((item) => (
                   <div key={item.id} className="card related-card">
-                    <img className="product-image" src={getProductImage(item)} alt={item.name} />
-                    <strong className="product-name">{item.name}</strong>
-                    <button className="ghost" onClick={() => openProduct(item.id)}>
+                    <a
+                      className="related-link"
+                      href={getProductHref(item)}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        openProduct(item)
+                      }}
+                    >
+                      <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} />
+                      <strong className="product-name">{item.name}</strong>
+                    </a>
+                    <button className="ghost" onClick={() => openProduct(item)}>
                       {t.view}
                     </button>
                   </div>
@@ -1626,6 +2283,7 @@ function App() {
         </section>
 
         <section className="section" id="categories">
+          <h2 className="sr-only">{t.categoriesTitle}</h2>
           <div className="category-grid">
             <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
               <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
@@ -1706,9 +2364,16 @@ function App() {
           <div className="grid products-grid">
             {pagedProducts.map((item) => (
               <div key={item.id} className="card product-card">
-                <button className="product-card-button" type="button" onClick={() => openProduct(item.id)}>
+                <a
+                  className="product-card-button"
+                  href={getProductHref(item)}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    openProduct(item)
+                  }}
+                >
                   <div className="product-link">
-                    <img className="product-image" src={getProductImage(item)} alt={item.name} loading="lazy" />
+                    <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
                     <strong className="product-name">{item.name}</strong>
                   </div>
                   <div className="product-body">
@@ -1727,7 +2392,7 @@ function App() {
                       {item.unitNote && <span className="muted">{item.unitNote}</span>}
                     </div>
                   </div>
-                </button>
+                </a>
               </div>
             ))}
           </div>

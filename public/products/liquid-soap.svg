@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Liquid soap">
+  <rect width="800" height="600" rx="48" fill="#fff8ed"/>
+  <path d="M364 118h72v64h-72z" fill="#d49c3f"/>
+  <path d="M332 182h136c28 0 50 22 50 50v208c0 42-34 76-76 76h-84c-42 0-76-34-76-76V232c0-28 22-50 50-50z" fill="#ffffff" stroke="#dfc28e" stroke-width="12"/>
+  <rect x="330" y="258" width="140" height="32" rx="16" fill="#d49c3f" opacity=".16"/>
+  <rect x="350" y="314" width="100" height="18" rx="9" fill="#d49c3f" opacity=".11"/>
+  <circle cx="564" cy="210" r="26" fill="#f2c879" opacity=".4"/>
+  <circle cx="602" cy="250" r="16" fill="#f2c879" opacity=".28"/>
+  <text x="400" y="552" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#9a6920">LIQUID SOAP</text>
+</svg>

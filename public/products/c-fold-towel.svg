@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Folded towel">
+  <rect width="800" height="600" rx="48" fill="#f2fbf5"/>
+  <path d="M172 388l182-176 184 176H172z" fill="#d9f3e2" stroke="#9cc6a8" stroke-width="10"/>
+  <path d="M246 388l108-106 108 106H246z" fill="#ffffff" stroke="#9cc6a8" stroke-width="10"/>
+  <rect x="164" y="388" width="372" height="42" rx="18" fill="#ffffff" stroke="#9cc6a8" stroke-width="10"/>
+  <rect x="566" y="190" width="88" height="232" rx="24" fill="#ffffff" stroke="#9cc6a8" stroke-width="10"/>
+  <rect x="586" y="228" width="48" height="14" rx="7" fill="#1b8b4c" opacity=".25"/>
+  <rect x="586" y="266" width="48" height="14" rx="7" fill="#1b8b4c" opacity=".18"/>
+  <text x="400" y="520" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#165c39">FOLDED TOWEL</text>
+</svg>

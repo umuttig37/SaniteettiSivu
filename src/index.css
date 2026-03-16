@@ -30,6 +30,14 @@ body {
   min-height: 100vh;
 }
 
+#root[data-booting='true'] {
+  display: none;
+}
+
+#ssr-root {
+  min-height: 100vh;
+}
+
 a {
   color: inherit;
 }

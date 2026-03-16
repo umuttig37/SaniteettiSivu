@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Waste bag">
+  <rect width="800" height="600" rx="48" fill="#fff7f7"/>
+  <path d="M278 168h244l-34 52H312z" fill="#ffc9c9"/>
+  <path d="M274 220h252l-24 250c-3 28-26 50-54 50H352c-28 0-51-22-54-50l-24-250z" fill="#ffffff" stroke="#f0a8a8" stroke-width="12"/>
+  <path d="M334 164v-30h132v30" fill="none" stroke="#8f4141" stroke-width="12" stroke-linecap="round"/>
+  <rect x="344" y="274" width="112" height="24" rx="12" fill="#d95050" opacity=".14"/>
+  <rect x="360" y="320" width="80" height="18" rx="9" fill="#d95050" opacity=".1"/>
+  <text x="400" y="552" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#8f4141">WASTE BAG</text>
+</svg>

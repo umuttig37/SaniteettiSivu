@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" role="img" aria-label="Hand towel">
+  <rect width="800" height="600" rx="48" fill="#f3f8ff"/>
+  <rect x="120" y="120" width="560" height="360" rx="28" fill="#ffffff" stroke="#c9d8f2" stroke-width="10"/>
+  <rect x="185" y="190" width="210" height="150" rx="18" fill="#dcecff"/>
+  <rect x="425" y="200" width="180" height="24" rx="12" fill="#1d4ed8" opacity=".18"/>
+  <rect x="425" y="246" width="150" height="18" rx="9" fill="#1d4ed8" opacity=".12"/>
+  <rect x="185" y="360" width="420" height="26" rx="13" fill="#1d4ed8" opacity=".1"/>
+  <text x="400" y="520" text-anchor="middle" font-family="Arial, sans-serif" font-size="42" fill="#16326b">HAND TOWEL</text>
+</svg>
