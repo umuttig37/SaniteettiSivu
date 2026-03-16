@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = path.resolve(__dirname, '..', 'data')
-const seedFile = path.join(dataDir, 'catalog.seed.json')
+const seedFile = path.join(__dirname, 'catalog.seed.json')
 const catalogFile = path.join(dataDir, 'catalog.json')
 
 const fallbackCatalog = {

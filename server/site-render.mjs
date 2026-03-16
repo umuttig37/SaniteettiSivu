@@ -4,6 +4,7 @@ import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
+const distIndexFile = path.join(distDir, 'index.html')
 const manifestFile = path.join(distDir, '.vite', 'manifest.json')
 
 const homeMeta = {
@@ -26,16 +27,31 @@ const readManifest = () => {
   return JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
 }
 
+const readBuiltIndexAssets = () => {
+  if (!fs.existsSync(distIndexFile)) {
+    return { script: null, css: [] }
+  }
+
+  const html = fs.readFileSync(distIndexFile, 'utf8')
+  const scriptMatch = html.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/i)
+  const cssMatches = Array.from(html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/gi))
+
+  return {
+    script: scriptMatch?.[1] ?? null,
+    css: cssMatches.map((match) => match[1]),
+  }
+}
+
 const getEntryAssets = () => {
   const manifest = readManifest()
   const entry = manifest?.['index.html'] ?? manifest?.['src/main.tsx']
-  if (!entry) {
-    return { script: null, css: [] }
+  if (entry) {
+    return {
+      script: entry.file ? `/${entry.file}` : null,
+      css: Array.isArray(entry.css) ? entry.css.map((item) => `/${item}`) : [],
+    }
   }
-  return {
-    script: entry.file ? `/${entry.file}` : null,
-    css: Array.isArray(entry.css) ? entry.css.map((item) => `/${item}`) : [],
-  }
+  return readBuiltIndexAssets()
 }
 
 const jsonScript = (value) =>
