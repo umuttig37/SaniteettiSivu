@@ -2416,7 +2416,7 @@ function App() {
                   <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
                 </div>
                 <div className="contact-info-card">
-                  <strong>{lang === 'fi' ? 'Puhelinnumerot' : 'Phone numbers'}</strong>
+                  <strong>{lang === 'fi' ? 'Puhelinnumero' : 'Phone number'}</strong>
                   <a href={`tel:${t.footer.phone.replace(/\s+/g, '')}`}>{t.footer.phone}</a>
                   <span className="muted">{lang === 'fi' ? 'Ma-Pe 8:00-17:00' : 'Mon-Fri 8:00-17:00'}</span>
                 </div>
