@@ -1138,6 +1138,7 @@ function App() {
   const selectedProductImages = selectedProduct ? (selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]) : []
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : [] 
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 4), [productCatalog])
+  const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
 
   useEffect(() => {
     let active = true
@@ -2293,7 +2294,7 @@ function App() {
               </div>
               <div className="detail-info">
                 <h1>{selectedProduct.name}</h1>
-                <p className="muted">{selectedProduct.description}</p>
+                <p className="muted detail-description">{selectedProduct.description}</p>
                 <div className="price-block">
                   <span className="muted">
                     {formatPrice(grossPrice(selectedProduct.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
@@ -2374,7 +2375,7 @@ function App() {
           </div>
         </section>
 
-        {featuredHomeProducts.length > 0 && (
+        {showFeaturedHomeSection && featuredHomeProducts.length > 0 && (
           <section className="section featured-section">
             <div className="products-header">
               <div>

@@ -487,7 +487,7 @@ const renderProductMarkup = ({ product, category, related }) => {
             </div>
             <div class="detail-info">
               <h1>${escapeHtml(product.name)}</h1>
-              <p class="muted">${escapeHtml(product.description)}</p>
+              <p class="muted detail-description">${escapeHtml(product.description)}</p>
               <div class="price-block">
                 <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
                 <span class="price-top">${formatPrice(product.price)} ${escapeHtml(product.priceUnit)} (alv 0%)</span>
