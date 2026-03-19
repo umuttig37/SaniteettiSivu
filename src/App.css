@@ -1675,6 +1675,14 @@ html {
   line-height: 1.05;
 }
 
+.detail-info .price-block .muted {
+  font-size: 1.05rem;
+}
+
+.detail-info .price-top {
+  font-size: 1.16rem;
+}
+
 .detail-actions {
   display: flex;
   gap: 0.8rem;
