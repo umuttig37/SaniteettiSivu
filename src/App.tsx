@@ -2126,11 +2126,11 @@ function App() {
                     />
                     <div className="pagination">
                       <button className="ghost tiny" disabled={safeAdminPage === 1} onClick={() => setAdminPage((prev) => Math.max(1, prev - 1))}>
-                        ←
+                        {'<'}
                       </button>
                       <button className="ghost tiny">{safeAdminPage}</button>
                       <button className="ghost tiny" disabled={safeAdminPage === adminPages} onClick={() => setAdminPage((prev) => Math.min(adminPages, prev + 1))}>
-                        →
+                        {'>'}
                       </button>
                     </div>
                   </div>
@@ -2441,16 +2441,16 @@ function App() {
           </div>
           <div className="products-meta">
             <span className="muted">
-              {t.productsShown} {totalCount === 0 ? 0 : listStart + 1}–{Math.min(listStart + pageSize, totalCount)} / {totalCount}
+              {t.productsShown} {totalCount === 0 ? 0 : `${listStart + 1}-${Math.min(listStart + pageSize, totalCount)}`} / {totalCount}
             </span>
             <div className="meta-right">
               <div className="pagination">
                 <button className="ghost tiny" disabled={safeCurrentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
-                  ←
+                  {'<'}
                 </button>
                 <button className="ghost tiny">{safeCurrentPage}</button>
                 <button className="ghost tiny" disabled={safeCurrentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
-                  →
+                  {'>'}
                 </button>
               </div>
             </div>
@@ -2523,11 +2523,11 @@ function App() {
             <div className="products-pagination-bottom">
               <div className="pagination">
                 <button className="ghost tiny" disabled={safeCurrentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
-                  â†
+                  {'<'}
                 </button>
                 <button className="ghost tiny">{safeCurrentPage}</button>
                 <button className="ghost tiny" disabled={safeCurrentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
-                  â†’
+                  {'>'}
                 </button>
               </div>
             </div>
