@@ -213,7 +213,7 @@ const rawText = {
     productsShippingNote: 'Toimitus: 15 € alle 250 € tilauksille',
     productsFreeShippingNote: 'Ilmainen toimitus yli 250 € tilauksille',
     featuredTitle: 'Suosittelemme juuri nyt',
-    featuredText: 'Nosta tärkeimmät tuotteet näkyviin administa ja järjestä ne haluamaasi järjestykseen.',
+    featuredText: 'Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.',
     productsShown: 'Näkyvillä',
     filtersTitle: 'Rajaa tuotteita',
     clearFilters: 'Tyhjennä kaikki',
@@ -304,7 +304,7 @@ const rawText = {
     productsShippingNote: 'Delivery: 15 € for orders below 250 €',
     productsFreeShippingNote: 'Free delivery for orders above 250 €',
     featuredTitle: 'Recommended right now',
-    featuredText: 'Highlight priority products from admin and control their display order.',
+    featuredText: 'Browse current favorites and find the best products quickly.',
     productsShown: 'Showing',
     filtersTitle: 'Filters',
     clearFilters: 'Clear all',
@@ -811,9 +811,9 @@ const applyStructuredData = (data: unknown[]) => {
 
 const publicRobotsContent = 'index,follow,max-image-preview:large'
 const adminRobotsContent = 'noindex,nofollow,noarchive'
-const homeSeoTitle = 'Suomen Paperitukku \u2013 WC-paperit ja saniteettitarvikkeet yrityksille'
+const homeSeoTitle = 'Suomen Paperitukku \u2013 Käsi- ja wc-paperit sekä saniteettitarvikkeet yrityksille'
 const homeSeoDescription =
-  'Suomen Paperitukku toimittaa wc-paperit, k\u00E4sipaperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.'
+  'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku'
 
 const applyHomeSeo = (products: Product[] = []) => {
   const siteUrl = getSiteUrl()
@@ -2519,6 +2519,19 @@ function App() {
               </div>
             ))}
           </div>
+          {totalPages > 1 && (
+            <div className="products-pagination-bottom">
+              <div className="pagination">
+                <button className="ghost tiny" disabled={safeCurrentPage === 1} onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}>
+                  â†
+                </button>
+                <button className="ghost tiny">{safeCurrentPage}</button>
+                <button className="ghost tiny" disabled={safeCurrentPage === totalPages} onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}>
+                  â†’
+                </button>
+              </div>
+            </div>
+          )}
         </section>
 
         <section className="section contact">

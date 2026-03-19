@@ -8,8 +8,8 @@ const distIndexFile = path.join(distDir, 'index.html')
 const manifestFile = path.join(distDir, '.vite', 'manifest.json')
 
 const homeMeta = {
-  title: 'Suomen Paperitukku – WC-paperit ja saniteettitarvikkeet yrityksille',
-  description: 'Suomen Paperitukku toimittaa wc-paperit, käsipaperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.',
+  title: 'Suomen Paperitukku – Käsi- ja wc-paperit sekä saniteettitarvikkeet yrityksille',
+  description: 'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
 }
 
 const escapeHtml = (value) =>
@@ -257,7 +257,7 @@ const renderHomeMarkup = ({ catalog }) => {
       <main class="main">
         <section class="hero" id="home">
           <h1>Suomen Paperitukku</h1>
-          <p>Suomen Paperitukku toimittaa wc-paperit, käsipaperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
+          <p>Suomen Paperitukku toimittaa käsi- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
         </section>
 
         <section class="section" id="categories">
@@ -283,7 +283,7 @@ const renderHomeMarkup = ({ catalog }) => {
                 <div class="products-header">
                   <div>
                     <h2>Suosittelemme juuri nyt</h2>
-                    <p class="muted">Nosta tärkeimmät tuotteet näkyviin administa ja järjestä ne haluamaasi järjestykseen.</p>
+                    <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.</p>
                   </div>
                 </div>
                 <div class="grid featured-grid">
