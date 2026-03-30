@@ -12,6 +12,7 @@ import {
   getCategoryById,
   getProductBySlug,
   readCatalog,
+  reorderCategories,
   upsertProduct,
 } from './catalog-store.mjs'
 import {
@@ -201,12 +202,54 @@ const emailFooter = (lang) => {
   `
 }
 
+const normalizeSelectedOptions = (selectedOptions) =>
+  Array.isArray(selectedOptions)
+    ? selectedOptions
+        .map((item) => {
+          const groupName = String(item?.groupName ?? '').trim()
+          const valueLabel = String(item?.valueLabel ?? '').trim()
+          if (!groupName || !valueLabel) {
+            return null
+          }
+          return {
+            groupId: String(item?.groupId ?? '').trim() || groupName,
+            groupName,
+            valueId: String(item?.valueId ?? '').trim() || valueLabel,
+            valueLabel,
+            valueDetail: String(item?.valueDetail ?? '').trim() || undefined,
+            valuePrice: Number.isFinite(Number(item?.valuePrice)) ? Number(item.valuePrice) : undefined,
+          }
+        })
+        .filter(Boolean)
+    : []
+
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+
+const formatItemOptionsHtml = (selectedOptions) => {
+  const normalized = normalizeSelectedOptions(selectedOptions)
+  if (normalized.length === 0) {
+    return ''
+  }
+
+  const rows = normalized
+    .map((item) => `${escapeHtml(item.groupName)}: ${escapeHtml(item.valueLabel)}${item.valueDetail ? ` (${escapeHtml(item.valueDetail)})` : ''}`)
+    .join('<br />')
+
+  return `<div style="margin-top:4px;color:#5b6f93;font-size:12px;">${rows}</div>`
+}
+
 const buildOrderRows = (items) =>
   items
     .map(
       (item) =>
         `<tr>
-          <td style="padding:8px;border:1px solid #d9e2f2;">${item.name}</td>
+          <td style="padding:8px;border:1px solid #d9e2f2;">${escapeHtml(item.name)}${formatItemOptionsHtml(item.selectedOptions)}</td>
           <td style="padding:8px;border:1px solid #d9e2f2;text-align:center;">${item.quantity}</td>
           <td style="padding:8px;border:1px solid #d9e2f2;text-align:right;">${euro(item.unitPrice)} EUR</td>
         </tr>`,
@@ -282,6 +325,39 @@ const normalizeIncomingProduct = (body, productId = null) => {
   const searchKeywords = Array.isArray(body.searchKeywords)
     ? body.searchKeywords.map((item) => String(item).trim()).filter(Boolean)
     : []
+  const optionGroups = Array.isArray(body.optionGroups)
+    ? body.optionGroups
+        .map((group, groupIndex) => {
+          const name = String(group?.name ?? '').trim()
+          const values = Array.isArray(group?.values)
+            ? group.values
+                .map((value, valueIndex) => {
+                  const label = String(value?.label ?? '').trim()
+                  if (!label) {
+                    return null
+                  }
+                  return {
+                    id: String(value?.id ?? '').trim() || `value-${groupIndex + 1}-${valueIndex + 1}`,
+                    label,
+                    detail: String(value?.detail ?? '').trim() || undefined,
+                    price: Number.isFinite(Number(value?.price)) ? Number(value.price) : undefined,
+                  }
+                })
+                .filter(Boolean)
+            : []
+
+          if (!name || values.length === 0) {
+            return null
+          }
+
+          return {
+            id: String(group?.id ?? '').trim() || `option-${groupIndex + 1}`,
+            name,
+            values,
+          }
+        })
+        .filter(Boolean)
+    : []
 
   return {
     id: productId ?? body.id ?? `p-${Date.now()}`,
@@ -297,6 +373,7 @@ const normalizeIncomingProduct = (body, productId = null) => {
     description: String(body.description ?? '').trim(),
     featured: Boolean(body.featured),
     featuredRank: body.featured ? Number(body.featuredRank ?? 0) : undefined,
+    optionGroups: Array.isArray(body.optionGroups) ? optionGroups : undefined,
     seoTitle: String(body.seoTitle ?? '').trim() || undefined,
     metaDescription: String(body.metaDescription ?? '').trim() || undefined,
     searchKeywords: searchKeywords.length > 0 ? searchKeywords : undefined,
@@ -375,6 +452,12 @@ app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
   res.json({ catalog })
 })
 
+app.post('/api/admin/categories/reorder', requireAdmin, (req, res) => {
+  const order = Array.isArray(req.body?.order) ? req.body.order : []
+  const catalog = reorderCategories(order)
+  res.json({ catalog })
+})
+
 app.get('/api/orders', requireAdmin, (req, res) => {
   const orders = readOrders().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
   res.json({ orders })
@@ -416,6 +499,7 @@ app.post('/api/orders', async (req, res) => {
         quantity: Number(item.quantity ?? 0),
         unitPrice: Number(item.unitPrice ?? 0),
         priceUnit: item.priceUnit ?? '',
+        selectedOptions: normalizeSelectedOptions(item.selectedOptions),
       })),
       subtotal: Number(payload.subtotal ?? 0),
       shipping: Number(payload.shipping ?? 0),

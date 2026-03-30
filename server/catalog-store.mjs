@@ -110,6 +110,41 @@ const normalizeCategory = (category) => {
   }
 }
 
+const normalizeOptionGroups = (groups) =>
+  Array.isArray(groups)
+    ? groups
+        .map((group, groupIndex) => {
+          const name = String(group?.name ?? '').trim()
+          const values = Array.isArray(group?.values)
+            ? group.values
+                .map((value, valueIndex) => {
+                  const label = String(value?.label ?? '').trim()
+                  if (!label) {
+                    return null
+                  }
+                  return {
+                    id: String(value?.id ?? '').trim() || slugify(`${name || 'option'}-${label}-${valueIndex + 1}`) || `value-${valueIndex + 1}`,
+                    label,
+                    detail: String(value?.detail ?? '').trim() || undefined,
+                    price: Number.isFinite(Number(value?.price)) ? Number(value.price) : undefined,
+                  }
+                })
+                .filter(Boolean)
+            : []
+
+          if (!name || values.length === 0) {
+            return null
+          }
+
+          return {
+            id: String(group?.id ?? '').trim() || slugify(`${name}-${groupIndex + 1}`) || `option-${groupIndex + 1}`,
+            name,
+            values,
+          }
+        })
+        .filter(Boolean)
+    : []
+
 const normalizeProduct = (product, categories, products) => {
   const fallbackCategory = categories.find((item) => item.id === 'muut') ?? categories[0]
   const categoryId = categories.some((item) => item.id === product?.category) ? product.category : fallbackCategory.id
@@ -136,6 +171,7 @@ const normalizeProduct = (product, categories, products) => {
     description: String(product?.description ?? product?.name ?? '').trim(),
     featured: Boolean(product?.featured),
     featuredRank: Number.isFinite(Number(product?.featuredRank)) ? Number(product.featuredRank) : 999,
+    optionGroups: normalizeOptionGroups(product?.optionGroups),
     seoTitle: (() => {
       const customSeoTitle = String(product?.seoTitle ?? '').trim()
       return customSeoTitle && !customSeoTitle.includes('\u2026') ? customSeoTitle : buildSeoTitle(product, categoryId)
@@ -244,9 +280,16 @@ export const addCategory = (input) => {
   if (catalog.categories.some((item) => item.id === normalized.id || item.slug === normalized.slug)) {
     return catalog
   }
+  const nextCategories = [...catalog.categories]
+  const fallbackIndex = nextCategories.findIndex((item) => item.id === 'muut')
+  if (fallbackIndex >= 0) {
+    nextCategories.splice(fallbackIndex, 0, normalized)
+  } else {
+    nextCategories.push(normalized)
+  }
   return writeCatalog({
     ...catalog,
-    categories: [...catalog.categories, normalized],
+    categories: nextCategories,
   })
 }
 
@@ -264,6 +307,30 @@ export const deleteCategory = (categoryId) => {
   return writeCatalog({
     categories: safeCategories,
     products: nextProducts,
+  })
+}
+
+export const reorderCategories = (orderedIds) => {
+  const catalog = readCatalog()
+  const categoriesById = new Map(catalog.categories.map((item) => [item.id, item]))
+  const nextCategories = []
+
+  for (const categoryId of Array.isArray(orderedIds) ? orderedIds : []) {
+    const match = categoriesById.get(String(categoryId))
+    if (!match) {
+      continue
+    }
+    nextCategories.push(match)
+    categoriesById.delete(match.id)
+  }
+
+  for (const leftover of categoriesById.values()) {
+    nextCategories.push(leftover)
+  }
+
+  return writeCatalog({
+    ...catalog,
+    categories: nextCategories,
   })
 }
 

@@ -5,6 +5,51 @@ import heroBgImage from './assets/high-angle-hand-disinfecting-laptop-desk.jpg'
 
 type Lang = 'fi' | 'en'
 
+type ProductOptionValue = {
+  id: string
+  label: string
+  detail?: string
+  price?: number
+}
+
+type ProductOptionGroup = {
+  id: string
+  name: string
+  values: ProductOptionValue[]
+}
+
+type SelectedProductOption = {
+  groupId: string
+  groupName: string
+  valueId: string
+  valueLabel: string
+  valueDetail?: string
+  valuePrice?: number
+}
+
+type CartLine = {
+  id: string
+  productId: string
+  quantity: number
+  selectedOptions: SelectedProductOption[]
+}
+
+type AdminOptionValueForm = {
+  id: string
+  label: string
+  detail: string
+  price: string
+}
+
+type AdminOptionGroupForm = {
+  id: string
+  name: string
+  values: AdminOptionValueForm[]
+  draftLabel: string
+  draftDetail: string
+  draftPrice: string
+}
+
 type Product = {
   id: string
   slug?: string
@@ -23,6 +68,7 @@ type Product = {
   searchKeywords?: string[]
   featured?: boolean
   featuredRank?: number
+  optionGroups?: ProductOptionGroup[]
   createdAt?: string
   updatedAt?: string
 }
@@ -43,6 +89,7 @@ type AdminProductForm = {
   searchKeywords: string
   featured: boolean
   featuredRank: string
+  optionGroups: AdminOptionGroupForm[]
 }
 
 type CheckoutForm = {
@@ -78,6 +125,20 @@ type RouteState = {
   legacyProductId: string | null
 }
 
+type CartToast = {
+  id: number
+  productName: string
+  image: string
+  quantity: number
+  linePrice: number
+  selectedOptionsText?: string
+}
+
+type FreeShippingToast = {
+  id: number
+  message: string
+}
+
 declare global {
   interface Window {
     __INITIAL_CATALOG__?: CatalogPayload
@@ -94,6 +155,7 @@ type AdminOrderItem = {
   quantity: number
   unitPrice: number
   priceUnit: string
+  selectedOptions?: SelectedProductOption[]
 }
 
 type AdminOrder = {
@@ -193,6 +255,9 @@ const deepFixText = <T,>(input: T): T => {
   return input
 }
 
+const freeShippingThreshold = 300
+const shippingFee = 15
+
 const rawText = {
   fi: {
     nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
@@ -210,8 +275,8 @@ const rawText = {
     productsTitle: 'Tuotteet',
     productsNote: 'Toimitus arkipäivässä',
     productsBillingNote: 'Maksu laskulla 14 pv',
-    productsShippingNote: 'Toimitus: 15 € alle 250 € tilauksille',
-    productsFreeShippingNote: 'Ilmainen toimitus yli 250 € tilauksille',
+    productsShippingNote: `Toimitus: ${shippingFee} € alle ${freeShippingThreshold} € tilauksille`,
+    productsFreeShippingNote: `Ilmainen toimitus yli ${freeShippingThreshold} € tilauksille`,
     featuredTitle: 'Suosittelemme juuri nyt',
     featuredText: 'Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.',
     productsShown: 'Näkyvillä',
@@ -228,6 +293,10 @@ const rawText = {
     delivery: 'Toimitus',
     total: 'Yhteensä',
     clearCart: 'Tyhjennä kori',
+    cartAddedSingle: 'tuote lisätty ostoskoriin',
+    cartAddedMulti: 'tuotetta lisätty ostoskoriin',
+    freeShippingHintPrefix: 'Tilaa vielä',
+    freeShippingHintSuffix: 'niin saat ilmaisen toimituksen.',
     checkoutTitle: 'Tilauksen tiedot',
     checkoutNote: 'Täytä ensin yhteystiedot, sitten laskutustiedot.',
     checkoutStepInfo: 'Yhteystiedot',
@@ -301,8 +370,8 @@ const rawText = {
     productsTitle: 'Products',
     productsNote: 'Delivery on business days',
     productsBillingNote: 'Payment by invoice in 14 days',
-    productsShippingNote: 'Delivery: 15 € for orders below 250 €',
-    productsFreeShippingNote: 'Free delivery for orders above 250 €',
+    productsShippingNote: `Delivery: ${shippingFee} € for orders below ${freeShippingThreshold} €`,
+    productsFreeShippingNote: `Free delivery for orders above ${freeShippingThreshold} €`,
     featuredTitle: 'Recommended right now',
     featuredText: 'Browse current favorites and find the best products quickly.',
     productsShown: 'Showing',
@@ -319,6 +388,10 @@ const rawText = {
     delivery: 'Delivery',
     total: 'Total',
     clearCart: 'Clear cart',
+    cartAddedSingle: 'item added to cart',
+    cartAddedMulti: 'items added to cart',
+    freeShippingHintPrefix: 'Order',
+    freeShippingHintSuffix: 'more to get free delivery.',
     checkoutTitle: 'Order details',
     checkoutNote: 'First fill contact details, then billing details.',
     checkoutStepInfo: 'Contact details',
@@ -568,6 +641,181 @@ const slugify = (value: string) =>
     .replace(/^-+|-+$/g, '')
     .replace(/-{2,}/g, '-')
 
+const parseOptionPrice = (value: string) => {
+  const normalized = value.replace(/€/g, '').replace(/\s+/g, '').replace(',', '.').trim()
+  if (!normalized) {
+    return undefined
+  }
+  const numeric = Number(normalized)
+  return Number.isFinite(numeric) ? numeric : undefined
+}
+
+const normalizeOptionGroups = (groups?: ProductOptionGroup[]): ProductOptionGroup[] => {
+  if (!Array.isArray(groups)) {
+    return []
+  }
+
+  return groups.reduce<ProductOptionGroup[]>((acc, group, groupIndex) => {
+    const name = String(group?.name ?? '').trim()
+    const values = Array.isArray(group?.values)
+      ? group.values.reduce<ProductOptionValue[]>((valueAcc, value, valueIndex) => {
+          const label = String(value?.label ?? '').trim()
+          if (!label) {
+            return valueAcc
+          }
+
+          valueAcc.push({
+            id: String(value?.id ?? '').trim() || slugify(`${name || 'option'}-${label}-${valueIndex + 1}`) || `value-${valueIndex + 1}`,
+            label,
+            detail: String(value?.detail ?? '').trim() || undefined,
+            price: Number.isFinite(Number(value?.price)) ? Number(value.price) : undefined,
+          })
+          return valueAcc
+        }, [])
+      : []
+
+    if (!name || values.length === 0) {
+      return acc
+    }
+
+    acc.push({
+      id: String(group?.id ?? '').trim() || slugify(`${name}-${groupIndex + 1}`) || `option-${groupIndex + 1}`,
+      name,
+      values,
+    })
+    return acc
+  }, [])
+}
+
+const createAdminOptionGroup = (): AdminOptionGroupForm => ({
+  id: `option-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+  name: '',
+  values: [],
+  draftLabel: '',
+  draftDetail: '',
+  draftPrice: '',
+})
+
+const parseAdminOptionGroups = (groups: AdminOptionGroupForm[]): ProductOptionGroup[] =>
+  normalizeOptionGroups(
+    groups.map((group, groupIndex) => ({
+      id: group.id || `option-${groupIndex + 1}`,
+      name: group.name,
+      values: group.values.map((value, valueIndex) => ({
+        id: value.id || slugify(`${group.name || 'option'}-${value.label}-${valueIndex + 1}`) || `value-${valueIndex + 1}`,
+        label: value.label,
+        detail: value.detail.trim() || undefined,
+        price: parseOptionPrice(value.price),
+      })),
+    })),
+  )
+
+const formatAdminOptionGroups = (groups?: ProductOptionGroup[]): AdminOptionGroupForm[] =>
+  normalizeOptionGroups(groups).map((group) => ({
+    id: group.id,
+    name: group.name,
+    values: group.values.map((value) => ({
+      id: value.id,
+      label: value.label,
+      detail: value.detail ?? '',
+      price: value.price !== undefined ? String(value.price).replace('.', ',') : '',
+    })),
+    draftLabel: '',
+    draftDetail: '',
+    draftPrice: '',
+  }))
+
+const extractUnitLabel = (priceUnit: string, lang: Lang) => {
+  const unit = priceUnit
+    .replace(/€/g, '')
+    .split('/')
+    .pop()
+    ?.trim()
+    .replace(/^\(|\)$/g, '')
+
+  if (unit) {
+    return unit.charAt(0).toUpperCase() + unit.slice(1)
+  }
+
+  return lang === 'fi' ? 'Kpl' : 'Pc'
+}
+
+const getPriceUnitSuffix = (priceUnit: string, vatNote: string) => {
+  const suffix = String(priceUnit ?? '')
+    .replace(/[€?]/g, '')
+    .trim()
+
+  return suffix ? `${suffix} ${vatNote}` : vatNote
+}
+
+const getDisplayOptionGroups = (product: Product | null, lang: Lang): ProductOptionGroup[] => {
+  const groups = normalizeOptionGroups(product?.optionGroups)
+  if (groups.length > 0) {
+    return groups
+  }
+
+  if (!product) {
+    return []
+  }
+
+  return [
+    {
+      id: 'default-unit',
+      name: lang === 'fi' ? 'Yksikkö' : 'Unit',
+      values: [
+        {
+          id: 'default-unit-value',
+          label: extractUnitLabel(product.priceUnit, lang),
+          detail: '1',
+          price: product.price,
+        },
+      ],
+    },
+  ]
+}
+
+const getDefaultOptionSelections = (product: Product | null, lang: Lang): Record<string, string> => {
+  const groups = getDisplayOptionGroups(product, lang)
+
+  return groups.reduce<Record<string, string>>((acc, group) => {
+    if (group.values[0]) {
+      acc[group.id] = group.values[0].id
+    }
+    return acc
+  }, {})
+}
+
+const resolveSelectedOptions = (product: Product | null, selections: Record<string, string>, lang: Lang): SelectedProductOption[] => {
+  const groups = getDisplayOptionGroups(product, lang)
+
+  return groups.reduce<SelectedProductOption[]>((acc, group) => {
+      const selectedValueId = selections[group.id] || group.values[0]?.id
+      const value = group.values.find((item) => item.id === selectedValueId) ?? group.values[0]
+      if (!value) {
+        return acc
+      }
+      acc.push({
+        groupId: group.id,
+        groupName: group.name,
+        valueId: value.id,
+        valueLabel: value.label,
+        valueDetail: value.detail,
+        valuePrice: value.price,
+      })
+      return acc
+    }, [])
+}
+
+const buildCartLineId = (productId: string, selectedOptions: SelectedProductOption[]) => {
+  const suffix = selectedOptions.map((item) => `${item.groupId}:${item.valueId}`).join('|')
+  return suffix ? `${productId}__${suffix}` : productId
+}
+
+const formatSelectedOptionsText = (selectedOptions: SelectedProductOption[], separator = ' • ') =>
+  selectedOptions
+    .map((item) => `${item.groupName}: ${item.valueLabel}${item.valueDetail ? ` (${item.valueDetail})` : ''}`)
+    .join(separator)
+
 const getRouteFromUrl = (): RouteState => {
   if (typeof window === 'undefined') {
     return { type: 'home', slug: null, categorySlug: null, searchQuery: null, legacyProductId: null }
@@ -614,6 +862,32 @@ const formatPrice = (value: number, lang: Lang) => {
   }).format(value)
 }
 
+const getResolvedUnitPrice = (product: Product, selectedOptions: SelectedProductOption[]) =>
+  selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
+
+const formatOptionValueMeta = (
+  groupName: string,
+  detail: string | undefined,
+  price: number | undefined,
+  lang: Lang,
+  priceUnit: string,
+) => {
+  const isUnitGroup = /yksikk|unit/i.test(groupName)
+  const parts: string[] = []
+  if (detail) {
+    parts.push(detail)
+  }
+  if (price !== undefined && (!isUnitGroup || !detail)) {
+    parts.push(`${formatPrice(price, lang)} ${priceUnit}`)
+  }
+  return parts.join(' ? ')
+}
+
+const getOptionMetaHeader = (groupName: string, lang: Lang) =>
+  /yksikk|unit/i.test(groupName)
+    ? (lang === 'fi' ? 'Määrä' : 'Qty')
+    : (lang === 'fi' ? 'Lisätieto' : 'Detail')
+
 const formatDateTime = (value: string, lang: Lang) => {
   const locale = lang === 'fi' ? 'fi-FI' : 'en-GB'
   return new Intl.DateTimeFormat(locale, {
@@ -625,7 +899,7 @@ const formatDateTime = (value: string, lang: Lang) => {
   }).format(new Date(value))
 }
 
-const deliveryCost = (subtotal: number) => (subtotal >= 250 ? 0 : 15)
+const deliveryCost = (subtotal: number) => (subtotal >= freeShippingThreshold ? 0 : shippingFee)
 
 const formatDelivery = (value: number, lang: Lang) => {
   if (value === 0) {
@@ -633,6 +907,24 @@ const formatDelivery = (value: number, lang: Lang) => {
   }
   return `${formatPrice(value, lang)} €`
 }
+
+const getFreeShippingHint = (
+  remaining: number,
+  lang: Lang,
+  t: { freeShippingHintPrefix: string; freeShippingHintSuffix: string },
+) => {
+  if (remaining <= 0) {
+    return ''
+  }
+
+  if (lang === 'fi') {
+    return `${t.freeShippingHintPrefix} ${formatPrice(remaining, lang)} € ${t.freeShippingHintSuffix}`
+  }
+
+  return `${t.freeShippingHintPrefix} ${formatPrice(remaining, lang)} € ${t.freeShippingHintSuffix}`
+}
+
+const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 
 const grossPrice = (value: number) => value * vatMultiplier
 
@@ -677,6 +969,7 @@ const normalizeProduct = (product: Product): Product => {
       : [],
     featured: Boolean(product.featured),
     featuredRank: Number.isFinite(Number(product.featuredRank)) ? Number(product.featuredRank) : 999,
+    optionGroups: normalizeOptionGroups(product.optionGroups),
   }
 }
 
@@ -1008,7 +1301,9 @@ function App() {
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
   const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
   const [, setCatalogLoading] = useState(initialCatalog.products.length === 0)
-  const [cart, setCart] = useState<Record<string, number>>({})
+  const [cart, setCart] = useState<Record<string, CartLine>>({})
+  const [cartToast, setCartToast] = useState<CartToast | null>(null)
+  const [freeShippingToast, setFreeShippingToast] = useState<FreeShippingToast | null>(null)
   const [orderSent, setOrderSent] = useState(false)
   const [showCheckout, setShowCheckout] = useState(false)
   const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1)
@@ -1025,7 +1320,9 @@ function App() {
   const [adminPage, setAdminPage] = useState(1)
   const [adminCategoryName, setAdminCategoryName] = useState('')
   const [adminCategoryNameEn, setAdminCategoryNameEn] = useState('')
+  const [adminNewOptionGroupName, setAdminNewOptionGroupName] = useState('')
   const [selectedQuantity, setSelectedQuantity] = useState(1)
+  const [selectedOptionSelections, setSelectedOptionSelections] = useState<Record<string, string>>({})
   const [detailImageIndex, setDetailImageIndex] = useState(0)
   const [adminImageUrl, setAdminImageUrl] = useState('')
   const [showContactPanel, setShowContactPanel] = useState(false)
@@ -1045,6 +1342,7 @@ function App() {
     searchKeywords: '',
     featured: false,
     featuredRank: '',
+    optionGroups: [],
   })
   const [adminSeoTouched, setAdminSeoTouched] = useState(false)
   const [adminMetaTouched, setAdminMetaTouched] = useState(false)
@@ -1113,7 +1411,7 @@ function App() {
         : item.category
       const haystack = `${item.name} ${item.sku} ${item.description} ${item.category} ${categoryTerms}`.toLowerCase()
       const matchesQuery = query === '' || haystack.includes(query)
-      const matchesCategory = activeCategory === 'all' || item.category === activeCategory
+      const matchesCategory = query !== '' || activeCategory === 'all' || item.category === activeCategory
       return matchesQuery && matchesCategory
     })
 
@@ -1136,6 +1434,12 @@ function App() {
   const selectedProduct = routeState.slug ? productCatalog.find((item) => item.slug === routeState.slug) ?? null : null
   const selectedCategory = selectedProduct ? categoryMap[selectedProduct.category] : undefined
   const selectedProductImages = selectedProduct ? (selectedProduct.images.length > 0 ? selectedProduct.images : [selectedProduct.image]) : []
+  const selectedProductOptionGroups = useMemo(() => getDisplayOptionGroups(selectedProduct, lang), [lang, selectedProduct])
+  const selectedProductOptions = useMemo(
+    () => resolveSelectedOptions(selectedProduct, selectedOptionSelections, lang),
+    [lang, selectedOptionSelections, selectedProduct],
+  )
+  const selectedProductUnitPrice = selectedProduct ? getResolvedUnitPrice(selectedProduct, selectedProductOptions) : 0
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : [] 
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 4), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
@@ -1180,8 +1484,29 @@ function App() {
 
   useEffect(() => {
     setSelectedQuantity(1)
+    setSelectedOptionSelections(getDefaultOptionSelections(selectedProduct, lang))
     setDetailImageIndex(0)
-  }, [routeState.slug])
+  }, [lang, routeState.slug, selectedProduct])
+
+  useEffect(() => {
+    if (!cartToast) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setCartToast(null)
+    }, 3200)
+    return () => window.clearTimeout(timer)
+  }, [cartToast])
+
+  useEffect(() => {
+    if (!freeShippingToast) {
+      return
+    }
+    const timer = window.setTimeout(() => {
+      setFreeShippingToast(null)
+    }, 6000)
+    return () => window.clearTimeout(timer)
+  }, [freeShippingToast])
 
   useEffect(() => {
     const onPopState = () => {
@@ -1292,21 +1617,53 @@ function App() {
     generatedAdminSeoTitle,
   ])
 
-  const addToCart = (product: Product, quantity = 1) => {
+  const addToCart = (product: Product, quantity = 1, selectedOptions: SelectedProductOption[] = []) => {
     setOrderSent(false)
     const qty = Math.max(1, quantity)
-    setCart((prev) => ({ ...prev, [product.id]: (prev[product.id] ?? 0) + qty }))
+    const lineId = buildCartLineId(product.id, selectedOptions)
+    const unitPrice = getResolvedUnitPrice(product, selectedOptions)
+    const nextSubtotal = subtotal + unitPrice * qty
+    const nextRemaining = Math.max(0, freeShippingThreshold - nextSubtotal)
+    setCart((prev) => ({
+      ...prev,
+      [lineId]: {
+        id: lineId,
+        productId: product.id,
+        quantity: (prev[lineId]?.quantity ?? 0) + qty,
+        selectedOptions,
+      },
+    }))
+    setCartToast({
+      id: Date.now(),
+      productName: product.name,
+      image: getProductImage(product),
+      quantity: qty,
+      linePrice: unitPrice * qty,
+      selectedOptionsText: selectedOptions.length > 0 ? formatSelectedOptionsText(selectedOptions, ' • ') : undefined,
+    })
+    setFreeShippingToast(
+      nextRemaining > 0
+        ? {
+            id: Date.now() + 1,
+            message: getFreeShippingHint(nextRemaining, lang, t),
+          }
+        : null,
+    )
   }
 
-  const removeFromCart = (product: Product) => {
+  const updateCartLineQuantity = (lineId: string, delta: number) => {
     setOrderSent(false)
     setCart((prev) => {
       const next = { ...prev }
-      const count = (next[product.id] ?? 0) - 1
+      const line = next[lineId]
+      if (!line) {
+        return prev
+      }
+      const count = line.quantity + delta
       if (count <= 0) {
-        delete next[product.id]
+        delete next[lineId]
       } else {
-        next[product.id] = count
+        next[lineId] = { ...line, quantity: count }
       }
       return next
     })
@@ -1413,23 +1770,32 @@ function App() {
     }, 0)
   }
 
-  const cartItems = productCatalog.filter((item) => cart[item.id])
-  const totalItems = Object.values(cart).reduce((sum, qty) => sum + qty, 0)
-  const subtotal = cartItems.reduce((sum, item) => sum + item.price * (cart[item.id] ?? 0), 0)
+  const cartItems = Object.values(cart)
+    .map((line) => {
+      const product = productCatalog.find((item) => item.id === line.productId)
+      return product ? { ...line, product } : null
+    })
+    .filter((item): item is CartLine & { product: Product } => Boolean(item))
+  const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0)
+  const subtotal = cartItems.reduce((sum, item) => sum + getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, 0)
   const shipping = totalItems === 0 ? 0 : deliveryCost(subtotal)
   const total = subtotal + shipping
 
   const handleNextStep = () => {
     if (totalItems === 0) {
-      setFormError(lang === 'fi' ? 'Lisää tuotteita koriin.' : 'Add items to cart.')
+      setFormError(lang === 'fi' ? 'Lis?? tuotteita koriin.' : 'Add items to cart.')
       return
     }
     if (!checkoutForm.company || !checkoutForm.contact || !checkoutForm.email || !checkoutForm.address) {
       setFormError(
         lang === 'fi'
-          ? 'Täytä vähintään yritys, yhteyshenkilö, sähköposti ja osoite.'
+          ? 'T?yt? v?hint??n yritys, yhteyshenkil?, s?hk?posti ja osoite.'
           : 'Fill company, contact, email, and address.'
       )
+      return
+    }
+    if (!isValidEmail(checkoutForm.email)) {
+      setFormError(lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
       return
     }
     setFormError('')
@@ -1440,9 +1806,13 @@ function App() {
     if (!checkoutForm.billingCompany || !checkoutForm.billingAddress) {
       setFormError(
         lang === 'fi'
-          ? 'Täytä vähintään laskutusyritys ja laskutusosoite.'
+          ? 'T?yt? v?hint??n laskutusyritys ja laskutusosoite.'
           : 'Fill at least billing company and billing address.'
       )
+      return
+    }
+    if (!isValidEmail(checkoutForm.email)) {
+      setFormError(lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
       return
     }
     setFormError('')
@@ -1452,11 +1822,12 @@ function App() {
         lang,
         customer: checkoutForm,
         items: cartItems.map((item) => ({
-          productId: item.id,
-          name: item.name,
-          quantity: cart[item.id] ?? 0,
-          unitPrice: item.price,
-          priceUnit: item.priceUnit,
+          productId: item.product.id,
+          name: item.product.name,
+          quantity: item.quantity,
+          unitPrice: getResolvedUnitPrice(item.product, item.selectedOptions),
+          priceUnit: item.product.priceUnit,
+          selectedOptions: item.selectedOptions,
         })),
         subtotal,
         shipping,
@@ -1472,7 +1843,11 @@ function App() {
       })
       const data = (await response.json()) as { orderId?: string; message?: string }
       if (!response.ok) {
-        setFormError(data.message ?? (lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.'))
+        const friendlyMessage =
+          data.message === 'No recipients defined'
+            ? (lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
+            : data.message ?? (lang === 'fi' ? 'Tilauksen l?hetys ep?onnistui.' : 'Order submission failed.')
+        setFormError(friendlyMessage)
         return
       }
 
@@ -1481,7 +1856,7 @@ function App() {
       setCart({})
       setCheckoutStep(1)
     } catch {
-      setFormError(lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
+      setFormError(lang === 'fi' ? 'Tilauksen l?hetys ep?onnistui.' : 'Order submission failed.')
     } finally {
       setPlacingOrder(false)
     }
@@ -1594,7 +1969,9 @@ function App() {
       searchKeywords: '',
       featured: false,
       featuredRank: '',
+      optionGroups: [],
     })
+    setAdminNewOptionGroupName('')
     setAdminImageUrl('')
     setAdminSeoTouched(false)
     setAdminMetaTouched(false)
@@ -1631,6 +2008,7 @@ function App() {
         .filter(Boolean),
       featured: adminProductForm.featured,
       featuredRank: adminProductForm.featured ? Number(adminProductForm.featuredRank || 0) : undefined,
+      optionGroups: parseAdminOptionGroups(adminProductForm.optionGroups),
     }
 
     try {
@@ -1666,6 +2044,102 @@ function App() {
 
   const removeAdminImage = (index: number) => {
     setAdminProductForm((prev) => ({ ...prev, images: prev.images.filter((_, idx) => idx !== index) }))
+  }
+
+  const addAdminOptionGroup = () => {
+    const nextName = adminNewOptionGroupName.trim()
+    if (!nextName) {
+      setAdminError(lang === 'fi' ? 'Anna ensin valikon nimi.' : 'Enter the menu name first.')
+      return
+    }
+
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: [...prev.optionGroups, { ...createAdminOptionGroup(), name: nextName }],
+    }))
+    setAdminNewOptionGroupName('')
+    setAdminError('')
+  }
+
+  const updateAdminOptionGroup = (groupId: string, patch: Partial<AdminOptionGroupForm>) => {
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: prev.optionGroups.map((group) => (group.id === groupId ? { ...group, ...patch } : group)),
+    }))
+  }
+
+  const removeAdminOptionGroup = (groupId: string) => {
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: prev.optionGroups.filter((group) => group.id !== groupId),
+    }))
+  }
+
+  const addAdminOptionValue = (groupId: string) => {
+    const targetGroup = adminProductForm.optionGroups.find((group) => group.id === groupId)
+    if (!targetGroup) {
+      return
+    }
+
+    if (!targetGroup.name.trim()) {
+      setAdminError(lang === 'fi' ? 'Anna valikolle nimi ennen rivin lisäämistä.' : 'Name the menu before adding a row.')
+      return
+    }
+
+    const label = targetGroup.draftLabel.trim()
+    if (!label) {
+      setAdminError(lang === 'fi' ? 'Anna vaihtoehdolle nimi ennen lisäämistä.' : 'Enter a name for the option before adding it.')
+      return
+    }
+
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: prev.optionGroups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              values: [
+                ...group.values,
+                {
+                  id: `value-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+                  label,
+                  detail: targetGroup.draftDetail.trim(),
+                  price: targetGroup.draftPrice.trim(),
+                },
+              ],
+              draftLabel: '',
+              draftDetail: '',
+              draftPrice: '',
+            }
+          : group,
+      ),
+    }))
+    setAdminError('')
+  }
+
+  const updateAdminOptionValue = (groupId: string, valueId: string, patch: Partial<AdminOptionValueForm>) => {
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: prev.optionGroups.map((group) =>
+        group.id === groupId
+          ? {
+              ...group,
+              values: group.values.map((value) => (value.id === valueId ? { ...value, ...patch } : value)),
+            }
+          : group,
+      ),
+    }))
+  }
+
+  const removeAdminOptionValue = (groupId: string, valueId: string) => {
+    setAdminProductForm((prev) => ({
+      ...prev,
+      optionGroups: prev.optionGroups.map((group) =>
+        group.id === groupId
+          ? { ...group, values: group.values.filter((value) => value.id !== valueId) }
+          : group,
+      ),
+    }))
   }
 
   const handleAdminImageUpload = (event: ChangeEvent<HTMLInputElement>) => {
@@ -1712,7 +2186,9 @@ function App() {
       searchKeywords: (product.searchKeywords ?? []).join(', ') || generatedKeywords,
       featured: Boolean(product.featured),
       featuredRank: product.featured ? String(product.featuredRank ?? 0) : '',
+      optionGroups: formatAdminOptionGroups(product.optionGroups),
     })
+    setAdminNewOptionGroupName('')
     setAdminImageUrl('')
     setAdminSeoTouched(Boolean(product.seoTitle && product.seoTitle !== generatedTitle))
     setAdminMetaTouched(Boolean(product.metaDescription && product.metaDescription !== generatedDescription))
@@ -1737,9 +2213,7 @@ function App() {
       return
     }
     setCart((prev) => {
-      const next = { ...prev }
-      delete next[productId]
-      return next
+      return Object.fromEntries(Object.entries(prev).filter(([, item]) => item.productId !== productId))
     })
     if (selectedProduct?.id === productId) {
       syncProductInUrl(null)
@@ -1803,6 +2277,39 @@ function App() {
     }
   }
 
+  const moveCategory = async (categoryId: string, direction: -1 | 1) => {
+    const currentIndex = categories.findIndex((item) => item.id === categoryId)
+    const nextIndex = currentIndex + direction
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= categories.length) {
+      return
+    }
+
+    const nextOrder = [...categories]
+    const [moved] = nextOrder.splice(currentIndex, 1)
+    nextOrder.splice(nextIndex, 0, moved)
+
+    try {
+      const response = await fetch('/api/admin/categories/reorder', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...adminAuthHeaders(),
+        },
+        body: JSON.stringify({ order: nextOrder.map((item) => item.id) }),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian järjestyksen päivitys epäonnistui.' : 'Failed to update category order.'))
+        return
+      }
+      syncCatalogState(result.catalog)
+      setAdminError('')
+    } catch {
+      setAdminError(lang === 'fi' ? 'Kategorian järjestyksen päivitys epäonnistui.' : 'Failed to update category order.')
+    }
+  }
+
   const adminFilteredProducts = useMemo(() => {
     const q = adminQuery.trim().toLowerCase()
     return productCatalog.filter((item) => {
@@ -1853,7 +2360,50 @@ function App() {
             {t.nav[1]}
           </a>
         </nav>
-        <div className="actions">
+        <div className="top-right">
+          {!isAdminPage && (
+            <div className="top-highlights" aria-label={lang === 'fi' ? 'Yhteys- ja toimitustiedot' : 'Contact and delivery details'}>
+            <div className="top-highlight-card">
+              <span className="top-highlight-icon" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.61 2.61a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6.09 6.09l1.47-1.27a2 2 0 0 1 2.11-.45c.84.28 1.71.49 2.61.61A2 2 0 0 1 22 16.92Z" />
+                  </svg>
+                </span>
+                <div className="top-highlight-copy">
+                  <strong>{lang === 'fi' ? 'Puhelin' : 'Phone'}</strong>
+                  <span>{t.footer.phone}</span>
+                </div>
+              </div>
+              <div className="top-highlight-card">
+                <span className="top-highlight-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M10 17h4V5H2v12h3" />
+                    <path d="M14 8h4l4 4v5h-3" />
+                    <circle cx="7.5" cy="17.5" r="2.5" />
+                    <circle cx="17.5" cy="17.5" r="2.5" />
+                  </svg>
+                </span>
+                <div className="top-highlight-copy">
+                  <strong>{lang === 'fi' ? 'Ilmainen toimitus' : 'Free delivery'}</strong>
+                  <span>{lang === 'fi' ? `yli ${freeShippingThreshold} € tilauksille` : `for orders over ${freeShippingThreshold} €`}</span>
+                </div>
+              </div>
+              <div className="top-highlight-card">
+                <span className="top-highlight-icon" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+                    <rect x="3" y="5" width="18" height="14" rx="2" />
+                    <path d="M3 10h18" />
+                    <path d="M7 15h3" />
+                  </svg>
+                </span>
+                <div className="top-highlight-copy">
+                  <strong>{lang === 'fi' ? 'Maksu laskulla' : 'Pay by invoice'}</strong>
+                  <span>{lang === 'fi' ? '14 pv yrityksille' : '14 days for businesses'}</span>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="actions">
           {!isAdminPage && (
             <>
               <div className="top-search">
@@ -1879,8 +2429,38 @@ function App() {
               EN
             </button>
           </div>
+          </div>
         </div>
       </header>
+
+      {!isAdminPage && cartToast && (
+        <div className="cart-toast" role="status" aria-live="polite">
+          <div className="cart-toast-head">
+            <strong>
+              {cartToast.quantity} {cartToast.quantity === 1 ? t.cartAddedSingle : t.cartAddedMulti}
+            </strong>
+            <button className="ghost tiny" type="button" onClick={() => setCartToast(null)}>
+              x
+            </button>
+          </div>
+          <div className="cart-toast-body">
+            <img src={cartToast.image} alt={cartToast.productName} />
+            <div>
+              <span className="muted small">{cartToast.quantity}x</span>
+              <strong>{cartToast.productName}</strong>
+              {cartToast.selectedOptionsText && <span className="muted small">{cartToast.selectedOptionsText}</span>}
+              <span>{formatPrice(cartToast.linePrice, lang)} €</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {!isAdminPage && freeShippingToast && !showCheckout && (
+        <div className="free-shipping-banner" role="status" aria-live="polite">
+          <span className="free-shipping-banner-icon">!</span>
+          <span>{freeShippingToast.message}</span>
+        </div>
+      )}
 
       <main>
         {isAdminPage ? (
@@ -2037,7 +2617,133 @@ function App() {
                     value={adminProductForm.description}
                     onChange={(event) => setAdminProductForm((prev) => ({ ...prev, description: event.target.value }))}
                   />
-                  <div className="admin-seo-box">
+                  <div className="admin-options-box">
+                    <div className="admin-options-head">
+                      <strong>{lang === 'fi' ? 'Tuotevalinnat' : 'Product options'}</strong>
+                      <div className="admin-option-create">
+                        <input
+                          placeholder={lang === 'fi' ? 'Uuden valikon nimi, esim. Yksikkö tai Väri' : 'New menu name, e.g. Unit or Color'}
+                          value={adminNewOptionGroupName}
+                          onChange={(event) => setAdminNewOptionGroupName(event.target.value)}
+                        />
+                        <button className="ghost tiny" type="button" onClick={addAdminOptionGroup}>
+                          {lang === 'fi' ? 'Luo valikko' : 'Create menu'}
+                        </button>
+                      </div>
+                    </div>
+                    {adminProductForm.optionGroups.length === 0 ? (
+                      <div className="admin-option-default-preview">
+                        <p className="muted small">
+                          {lang === 'fi'
+                            ? 'Jos et lisää omaa valikkoa, tuote näyttää automaattisesti yhden oletusrivin.'
+                            : 'If you do not add a custom menu, the product will use one default row automatically.'}
+                        </p>
+                        <div className="admin-option-preview-table">
+                          <div className="admin-option-preview-head">
+                            <span>{lang === 'fi' ? 'Yksikkö' : 'Unit'}</span>
+                            <span>{lang === 'fi' ? 'Määrä' : 'Qty'}</span>
+                          </div>
+                          <div className="admin-option-preview-row">
+                            <span>{extractUnitLabel(adminProductForm.priceUnit || (lang === 'fi' ? '€ / kpl' : '€ / pc'), lang)}</span>
+                            <span>1</span>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="admin-options-list">
+                        {adminProductForm.optionGroups.map((group) => (
+                          <div key={group.id} className="admin-option-group">
+                            <div className="admin-option-group-head">
+                              <div className="admin-option-group-title">
+                                <strong>{lang === 'fi' ? 'Valikko' : 'Menu'}</strong>
+                                <span className="muted small">
+                                  {lang === 'fi' ? 'Esim. Yksikkö, Väri tai Koko' : 'For example Unit, Color, or Size'}
+                                </span>
+                              </div>
+                              <input
+                                placeholder={lang === 'fi' ? 'Valikon nimi, esim. Yksikkö tai Väri' : 'Menu name, e.g. Unit or Color'}
+                                value={group.name}
+                                onChange={(event) => updateAdminOptionGroup(group.id, { name: event.target.value })}
+                              />
+                              <button className="ghost tiny danger" type="button" onClick={() => removeAdminOptionGroup(group.id)}>
+                                {lang === 'fi' ? 'Poista valikko' : 'Remove menu'}
+                              </button>
+                            </div>
+                            <div className="admin-option-values">
+                              <div className="admin-option-value-head">
+                                <span>{lang === 'fi' ? 'Valinta' : 'Choice'}</span>
+                                <span>{lang === 'fi' ? 'Määrä / lisätieto' : 'Qty / detail'}</span>
+                                <span>{lang === 'fi' ? 'Hinta' : 'Price'}</span>
+                                <span aria-hidden="true" />
+                              </div>
+                              {group.values.length === 0 && (
+                                <p className="muted small admin-option-empty">
+                                  {lang === 'fi' ? 'Tälle valikolle ei ole vielä rivejä. Lisää ensimmäinen vaihtoehto alta.' : 'This menu has no rows yet. Add the first option below.'}
+                                </p>
+                              )}
+                              {group.values.map((value) => (
+                                <div key={value.id} className="admin-option-value-row">
+                                  <input
+                                    placeholder={lang === 'fi' ? 'Valinta, esim. Lava' : 'Choice, e.g. Pallet'}
+                                    value={value.label}
+                                    onChange={(event) => updateAdminOptionValue(group.id, value.id, { label: event.target.value })}
+                                  />
+                                  <input
+                                    placeholder={lang === 'fi' ? 'Määrä / lisätieto, esim. 100 kpl' : 'Qty / detail, e.g. 100 pcs'}
+                                    value={value.detail}
+                                    onChange={(event) => updateAdminOptionValue(group.id, value.id, { detail: event.target.value })}
+                                  />
+                                  <input
+                                    placeholder={lang === 'fi' ? 'Hinta tälle valinnalle' : 'Price for this choice'}
+                                    type="number"
+                                    min={0}
+                                    step="0.01"
+                                    value={value.price}
+                                    onChange={(event) => updateAdminOptionValue(group.id, value.id, { price: event.target.value })}
+                                  />
+                                  <button className="ghost tiny danger" type="button" onClick={() => removeAdminOptionValue(group.id, value.id)}>
+                                    {lang === 'fi' ? 'Poista' : 'Remove'}
+                                  </button>
+                                </div>
+                              ))}
+                              <div className="admin-option-add-row">
+                                <input
+                                  placeholder={lang === 'fi' ? 'Valinta, esim. Lava' : 'Choice, e.g. Pallet'}
+                                  value={group.draftLabel}
+                                  onChange={(event) => updateAdminOptionGroup(group.id, { draftLabel: event.target.value })}
+                                />
+                                <input
+                                  placeholder={lang === 'fi' ? 'Määrä / lisätieto, esim. 100 kpl' : 'Qty / detail, e.g. 100 pcs'}
+                                  value={group.draftDetail}
+                                  onChange={(event) => updateAdminOptionGroup(group.id, { draftDetail: event.target.value })}
+                                />
+                                <input
+                                  placeholder={lang === 'fi' ? 'Hinta tälle valinnalle' : 'Price for this choice'}
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={group.draftPrice}
+                                  onChange={(event) => updateAdminOptionGroup(group.id, { draftPrice: event.target.value })}
+                                />
+                                <button className="primary tiny" type="button" onClick={() => addAdminOptionValue(group.id)}>
+                                  {lang === 'fi' ? 'Hyväksy rivi' : 'Add row'}
+                                </button>
+                              </div>
+                            </div>
+                            <div className="admin-option-tools">
+                              <span className="muted small">
+                                {lang === 'fi'
+                                  ? 'Kirjoita uusi rivi ja paina Hyväksy rivi. Jos hinnan antaa, se vaihtaa tuotesivun hinnan, korin ja tilauksen hinnan.'
+                                  : 'Write the row and click Add row. If a price is set, it will control the product page, cart, and order price.'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                  
+<div className="admin-seo-box">
                     <div className="admin-seo-head">
                       <strong>{lang === 'fi' ? 'SEO' : 'SEO'}</strong>
                       <div className="admin-seo-tools">
@@ -2108,12 +2814,20 @@ function App() {
 
                 <div className="admin-list">
                   <div className="admin-categories-list">
-                    {categories.map((category) => (
+                    {categories.map((category, index) => (
                       <div key={category.id} className="admin-category-chip">
                         <span>{category.nameFi} / {category.nameEn}</span>
-                        <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category.id)}>
-                          {lang === 'fi' ? 'Poista' : 'Delete'}
-                        </button>
+                        <div className="admin-category-actions">
+                          <button className="ghost tiny" type="button" disabled={index === 0} onClick={() => moveCategory(category.id, -1)}>
+                            {lang === 'fi' ? 'Ylös' : 'Up'}
+                          </button>
+                          <button className="ghost tiny" type="button" disabled={index === categories.length - 1} onClick={() => moveCategory(category.id, 1)}>
+                            {lang === 'fi' ? 'Alas' : 'Down'}
+                          </button>
+                          <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category.id)}>
+                            {lang === 'fi' ? 'Poista' : 'Delete'}
+                          </button>
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -2194,9 +2908,14 @@ function App() {
                             </p>
                             <p className="muted small">{order.customer.address}, {order.customer.zip} {order.customer.city}</p>
                             <div className="admin-order-items">
-                              {order.items.map((item) => (
-                                <div key={`${order.id}-${item.productId}-${item.name}`} className="admin-order-item">
-                                  <span>{item.name}</span>
+                              {order.items.map((item, index) => (
+                                <div key={`${order.id}-${item.productId}-${index}`} className="admin-order-item">
+                                  <span>
+                                    {item.name}
+                                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                                      <span className="admin-order-option-text">{formatSelectedOptionsText(item.selectedOptions)}</span>
+                                    )}
+                                  </span>
                                   <span>{item.quantity} {'\u00D7'} {formatPrice(item.unitPrice, lang)} {'\u20AC'}</span>
                                 </div>
                               ))}
@@ -2297,13 +3016,47 @@ function App() {
                 <p className="muted detail-description">{selectedProduct.description}</p>
                 <div className="price-block">
                   <span className="muted">
-                    {formatPrice(grossPrice(selectedProduct.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                    {formatPrice(grossPrice(selectedProductUnitPrice), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
                   </span>
                   <span className="price-top">
-                    {formatPrice(selectedProduct.price, lang)} {selectedProduct.priceUnit} {t.product.vatNote}
+                    <span className="price-main">{formatPrice(selectedProductUnitPrice, lang)} €</span>
+                    <span className="price-suffix">{getPriceUnitSuffix(selectedProduct.priceUnit, t.product.vatNote)}</span>
                   </span>
                   {selectedProduct.unitNote && <span className="muted">{selectedProduct.unitNote}</span>}
                 </div>
+                {selectedProductOptionGroups.length > 0 && (
+                  <div className="product-options">
+                    {selectedProductOptionGroups.map((group) => (
+                      <div key={group.id} className="product-option-group">
+                        <div className="product-option-group-head">
+                          <strong>{group.name}</strong>
+                          {group.values.some((value) => value.detail || value.price !== undefined) && (
+                            <span className="muted small">{getOptionMetaHeader(group.name, lang)}</span>
+                          )}
+                        </div>
+                        <div className="product-option-list">
+                          {group.values.map((value) => {
+                            const checked = (selectedOptionSelections[group.id] || group.values[0]?.id) === value.id
+                            return (
+                              <label key={value.id} className={`product-option-row ${checked ? 'active' : ''}`}>
+                                <span className="product-option-main">
+                                  <input
+                                    type="radio"
+                                    name={`product-option-${group.id}`}
+                                    checked={checked}
+                                    onChange={() => setSelectedOptionSelections((prev) => ({ ...prev, [group.id]: value.id }))}
+                                  />
+                                  <span>{value.label}</span>
+                                </span>
+                                <span className="muted">{formatOptionValueMeta(group.name, value.detail, value.price, lang, selectedProduct.priceUnit)}</span>
+                              </label>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <p className="stock-note">
                   {lang === 'fi' ? 'Varastossa' : 'In stock'}
                 </p>
@@ -2317,7 +3070,7 @@ function App() {
                       +
                     </button>
                   </div>
-                  <button className="primary" onClick={() => addToCart(selectedProduct, selectedQuantity)}>
+                  <button className="primary" onClick={() => addToCart(selectedProduct, selectedQuantity, selectedProductOptions)}>
                     {t.add}
                   </button>
                 </div>
@@ -2409,7 +3162,8 @@ function App() {
                           {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
                         </span>
                         <span className="price-top">
-                          {formatPrice(item.price, lang)} {item.priceUnit} {t.product.vatNote}
+                          <span className="price-main">{formatPrice(item.price, lang)} €</span>
+                          <span className="price-suffix">{getPriceUnitSuffix(item.priceUnit, t.product.vatNote)}</span>
                         </span>
                         {item.unitNote && <span className="muted">{item.unitNote}</span>}
                       </div>
@@ -2425,10 +3179,9 @@ function App() {
           <div className="products-header">
             <div>
               <h2>{t.productsTitle}</h2>
-              <p className="muted">{t.productsNote}</p>
-              <p className="muted">{t.productsBillingNote}</p>
-              <p className="muted shipping-note">{t.productsShippingNote}</p>
-              <p className="muted shipping-note">{t.productsFreeShippingNote}</p>
+              <p className="products-info-line">{t.productsNote}</p>
+              <p className="products-info-line">{t.productsBillingNote}</p>
+              <p className="products-info-line shipping-note">{t.productsFreeShippingNote}</p>
             </div>
           </div>
           <div className="sort sort-floating">
@@ -2510,7 +3263,8 @@ function App() {
                         {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
                       </span>
                       <span className="price-top">
-                        {formatPrice(item.price, lang)} {item.priceUnit} {t.product.vatNote}
+                        <span className="price-main">{formatPrice(item.price, lang)} €</span>
+                        <span className="price-suffix">{getPriceUnitSuffix(item.priceUnit, t.product.vatNote)}</span>
                       </span>
                       {item.unitNote && <span className="muted">{item.unitNote}</span>}
                     </div>
@@ -2668,7 +3422,7 @@ function App() {
                         </div>
                         <div className="field">
                           <label>{t.form.email}</label>
-                          <input value={checkoutForm.email} onChange={(e) => updateForm('email', e.target.value)} />
+                          <input type="email" value={checkoutForm.email} onChange={(e) => updateForm('email', e.target.value)} />
                         </div>
                         <div className="field">
                           <label>{t.form.phone}</label>
@@ -2742,17 +3496,20 @@ function App() {
                     {cartItems.map((item) => (
                       <div key={item.id} className="cart-item">
                         <div className="cart-item-info">
-                          <strong>{item.name}</strong>
+                          <strong>{item.product.name}</strong>
+                          {item.selectedOptions.length > 0 && (
+                            <span className="muted small">{formatSelectedOptionsText(item.selectedOptions)}</span>
+                          )}
                           <span className="tag">
-                            {formatPrice(item.price, lang)} {item.priceUnit}
+                            {formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions), lang)} {item.product.priceUnit}
                           </span>
                         </div>
                         <div className="cart-actions">
-                          <button className="ghost" onClick={() => removeFromCart(item)}>
+                          <button className="ghost" onClick={() => updateCartLineQuantity(item.id, -1)}>
                             -
                           </button>
-                          <span>{cart[item.id]}</span>
-                          <button className="ghost" onClick={() => addToCart(item)}>
+                          <span>{item.quantity}</span>
+                          <button className="ghost" onClick={() => updateCartLineQuantity(item.id, 1)}>
                             +
                           </button>
                         </div>

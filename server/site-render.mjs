@@ -8,8 +8,8 @@ const distIndexFile = path.join(distDir, 'index.html')
 const manifestFile = path.join(distDir, '.vite', 'manifest.json')
 
 const homeMeta = {
-  title: 'Suomen Paperitukku – Käsi- ja wc-paperit sekä saniteettitarvikkeet yrityksille',
-  description: 'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
+  title: 'Suomen Paperitukku â KÃ¤si- ja wc-paperit sekÃ¤ saniteettitarvikkeet yrityksille',
+  description: 'Suomen Paperitukku toimittaa kÃ¤sipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
 }
 
 const escapeHtml = (value) =>
@@ -55,7 +55,7 @@ const getEntryAssets = () => {
 }
 
 const jsonScript = (value) =>
-  JSON.stringify(value).replace(/</g, '\\u003c').replace(/>/g, '\\u003e')
+  JSON.stringify(value).replace(/</g, '\u003c').replace(/>/g, '\u003e')
 
 const absoluteUrl = (siteUrl, target) => {
   if (!target) {
@@ -72,6 +72,14 @@ const formatPrice = (value) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(Number(value ?? 0))
+
+const getPriceUnitSuffix = (priceUnit, vatNote = '(alv 0%)') => {
+  const suffix = String(priceUnit ?? '')
+    .replace(/^€\s*/u, '')
+    .trim()
+
+  return suffix ? `${suffix} ${vatNote}` : vatNote
+}
 
 const stripTags = (value) => String(value ?? '').replace(/<[^>]*>/g, '').trim()
 
@@ -105,6 +113,7 @@ const productSeo = (siteUrl, product, category) => {
   const description = stripTags(product.metaDescription || product.description || homeMeta.description)
   const image = absoluteUrl(siteUrl, `/og/product/${product.slug}.svg`)
   const keywords = Array.isArray(product.searchKeywords) ? product.searchKeywords.join(', ') : ''
+  const effectivePrice = getDefaultSelectedOptionPrice(product)
 
   const breadcrumbData = {
     '@context': 'https://schema.org',
@@ -148,7 +157,7 @@ const productSeo = (siteUrl, product, category) => {
       '@type': 'Offer',
       url: canonical,
       priceCurrency: 'EUR',
-      price: Number(product.price ?? 0).toFixed(2),
+      price: Number(effectivePrice ?? 0).toFixed(2),
       availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
       seller: {
         '@type': 'Organization',
@@ -178,7 +187,7 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     telephone: '+358449782446',
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'Säynetie 16',
+      streetAddress: 'SÃ¤ynetie 16',
       postalCode: '01490',
       addressLocality: 'Vantaa',
       addressCountry: 'FI',
@@ -237,6 +246,111 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
 
 const getProductAlt = (product) => `${product.name} yrityksille`
 
+const extractUnitLabel = (priceUnit) => {
+  const unit = String(priceUnit ?? '')
+    .replace(/â¬/g, '')
+    .split('/')
+    .pop()
+    ?.trim()
+    .replace(/^\(|\)$/g, '')
+
+  if (unit) {
+    return unit.charAt(0).toUpperCase() + unit.slice(1)
+  }
+
+  return 'Kpl'
+}
+
+const getDisplayOptionGroups = (product) => {
+  const groups = Array.isArray(product?.optionGroups) ? product.optionGroups : []
+  if (groups.length > 0) {
+    return groups
+  }
+
+  if (!product) {
+    return []
+  }
+
+  return [
+    {
+      id: 'default-unit',
+      name: 'YksikkÃ¶',
+      values: [
+        {
+          id: 'default-unit-value',
+          label: extractUnitLabel(product.priceUnit),
+          detail: '1',
+          price: Number(product.price ?? 0),
+        },
+      ],
+    },
+  ]
+}
+
+const getDefaultSelectedOptionPrice = (product) => {
+  const groups = getDisplayOptionGroups(product)
+  for (const group of groups) {
+    const firstWithPrice = Array.isArray(group?.values) ? group.values.find((value) => Number.isFinite(Number(value?.price))) : null
+    if (firstWithPrice) {
+      return Number(firstWithPrice.price)
+    }
+  }
+  return Number(product?.price ?? 0)
+}
+
+const formatOptionValueMeta = (groupName, value, priceUnit) => {
+  const isUnitGroup = /yksikk|unit/i.test(String(groupName ?? ''))
+  const parts = []
+  if (value?.detail) {
+    parts.push(escapeHtml(value.detail))
+  }
+  if (Number.isFinite(Number(value?.price)) && (!isUnitGroup || !value?.detail)) {
+    parts.push(`${formatPrice(Number(value.price))} ${escapeHtml(priceUnit)}`)
+  }
+  return parts.join(' &bull; ')
+}
+
+const getOptionMetaHeader = (groupName) => (/yksikk|unit/i.test(String(groupName ?? '')) ? 'Määrä' : 'Lisätieto')
+
+const renderOptionGroupsMarkup = (product) => {
+  const groups = getDisplayOptionGroups(product)
+  if (groups.length === 0) {
+    return ''
+  }
+
+  return `
+    <div class="product-options">
+      ${groups
+        .map(
+          (group) => `
+            <div class="product-option-group">
+              <div class="product-option-group-head">
+                <strong>${escapeHtml(group.name)}</strong>
+                ${group.values.some((value) => value.detail || value.price !== undefined) ? `<span class="muted small">${getOptionMetaHeader(group.name)}</span>` : ''}
+              </div>
+              <div class="product-option-list">
+                ${group.values
+                  .map(
+                    (value, index) => `
+                      <label class="product-option-row ${index === 0 ? 'active' : ''}">
+                        <span class="product-option-main">
+                          <input type="radio" ${index === 0 ? 'checked' : ''} disabled />
+                          <span>${escapeHtml(value.label)}</span>
+                        </span>
+                        <span class="muted">${formatOptionValueMeta(group.name, value, product.priceUnit)}</span>
+                      </label>
+                    `,
+                  )
+                  .join('')}
+              </div>
+            </div>
+          `,
+        )
+        .join('')}
+    </div>
+  `
+}
+
 const renderHomeMarkup = ({ catalog }) => {
   const featuredCards = getFeaturedProducts(catalog.products, 4)
   const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
@@ -248,7 +362,7 @@ const renderHomeMarkup = ({ catalog }) => {
         <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
           <img src="/brand-logo.png" alt="Suomen Paperitukku logo" />
         </a>
-        <nav class="nav" aria-label="P\u00E4\u00E4navigaatio">
+        <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
           <a class="nav-button" href="/#contact">Yhteystiedot</a>
@@ -257,7 +371,7 @@ const renderHomeMarkup = ({ catalog }) => {
       <main class="main">
         <section class="hero" id="home">
           <h1>Suomen Paperitukku</h1>
-          <p>Suomen Paperitukku toimittaa käsi- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
+          <p>Suomen Paperitukku toimittaa kÃ¤si- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
         </section>
 
         <section class="section" id="categories">
@@ -283,7 +397,7 @@ const renderHomeMarkup = ({ catalog }) => {
                 <div class="products-header">
                   <div>
                     <h2>Suosittelemme juuri nyt</h2>
-                    <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.</p>
+                    <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja lÃ¶ydÃ¤ parhaat tuotteet helposti.</p>
                   </div>
                 </div>
                 <div class="grid featured-grid">
@@ -303,8 +417,8 @@ const renderHomeMarkup = ({ catalog }) => {
                                 </span>
                               </div>
                               <div class="price-block">
-                                <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
-                                <span class="price-top">${formatPrice(product.price)} ${escapeHtml(product.priceUnit)} (alv 0%)</span>
+                                <span class="muted">${formatPrice(Number(product.price) * 1.255)} â¬ (sis. alv)</span>
+                                <span class="price-top"><span class="price-main">${formatPrice(product.price)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                               </div>
                             </div>
                           </a>
@@ -322,10 +436,10 @@ const renderHomeMarkup = ({ catalog }) => {
           <div class="products-header">
             <div>
               <h2>Tuotteet</h2>
-              <p class="muted">Toimitus arkipäivässä</p>
+              <p class="muted">Toimitus arkipÃ¤ivÃ¤ssÃ¤</p>
               <p class="muted">Maksu laskulla 14 pv</p>
-              <p class="muted shipping-note">Toimitus: 15 € alle 250 € tilauksille</p>
-              <p class="muted shipping-note">Ilmainen toimitus yli 250 € tilauksille</p>
+              <p class="muted shipping-note">Toimitus: 15 â¬ alle 300 â¬ tilauksille</p>
+              <p class="muted shipping-note">Ilmainen toimitus yli 300 â¬ tilauksille</p>
             </div>
           </div>
           <div class="grid products-grid">
@@ -345,8 +459,8 @@ const renderHomeMarkup = ({ catalog }) => {
                           </span>
                         </div>
                         <div class="price-block">
-                          <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
-                          <span class="price-top">${formatPrice(product.price)} ${escapeHtml(product.priceUnit)} (alv 0%)</span>
+                          <span class="muted">${formatPrice(Number(product.price) * 1.255)} â¬ (sis. alv)</span>
+                          <span class="price-top"><span class="price-main">${formatPrice(product.price)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                         </div>
                       </div>
                     </a>
@@ -359,11 +473,11 @@ const renderHomeMarkup = ({ catalog }) => {
 
         <section class="section contact" id="contact">
           <h2>Yhteystiedot</h2>
-          <p class="muted">Tarvitsetko tarjouksen tai isomman erän? Ota yhteyttä Suomen Paperitukkuun.</p>
+          <p class="muted">Tarvitsetko tarjouksen tai isomman erÃ¤n? Ota yhteyttÃ¤ Suomen Paperitukkuun.</p>
           <div class="contact-layout">
             <div class="contact-info">
               <div class="contact-info-card">
-                <strong>Sähköposti</strong>
+                <strong>SÃ¤hkÃ¶posti</strong>
                 <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
               </div>
               <div class="contact-info-card">
@@ -382,7 +496,7 @@ const renderHomeMarkup = ({ catalog }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>Säynetie 16, 01490 Vantaa</p>
+          <p>SÃ¤ynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>
@@ -431,10 +545,12 @@ const renderAssetTags = () => {
   const assets = getEntryAssets()
   const css = assets.css.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n')
   const script = assets.script ? `<script type="module" src="${assets.script}"></script>` : ''
-  return `${css}\n${script}`
+  return `${css}
+${script}`
 }
 
 const renderProductMarkup = ({ product, category, related }) => {
+  const effectivePrice = getDefaultSelectedOptionPrice(product)
   const breadcrumbs = `
     <nav class="breadcrumbs" aria-label="Breadcrumb">
       <a href="/">Etusivu</a>
@@ -471,7 +587,7 @@ const renderProductMarkup = ({ product, category, related }) => {
         <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
           <img src="/brand-logo.png" alt="Suomen Paperitukku logo" />
         </a>
-        <nav class="nav" aria-label="P\u00E4\u00E4navigaatio">
+        <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#products">Tuotteet</a>
           <a class="nav-button" href="/#contact">Yhteystiedot</a>
         </nav>
@@ -489,10 +605,11 @@ const renderProductMarkup = ({ product, category, related }) => {
               <h1>${escapeHtml(product.name)}</h1>
               <p class="muted detail-description">${escapeHtml(product.description)}</p>
               <div class="price-block">
-                <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
-                <span class="price-top">${formatPrice(product.price)} ${escapeHtml(product.priceUnit)} (alv 0%)</span>
+                <span class="muted">${formatPrice(Number(effectivePrice) * 1.255)} â¬ (sis. alv)</span>
+                <span class="price-top"><span class="price-main">${formatPrice(effectivePrice)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                 ${product.unitNote ? `<span class="muted">${escapeHtml(product.unitNote)}</span>` : ''}
               </div>
+              ${renderOptionGroupsMarkup(product)}
               <p class="stock-note">${product.stock > 0 ? 'Varastossa' : 'Loppu'}</p>
               <div class="detail-seo-meta">
                 <span>SKU ${escapeHtml(product.sku)}</span>
@@ -512,7 +629,7 @@ const renderProductMarkup = ({ product, category, related }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>Säynetie 16, 01490 Vantaa</p>
+          <p>SÃ¤ynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>
