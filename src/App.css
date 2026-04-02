@@ -402,7 +402,8 @@ html {
   border: 1px solid var(--border);
   border-radius: 14px;
   background: #fff;
-  padding: 0.65rem 0.75rem;
+  padding: 0.58rem 0.72rem;
+  min-height: 0;
   text-align: left;
   display: grid;
   gap: 0.2rem;
@@ -831,6 +832,14 @@ html {
   gap: 2rem;
 }
 
+.checkout > div,
+.checkout-form,
+.cart,
+.cart-item-info,
+.field {
+  min-width: 0;
+}
+
 .checkout-head {
   display: grid;
   gap: 0.4rem;
@@ -862,6 +871,9 @@ html {
 
 .checkout-form input,
 .checkout-form textarea {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
   padding: 0.65rem 0.8rem;
   border-radius: 10px;
   border: 1px solid var(--border);
@@ -1430,20 +1442,30 @@ html {
 }
 
 .admin-categories-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem;
+  display: grid;
+  gap: 0.6rem;
 }
 
 .admin-category-chip {
   border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 0.2rem 0.35rem 0.2rem 0.7rem;
-  display: inline-flex;
-  gap: 0.35rem;
+  border-radius: 14px;
+  padding: 0.55rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.6rem;
   align-items: center;
-  flex-wrap: wrap;
   background: #fff;
+}
+
+.admin-category-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.admin-category-fields input {
+  min-width: 0;
 }
 
 .admin-category-actions {
@@ -1565,6 +1587,7 @@ html {
   display: grid;
   place-items: center;
   padding: 1rem;
+  overflow-x: hidden;
 }
 
 .checkout-backdrop {
@@ -1579,6 +1602,7 @@ html {
   width: min(1120px, 100%);
   max-height: calc(100vh - 2rem);
   overflow: auto;
+  overflow-x: hidden;
   border: 1px solid #d3dff2;
   border-radius: 18px;
   background: #f8fbff;
@@ -1749,6 +1773,14 @@ html {
     grid-template-columns: 1fr;
   }
 
+  .admin-category-chip {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-category-fields {
+    grid-template-columns: 1fr;
+  }
+
   .admin-image-row {
     grid-template-columns: 1fr;
   }
@@ -1833,6 +1865,24 @@ html {
   .free-shipping-banner {
     top: 5.45rem;
     width: calc(100vw - 1.4rem);
+    align-items: flex-start;
+  }
+
+  .checkout-overlay {
+    padding: 0.5rem;
+  }
+
+  .checkout-panel {
+    width: min(100%, calc(100vw - 1rem));
+    padding: 0.9rem;
+  }
+
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+
+  .cart-item {
+    flex-direction: column;
     align-items: flex-start;
   }
 
@@ -2064,6 +2114,7 @@ html {
   white-space: pre-line;
   line-height: 1.6;
   overflow-wrap: anywhere;
+  margin-bottom: 0.55rem;
 }
 
 .detail-info h1 {
@@ -2074,6 +2125,8 @@ html {
 
 .detail-info .price-block .muted {
   font-size: 1.05rem;
+  font-weight: 700;
+  color: #42526f;
 }
 
 .detail-info .price-top {

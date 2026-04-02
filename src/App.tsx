@@ -1,7 +1,7 @@
-import { useEffect, useMemo, useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
-import heroBgImage from './assets/high-angle-hand-disinfecting-laptop-desk.jpg'
+import heroBgImage from './assets/hero-background.webp'
 
 type Lang = 'fi' | 'en'
 
@@ -274,7 +274,7 @@ const rawText = {
     categoriesTitle: 'Kategoriat',
     productsTitle: 'Tuotteet',
     productsNote: 'Toimitus arkipäivässä',
-    productsBillingNote: 'Maksu laskulla 14 pv',
+    productsBillingNote: 'Maksu laskulla',
     productsShippingNote: `Toimitus: ${shippingFee} € alle ${freeShippingThreshold} € tilauksille`,
     productsFreeShippingNote: `Ilmainen toimitus yli ${freeShippingThreshold} € tilauksille`,
     featuredTitle: 'Suosittelemme juuri nyt',
@@ -369,7 +369,7 @@ const rawText = {
     categoriesTitle: 'Categories',
     productsTitle: 'Products',
     productsNote: 'Delivery on business days',
-    productsBillingNote: 'Payment by invoice in 14 days',
+    productsBillingNote: 'Pay by invoice',
     productsShippingNote: `Delivery: ${shippingFee} € for orders below ${freeShippingThreshold} €`,
     productsFreeShippingNote: `Free delivery for orders above ${freeShippingThreshold} €`,
     featuredTitle: 'Recommended right now',
@@ -880,7 +880,7 @@ const formatOptionValueMeta = (
   if (price !== undefined && (!isUnitGroup || !detail)) {
     parts.push(`${formatPrice(price, lang)} ${priceUnit}`)
   }
-  return parts.join(' ? ')
+  return parts.join(' • ')
 }
 
 const getOptionMetaHeader = (groupName: string, lang: Lang) =>
@@ -1320,6 +1320,7 @@ function App() {
   const [adminPage, setAdminPage] = useState(1)
   const [adminCategoryName, setAdminCategoryName] = useState('')
   const [adminCategoryNameEn, setAdminCategoryNameEn] = useState('')
+  const [adminCategoryDrafts, setAdminCategoryDrafts] = useState<Record<string, { nameFi: string; nameEn: string }>>({})
   const [adminNewOptionGroupName, setAdminNewOptionGroupName] = useState('')
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [selectedOptionSelections, setSelectedOptionSelections] = useState<Record<string, string>>({})
@@ -1373,6 +1374,7 @@ function App() {
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [adminOrdersError, setAdminOrdersError] = useState('')
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
+  const previousStorePageRef = useRef(currentPage)
   const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
   const categoriesForFilters = categories
@@ -1483,6 +1485,18 @@ function App() {
   }, [productQuery, activeCategory, sortBy])
 
   useEffect(() => {
+    setAdminCategoryDrafts(
+      categories.reduce<Record<string, { nameFi: string; nameEn: string }>>((acc, category) => {
+        acc[category.id] = {
+          nameFi: category.nameFi,
+          nameEn: category.nameEn,
+        }
+        return acc
+      }, {}),
+    )
+  }, [categories])
+
+  useEffect(() => {
     setSelectedQuantity(1)
     setSelectedOptionSelections(getDefaultOptionSelections(selectedProduct, lang))
     setDetailImageIndex(0)
@@ -1567,6 +1581,13 @@ function App() {
   useEffect(() => {
     setAdminPage(1)
   }, [adminQuery])
+
+  useEffect(() => {
+    if (previousStorePageRef.current !== currentPage && !selectedProduct && !isAdminPage) {
+      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }
+    previousStorePageRef.current = currentPage
+  }, [currentPage, isAdminPage, selectedProduct])
 
   useEffect(() => {
     if (isAdminPage && adminAuthed) {
@@ -1783,19 +1804,19 @@ function App() {
 
   const handleNextStep = () => {
     if (totalItems === 0) {
-      setFormError(lang === 'fi' ? 'Lis?? tuotteita koriin.' : 'Add items to cart.')
+      setFormError(lang === 'fi' ? 'Lisää tuotteita koriin.' : 'Add items to cart.')
       return
     }
     if (!checkoutForm.company || !checkoutForm.contact || !checkoutForm.email || !checkoutForm.address) {
       setFormError(
         lang === 'fi'
-          ? 'T?yt? v?hint??n yritys, yhteyshenkil?, s?hk?posti ja osoite.'
+          ? 'Täytä vähintään yritys, yhteyshenkilö, sähköposti ja osoite.'
           : 'Fill company, contact, email, and address.'
       )
       return
     }
     if (!isValidEmail(checkoutForm.email)) {
-      setFormError(lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
+      setFormError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
       return
     }
     setFormError('')
@@ -1806,13 +1827,13 @@ function App() {
     if (!checkoutForm.billingCompany || !checkoutForm.billingAddress) {
       setFormError(
         lang === 'fi'
-          ? 'T?yt? v?hint??n laskutusyritys ja laskutusosoite.'
+          ? 'Täytä vähintään laskutusyritys ja laskutusosoite.'
           : 'Fill at least billing company and billing address.'
       )
       return
     }
     if (!isValidEmail(checkoutForm.email)) {
-      setFormError(lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
+      setFormError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
       return
     }
     setFormError('')
@@ -1845,8 +1866,8 @@ function App() {
       if (!response.ok) {
         const friendlyMessage =
           data.message === 'No recipients defined'
-            ? (lang === 'fi' ? 'Anna kelvollinen s?hk?postiosoite.' : 'Enter a valid email address.')
-            : data.message ?? (lang === 'fi' ? 'Tilauksen l?hetys ep?onnistui.' : 'Order submission failed.')
+            ? (lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
+            : data.message ?? (lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
         setFormError(friendlyMessage)
         return
       }
@@ -1856,7 +1877,7 @@ function App() {
       setCart({})
       setCheckoutStep(1)
     } catch {
-      setFormError(lang === 'fi' ? 'Tilauksen l?hetys ep?onnistui.' : 'Order submission failed.')
+      setFormError(lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
     } finally {
       setPlacingOrder(false)
     }
@@ -2310,6 +2331,47 @@ function App() {
     }
   }
 
+  const updateCategoryDraft = (categoryId: string, patch: Partial<{ nameFi: string; nameEn: string }>) => {
+    setAdminCategoryDrafts((prev) => ({
+      ...prev,
+      [categoryId]: {
+        nameFi: prev[categoryId]?.nameFi ?? categoryMap[categoryId]?.nameFi ?? '',
+        nameEn: prev[categoryId]?.nameEn ?? categoryMap[categoryId]?.nameEn ?? '',
+        ...patch,
+      },
+    }))
+  }
+
+  const saveCategoryNames = async (categoryId: string) => {
+    const draft = adminCategoryDrafts[categoryId]
+    const nameFi = draft?.nameFi?.trim() ?? ''
+    const nameEn = draft?.nameEn?.trim() ?? ''
+
+    if (!nameFi || !nameEn) {
+      setAdminError(lang === 'fi' ? 'Täytä kategorian nimi molemmilla kielillä.' : 'Fill category names in both languages.')
+      return
+    }
+
+    try {
+      const response = await fetch(`/api/admin/categories/${categoryId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nameFi, nameEn }),
+      })
+      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (!response.ok || !result.catalog) {
+        setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian päivitys epäonnistui.' : 'Failed to update category.'))
+        return
+      }
+      const normalized = normalizeCatalog(result.catalog)
+      setCategories(normalized.categories)
+      setProductCatalog(normalized.products)
+      setAdminError('')
+    } catch {
+      setAdminError(lang === 'fi' ? 'Kategorian päivitys epäonnistui.' : 'Failed to update category.')
+    }
+  }
+
   const adminFilteredProducts = useMemo(() => {
     const q = adminQuery.trim().toLowerCase()
     return productCatalog.filter((item) => {
@@ -2398,7 +2460,6 @@ function App() {
                 </span>
                 <div className="top-highlight-copy">
                   <strong>{lang === 'fi' ? 'Maksu laskulla' : 'Pay by invoice'}</strong>
-                  <span>{lang === 'fi' ? '14 pv yrityksille' : '14 days for businesses'}</span>
                 </div>
               </div>
             </div>
@@ -2816,8 +2877,24 @@ function App() {
                   <div className="admin-categories-list">
                     {categories.map((category, index) => (
                       <div key={category.id} className="admin-category-chip">
-                        <span>{category.nameFi} / {category.nameEn}</span>
+                        <div className="admin-category-fields">
+                          <input
+                            className="filter-input"
+                            value={adminCategoryDrafts[category.id]?.nameFi ?? category.nameFi}
+                            onChange={(event) => updateCategoryDraft(category.id, { nameFi: event.target.value })}
+                            placeholder={lang === 'fi' ? 'Kategorian nimi (FI)' : 'Category name (FI)'}
+                          />
+                          <input
+                            className="filter-input"
+                            value={adminCategoryDrafts[category.id]?.nameEn ?? category.nameEn}
+                            onChange={(event) => updateCategoryDraft(category.id, { nameEn: event.target.value })}
+                            placeholder={lang === 'fi' ? 'Kategorian nimi (EN)' : 'Category name (EN)'}
+                          />
+                        </div>
                         <div className="admin-category-actions">
+                          <button className="ghost tiny" type="button" onClick={() => saveCategoryNames(category.id)}>
+                            {lang === 'fi' ? 'Tallenna' : 'Save'}
+                          </button>
                           <button className="ghost tiny" type="button" disabled={index === 0} onClick={() => moveCategory(category.id, -1)}>
                             {lang === 'fi' ? 'Ylös' : 'Up'}
                           </button>
@@ -2831,6 +2908,7 @@ function App() {
                       </div>
                     ))}
                   </div>
+
                   <div className="admin-list-head">
                     <input
                       className="filter-input"
@@ -3117,12 +3195,10 @@ function App() {
           <div className="category-grid">
             <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
               <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
-              <span className="muted">{productCatalog.length}</span>
             </button>
             {categoriesForFilters.map((item) => (
               <button key={item.id} className={`category-card ${activeCategory === item.id ? 'active' : ''}`} onClick={() => setActiveCategory(item.id)}>
                 <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
-                <span className="muted">{productCatalog.filter((product) => product.category === item.id).length}</span>
               </button>
             ))}
           </div>

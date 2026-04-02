@@ -8,8 +8,8 @@ const distIndexFile = path.join(distDir, 'index.html')
 const manifestFile = path.join(distDir, '.vite', 'manifest.json')
 
 const homeMeta = {
-  title: 'Suomen Paperitukku â KÃ¤si- ja wc-paperit sekÃ¤ saniteettitarvikkeet yrityksille',
-  description: 'Suomen Paperitukku toimittaa kÃ¤sipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
+  title: 'Suomen Paperitukku – Käsi- ja wc-paperit sekä saniteettitarvikkeet yrityksille',
+  description: 'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
 }
 
 const escapeHtml = (value) =>
@@ -187,7 +187,7 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     telephone: '+358449782446',
     address: {
       '@type': 'PostalAddress',
-      streetAddress: 'SÃ¤ynetie 16',
+      streetAddress: 'Säynetie 16',
       postalCode: '01490',
       addressLocality: 'Vantaa',
       addressCountry: 'FI',
@@ -248,7 +248,7 @@ const getProductAlt = (product) => `${product.name} yrityksille`
 
 const extractUnitLabel = (priceUnit) => {
   const unit = String(priceUnit ?? '')
-    .replace(/â¬/g, '')
+    .replace(/€/g, '')
     .split('/')
     .pop()
     ?.trim()
@@ -274,7 +274,7 @@ const getDisplayOptionGroups = (product) => {
   return [
     {
       id: 'default-unit',
-      name: 'YksikkÃ¶',
+      name: 'Yksikkö',
       values: [
         {
           id: 'default-unit-value',
@@ -371,7 +371,7 @@ const renderHomeMarkup = ({ catalog }) => {
       <main class="main">
         <section class="hero" id="home">
           <h1>Suomen Paperitukku</h1>
-          <p>Suomen Paperitukku toimittaa kÃ¤si- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
+          <p>Suomen Paperitukku toimittaa käsi- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
         </section>
 
         <section class="section" id="categories">
@@ -397,7 +397,7 @@ const renderHomeMarkup = ({ catalog }) => {
                 <div class="products-header">
                   <div>
                     <h2>Suosittelemme juuri nyt</h2>
-                    <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja lÃ¶ydÃ¤ parhaat tuotteet helposti.</p>
+                    <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.</p>
                   </div>
                 </div>
                 <div class="grid featured-grid">
@@ -417,7 +417,7 @@ const renderHomeMarkup = ({ catalog }) => {
                                 </span>
                               </div>
                               <div class="price-block">
-                                <span class="muted">${formatPrice(Number(product.price) * 1.255)} â¬ (sis. alv)</span>
+                                <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
                                 <span class="price-top"><span class="price-main">${formatPrice(product.price)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                               </div>
                             </div>
@@ -436,10 +436,9 @@ const renderHomeMarkup = ({ catalog }) => {
           <div class="products-header">
             <div>
               <h2>Tuotteet</h2>
-              <p class="muted">Toimitus arkipÃ¤ivÃ¤ssÃ¤</p>
-              <p class="muted">Maksu laskulla 14 pv</p>
-              <p class="muted shipping-note">Toimitus: 15 â¬ alle 300 â¬ tilauksille</p>
-              <p class="muted shipping-note">Ilmainen toimitus yli 300 â¬ tilauksille</p>
+              <p class="muted">Toimitus arkipäivässä</p>
+              <p class="muted">Maksu laskulla</p>
+              <p class="muted shipping-note">Ilmainen toimitus yli 300 € tilauksille</p>
             </div>
           </div>
           <div class="grid products-grid">
@@ -459,7 +458,7 @@ const renderHomeMarkup = ({ catalog }) => {
                           </span>
                         </div>
                         <div class="price-block">
-                          <span class="muted">${formatPrice(Number(product.price) * 1.255)} â¬ (sis. alv)</span>
+                          <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
                           <span class="price-top"><span class="price-main">${formatPrice(product.price)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                         </div>
                       </div>
@@ -473,11 +472,11 @@ const renderHomeMarkup = ({ catalog }) => {
 
         <section class="section contact" id="contact">
           <h2>Yhteystiedot</h2>
-          <p class="muted">Tarvitsetko tarjouksen tai isomman erÃ¤n? Ota yhteyttÃ¤ Suomen Paperitukkuun.</p>
+          <p class="muted">Tarvitsetko tarjouksen tai isomman erän? Ota yhteyttä Suomen Paperitukkuun.</p>
           <div class="contact-layout">
             <div class="contact-info">
               <div class="contact-info-card">
-                <strong>SÃ¤hkÃ¶posti</strong>
+                <strong>Sähköposti</strong>
                 <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
               </div>
               <div class="contact-info-card">
@@ -496,7 +495,7 @@ const renderHomeMarkup = ({ catalog }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>SÃ¤ynetie 16, 01490 Vantaa</p>
+          <p>S?ynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>
@@ -605,7 +604,7 @@ const renderProductMarkup = ({ product, category, related }) => {
               <h1>${escapeHtml(product.name)}</h1>
               <p class="muted detail-description">${escapeHtml(product.description)}</p>
               <div class="price-block">
-                <span class="muted">${formatPrice(Number(effectivePrice) * 1.255)} â¬ (sis. alv)</span>
+                <span class="muted">${formatPrice(Number(effectivePrice) * 1.255)} € (sis. alv)</span>
                 <span class="price-top"><span class="price-main">${formatPrice(effectivePrice)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                 ${product.unitNote ? `<span class="muted">${escapeHtml(product.unitNote)}</span>` : ''}
               </div>
@@ -629,7 +628,7 @@ const renderProductMarkup = ({ product, category, related }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>SÃ¤ynetie 16, 01490 Vantaa</p>
+          <p>S?ynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>

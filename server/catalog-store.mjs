@@ -310,6 +310,31 @@ export const deleteCategory = (categoryId) => {
   })
 }
 
+export const updateCategory = (categoryId, input) => {
+  const catalog = readCatalog()
+  const nameFi = String(input?.nameFi ?? '').trim()
+  const nameEn = String(input?.nameEn ?? nameFi).trim()
+
+  if (!nameFi || !nameEn) {
+    return catalog
+  }
+
+  const nextCategories = catalog.categories.map((item) =>
+    item.id === categoryId
+      ? {
+          ...item,
+          nameFi,
+          nameEn,
+        }
+      : item,
+  )
+
+  return writeCatalog({
+    ...catalog,
+    categories: nextCategories,
+  })
+}
+
 export const reorderCategories = (orderedIds) => {
   const catalog = readCatalog()
   const categoriesById = new Map(catalog.categories.map((item) => [item.id, item]))

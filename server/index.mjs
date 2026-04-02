@@ -13,6 +13,7 @@ import {
   getProductBySlug,
   readCatalog,
   reorderCategories,
+  updateCategory,
   upsertProduct,
 } from './catalog-store.mjs'
 import {
@@ -449,6 +450,18 @@ app.post('/api/admin/categories', requireAdmin, (req, res) => {
 
 app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
   const catalog = deleteCategory(req.params.categoryId)
+  res.json({ catalog })
+})
+
+app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
+  const nameFi = String(req.body?.nameFi ?? '').trim()
+  const nameEn = String(req.body?.nameEn ?? nameFi).trim()
+  if (!nameFi || !nameEn) {
+    res.status(400).json({ message: 'Missing category names' })
+    return
+  }
+
+  const catalog = updateCategory(req.params.categoryId, { nameFi, nameEn })
   res.json({ catalog })
 })
 
