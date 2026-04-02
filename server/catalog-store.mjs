@@ -14,6 +14,19 @@ const fallbackCatalog = {
   products: [],
 }
 
+const repairText = (value) =>
+  String(value ?? '')
+    .replaceAll('\u00C3\u00A4', 'ä')
+    .replaceAll('\u00C3\u00B6', 'ö')
+    .replaceAll('\u00C3\u00A5', 'å')
+    .replaceAll('\u00C3\u201E', 'Ä')
+    .replaceAll('\u00C3\u2013', 'Ö')
+    .replaceAll('\u00C3\u2026', 'Å')
+    .replaceAll('\u00C3\u0178', 'ß')
+    .replaceAll('\u00E2\u201A\u00AC', '€')
+    .replaceAll('\u00E2\u20AC\u201C', '–')
+    .replaceAll('\u00E2\u20AC\u00A6', '…')
+
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'))
 
 const writeJson = (filePath, value) => {
@@ -27,7 +40,7 @@ const ensureDataDir = () => {
 }
 
 const stripAccents = (value) =>
-  value
+  repairText(value)
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/ß/g, 'ss')
@@ -41,20 +54,19 @@ const seoHintByCategory = {
 }
 
 const shortenText = (value, maxLength) => {
-  const trimmed = String(value ?? '').trim()
+  const trimmed = repairText(value).trim()
   if (trimmed.length <= maxLength) {
     return trimmed
   }
   return `${trimmed.slice(0, Math.max(0, maxLength - 1)).trim()}…`
 }
 
-export const slugify = (value) => {
-  return stripAccents(String(value ?? ''))
+export const slugify = (value) =>
+  stripAccents(value)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '')
     .replace(/-{2,}/g, '-')
-}
 
 const ensureUniqueSlug = (baseSlug, items, currentId = null) => {
   const root = baseSlug || 'tuote'
@@ -70,23 +82,26 @@ const ensureUniqueSlug = (baseSlug, items, currentId = null) => {
 }
 
 const buildMetaDescription = (product) => {
-  const description = String(product.description ?? '').trim()
-  const base = `${product.name}. ${description || 'Tilaa laskulla nopeasti Suomen Paperitukusta.'} Nopeasti yritykselle toimitettuna.`
+  const description = repairText(product.description).trim()
+  const base = `${repairText(product.name)}. ${description || 'Tilaa laskulla nopeasti Suomen Paperitukusta.'} Nopeasti yritykselle toimitettuna.`
   return shortenText(base, 155)
 }
 
 const buildSeoTitle = (product, categoryId) => {
   const suffix = seoHintByCategory[categoryId] ?? 'yrityksille nopeasti'
-  return `${product.name} – ${suffix} | Suomen Paperitukku`
+  return `${repairText(product.name)} – ${suffix} | Suomen Paperitukku`
 }
 
 const buildSearchKeywords = (product, categoryLabel) => {
+  const name = repairText(product.name)
+  const safeCategoryLabel = repairText(categoryLabel)
+  const sku = repairText(product.sku)
   const rawParts = [
-    String(product.name ?? ''),
-    String(categoryLabel ?? ''),
-    String(product.sku ?? ''),
-    ...String(product.name ?? '').split(/[,.]/g).map((item) => item.trim()),
-    ...String(product.name ?? '').split(/\s+/g).slice(0, 4),
+    name,
+    safeCategoryLabel,
+    sku,
+    ...name.split(/[,.]/g).map((item) => item.trim()),
+    ...name.split(/\s+/g).slice(0, 4),
   ]
 
   return Array.from(
@@ -99,9 +114,10 @@ const buildSearchKeywords = (product, categoryLabel) => {
 }
 
 const normalizeCategory = (category) => {
-  const nameFi = String(category?.nameFi ?? category?.id ?? 'Muut').trim() || 'Muut'
-  const nameEn = String(category?.nameEn ?? nameFi).trim() || nameFi
+  const nameFi = repairText(category?.nameFi ?? category?.id ?? 'Muut').trim() || 'Muut'
+  const nameEn = repairText(category?.nameEn ?? nameFi).trim() || nameFi
   const slug = slugify(category?.slug ?? category?.id ?? nameFi) || 'muut'
+
   return {
     id: slug,
     slug,
@@ -114,18 +130,19 @@ const normalizeOptionGroups = (groups) =>
   Array.isArray(groups)
     ? groups
         .map((group, groupIndex) => {
-          const name = String(group?.name ?? '').trim()
+          const name = repairText(group?.name).trim()
           const values = Array.isArray(group?.values)
             ? group.values
                 .map((value, valueIndex) => {
-                  const label = String(value?.label ?? '').trim()
+                  const label = repairText(value?.label).trim()
                   if (!label) {
                     return null
                   }
+
                   return {
                     id: String(value?.id ?? '').trim() || slugify(`${name || 'option'}-${label}-${valueIndex + 1}`) || `value-${valueIndex + 1}`,
                     label,
-                    detail: String(value?.detail ?? '').trim() || undefined,
+                    detail: repairText(value?.detail).trim() || undefined,
                     price: Number.isFinite(Number(value?.price)) ? Number(value.price) : undefined,
                   }
                 })
@@ -159,26 +176,26 @@ const normalizeProduct = (product, categories, products) => {
   return {
     id: String(product?.id ?? `p-${Date.now()}`),
     slug: ensureUniqueSlug(slugify(product?.slug ?? product?.name ?? product?.id ?? 'tuote'), products, product?.id ?? null),
-    name: String(product?.name ?? '').trim(),
+    name: repairText(product?.name).trim(),
     category: categoryId,
     price: Number(product?.price ?? 0),
-    priceUnit: String(product?.priceUnit ?? 'EUR / kpl').trim(),
-    unitNote: String(product?.unitNote ?? '').trim() || undefined,
-    sku: String(product?.sku ?? '').trim(),
+    priceUnit: repairText(product?.priceUnit ?? 'EUR / kpl').trim(),
+    unitNote: repairText(product?.unitNote).trim() || undefined,
+    sku: repairText(product?.sku).trim(),
     stock: Number(product?.stock ?? 0),
     image: primaryImage,
     images: images.length > 0 ? images : [primaryImage],
-    description: String(product?.description ?? product?.name ?? '').trim(),
+    description: repairText(product?.description ?? product?.name).trim(),
     featured: Boolean(product?.featured),
     featuredRank: Number.isFinite(Number(product?.featuredRank)) ? Number(product.featuredRank) : 999,
     optionGroups: normalizeOptionGroups(product?.optionGroups),
     seoTitle: (() => {
-      const customSeoTitle = String(product?.seoTitle ?? '').trim()
-      return customSeoTitle && !customSeoTitle.includes('\u2026') ? customSeoTitle : buildSeoTitle(product, categoryId)
+      const customSeoTitle = repairText(product?.seoTitle).trim()
+      return customSeoTitle && !customSeoTitle.includes('…') ? customSeoTitle : buildSeoTitle(product, categoryId)
     })(),
-    metaDescription: String(product?.metaDescription ?? '').trim() || buildMetaDescription(product),
+    metaDescription: repairText(product?.metaDescription).trim() || buildMetaDescription(product),
     searchKeywords: Array.isArray(product?.searchKeywords)
-      ? product.searchKeywords.map((item) => String(item).trim()).filter(Boolean)
+      ? product.searchKeywords.map((item) => repairText(item).trim()).filter(Boolean)
       : buildSearchKeywords(product, categoryLabel),
     createdAt,
     updatedAt,
@@ -186,9 +203,10 @@ const normalizeProduct = (product, categories, products) => {
 }
 
 const normalizeCatalog = (catalog) => {
-  const categories = Array.isArray(catalog?.categories) && catalog.categories.length > 0
-    ? catalog.categories.map(normalizeCategory)
-    : fallbackCatalog.categories.map(normalizeCategory)
+  const categories =
+    Array.isArray(catalog?.categories) && catalog.categories.length > 0
+      ? catalog.categories.map(normalizeCategory)
+      : fallbackCatalog.categories.map(normalizeCategory)
 
   if (!categories.some((item) => item.id === 'muut')) {
     categories.push(normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' }))
@@ -277,16 +295,20 @@ export const deleteProduct = (productId) => {
 export const addCategory = (input) => {
   const catalog = readCatalog()
   const normalized = normalizeCategory(input)
+
   if (catalog.categories.some((item) => item.id === normalized.id || item.slug === normalized.slug)) {
     return catalog
   }
+
   const nextCategories = [...catalog.categories]
   const fallbackIndex = nextCategories.findIndex((item) => item.id === 'muut')
+
   if (fallbackIndex >= 0) {
     nextCategories.splice(fallbackIndex, 0, normalized)
   } else {
     nextCategories.push(normalized)
   }
+
   return writeCatalog({
     ...catalog,
     categories: nextCategories,
@@ -301,7 +323,7 @@ export const deleteCategory = (categoryId) => {
     : [...nextCategories, normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' })]
 
   const nextProducts = catalog.products.map((item) =>
-    item.category === categoryId ? { ...item, category: 'muut', updatedAt: new Date().toISOString() } : item
+    item.category === categoryId ? { ...item, category: 'muut', updatedAt: new Date().toISOString() } : item,
   )
 
   return writeCatalog({
@@ -312,8 +334,8 @@ export const deleteCategory = (categoryId) => {
 
 export const updateCategory = (categoryId, input) => {
   const catalog = readCatalog()
-  const nameFi = String(input?.nameFi ?? '').trim()
-  const nameEn = String(input?.nameEn ?? nameFi).trim()
+  const nameFi = repairText(input?.nameFi).trim()
+  const nameEn = repairText(input?.nameEn ?? nameFi).trim()
 
   if (!nameFi || !nameEn) {
     return catalog
@@ -345,6 +367,7 @@ export const reorderCategories = (orderedIds) => {
     if (!match) {
       continue
     }
+
     nextCategories.push(match)
     categoriesById.delete(match.id)
   }

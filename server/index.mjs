@@ -48,6 +48,28 @@ const adminPass = process.env.ADMIN_PASS ?? 'saniteetti123'
 const siteUrlEnv = (process.env.PUBLIC_SITE_URL ?? process.env.SITE_URL ?? 'https://suomenpaperitukku.fi').trim().replace(/\/+$/g, '')
 const preferredHost = siteUrlEnv ? new URL(siteUrlEnv).host.toLowerCase() : ''
 
+const setStaticAssetHeaders = (res, filePath) => {
+  const relativePath = path.relative(projectRoot, filePath).replace(/\\/g, '/')
+
+  if (relativePath.startsWith('dist/assets/')) {
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
+    return
+  }
+
+  if (
+    relativePath === 'public/brand-logo.png' ||
+    relativePath === 'public/favicon.svg' ||
+    relativePath.startsWith('public/products/')
+  ) {
+    res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+    return
+  }
+
+  if (relativePath.endsWith('.html')) {
+    res.setHeader('Cache-Control', 'no-cache')
+  }
+}
+
 app.use(express.json({ limit: '8mb' }))
 
 app.use((req, res, next) => {
@@ -394,8 +416,8 @@ const validateProductPayload = (payload) => {
 ensureCatalogStore()
 ensureOrdersStore()
 
-app.use(express.static(publicDir, { index: false }))
-app.use(express.static(distDir, { index: false }))
+app.use(express.static(publicDir, { index: false, setHeaders: setStaticAssetHeaders }))
+app.use(express.static(distDir, { index: false, setHeaders: setStaticAssetHeaders }))
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true })

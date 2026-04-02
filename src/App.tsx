@@ -1110,17 +1110,19 @@ const homeSeoDescription =
 
 const applyHomeSeo = (products: Product[] = []) => {
   const siteUrl = getSiteUrl()
-  document.title = homeSeoTitle
-  upsertMeta('meta[name="description"]', { name: 'description', content: homeSeoDescription })
+  const normalizedTitle = fixMojibake(homeSeoTitle)
+  const normalizedDescription = fixMojibake(homeSeoDescription)
+  document.title = normalizedTitle
+  upsertMeta('meta[name="description"]', { name: 'description', content: normalizedDescription })
   upsertMeta('meta[name="robots"]', { name: 'robots', content: publicRobotsContent })
-  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: homeSeoTitle })
-  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: homeSeoDescription })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: normalizedTitle })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: normalizedDescription })
   upsertMeta('meta[property="og:url"]', { property: 'og:url', content: `${siteUrl}/` })
   upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${siteUrl}/brand-logo.png` })
   upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
   upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
-  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: homeSeoTitle })
-  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: homeSeoDescription })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: normalizedTitle })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: normalizedDescription })
   upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${siteUrl}/brand-logo.png` })
   upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: `${siteUrl}/` })
   upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: `${siteUrl}/` })
@@ -1219,12 +1221,13 @@ const applyAdminSeo = (lang: Lang, adminAuthed: boolean) => {
 const applyProductSeo = (product: Product, category: CategoryDef | undefined) => {
   const siteUrl = getSiteUrl()
   const canonical = `${siteUrl}${getProductHref(product)}`
-  const description =
+  const description = fixMojibake(
     product.metaDescription ||
-    buildMetaDescription(product.name, product.description, category?.nameFi ?? product.category, 'fi')
+      buildMetaDescription(product.name, product.description, category?.nameFi ?? product.category, 'fi'),
+  )
   const ogImage = `${siteUrl}/og/product/${encodeURIComponent(product.slug || slugify(product.name || product.id) || product.id)}.svg`
-  const title = product.seoTitle || buildSeoTitle(product.name, product.category, 'fi')
-  const keywords = (product.searchKeywords ?? []).join(', ')
+  const title = fixMojibake(product.seoTitle || buildSeoTitle(product.name, product.category, 'fi'))
+  const keywords = fixMojibake((product.searchKeywords ?? []).join(', '))
 
   document.title = title
   upsertMeta('meta[name="description"]', { name: 'description', content: description })
@@ -1296,11 +1299,12 @@ const applyProductSeo = (product: Product, category: CategoryDef | undefined) =>
 
 function App() {
   const initialCatalog = getInitialCatalog()
+  const hasInitialCatalog = initialCatalog.products.length > 0 && initialCatalog.categories.length > 0
   const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
   const [lang, setLang] = useState<Lang>('fi')
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
   const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
-  const [, setCatalogLoading] = useState(initialCatalog.products.length === 0)
+  const [, setCatalogLoading] = useState(!hasInitialCatalog)
   const [cart, setCart] = useState<Record<string, CartLine>>({})
   const [cartToast, setCartToast] = useState<CartToast | null>(null)
   const [freeShippingToast, setFreeShippingToast] = useState<FreeShippingToast | null>(null)
@@ -1447,6 +1451,11 @@ function App() {
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
 
   useEffect(() => {
+    if (hasInitialCatalog) {
+      setCatalogLoading(false)
+      return
+    }
+
     let active = true
 
     const loadCatalog = async () => {
@@ -1478,7 +1487,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [initialCatalog.products.length])
+  }, [hasInitialCatalog, initialCatalog.products.length])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -2398,7 +2407,7 @@ function App() {
             goHome()
           }}
         >
-          <img src={brandLogo} alt="Suomen Paperitukku logo" />
+          <img src={brandLogo} alt="Suomen Paperitukku logo" loading="eager" fetchPriority="high" />
         </a>
         <nav className="nav" aria-label={lang === 'fi' ? 'Päänavigaatio' : 'Main navigation'}>
           <a
@@ -3062,6 +3071,8 @@ function App() {
                     className="detail-image detail-image-fade"
                     src={selectedProductImages[detailImageIndex] ?? getProductImage(selectedProduct)}
                     alt={getProductAlt(selectedProduct)}
+                    loading="eager"
+                    fetchPriority="high"
                   />
                   {selectedProductImages.length > 1 && (
                     <>
@@ -3083,7 +3094,7 @@ function App() {
                         type="button"
                         onClick={() => setDetailImageIndex(index)}
                       >
-                        <img src={image} alt={`${getProductAlt(selectedProduct)} ${index + 1}`} />
+                        <img src={image} alt={`${getProductAlt(selectedProduct)} ${index + 1}`} loading="lazy" />
                       </button>
                     ))}
                   </div>
@@ -3167,7 +3178,7 @@ function App() {
                         openProduct(item)
                       }}
                     >
-                      <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} />
+                      <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
                       <strong className="product-name">{item.name}</strong>
                     </a>
                     <button className="ghost" onClick={() => openProduct(item)}>

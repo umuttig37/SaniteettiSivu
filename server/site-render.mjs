@@ -6,10 +6,33 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
 const distIndexFile = path.join(distDir, 'index.html')
 const manifestFile = path.join(distDir, '.vite', 'manifest.json')
+const fontsStylesheetHref =
+  'https://fonts.googleapis.com/css2?family=Literata:wght@600;700&family=Manrope:wght@400;500;600;700&display=swap'
+
+let manifestCache
+let builtIndexAssetsCache
+let entryAssetsCache
+
+const repairText = (value) =>
+  String(value ?? '')
+    .replaceAll('\u00C3\u00A4', 'ä')
+    .replaceAll('\u00C3\u00B6', 'ö')
+    .replaceAll('\u00C3\u00A5', 'å')
+    .replaceAll('\u00C3\u201E', 'Ä')
+    .replaceAll('\u00C3\u2013', 'Ö')
+    .replaceAll('\u00C3\u2026', 'Å')
+    .replaceAll('\u00C2\u00AE', '®')
+    .replaceAll('\u00C2\u00B7', '·')
+    .replaceAll('\u00E2\u201A\u00AC', '€')
+    .replaceAll('\u00E2\u20AC\u201C', '–')
+    .replaceAll('\u00E2\u20AC\u00A2', '•')
+    .replaceAll('\u00E2\u20AC\u00A6', '…')
+    .replaceAll('S?ynetie', 'Säynetie')
 
 const homeMeta = {
   title: 'Suomen Paperitukku – Käsi- ja wc-paperit sekä saniteettitarvikkeet yrityksille',
-  description: 'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
+  description:
+    'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku',
 }
 
 const escapeHtml = (value) =>
@@ -20,52 +43,86 @@ const escapeHtml = (value) =>
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 
+const jsonScript = (value) =>
+  JSON.stringify(value).replace(/</g, '\u003c').replace(/>/g, '\u003e')
+
 const readManifest = () => {
-  if (!fs.existsSync(manifestFile)) {
-    return null
+  if (manifestCache !== undefined) {
+    return manifestCache
   }
-  return JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
+
+  if (!fs.existsSync(manifestFile)) {
+    manifestCache = null
+    return manifestCache
+  }
+
+  manifestCache = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
+  return manifestCache
 }
 
 const readBuiltIndexAssets = () => {
+  if (builtIndexAssetsCache) {
+    return builtIndexAssetsCache
+  }
+
   if (!fs.existsSync(distIndexFile)) {
-    return { script: null, css: [] }
+    builtIndexAssetsCache = { script: null, css: [], assets: [] }
+    return builtIndexAssetsCache
   }
 
   const html = fs.readFileSync(distIndexFile, 'utf8')
   const scriptMatch = html.match(/<script[^>]+type="module"[^>]+src="([^"]+)"/i)
   const cssMatches = Array.from(html.matchAll(/<link[^>]+rel="stylesheet"[^>]+href="([^"]+)"/gi))
 
-  return {
+  builtIndexAssetsCache = {
     script: scriptMatch?.[1] ?? null,
     css: cssMatches.map((match) => match[1]),
+    assets: [],
   }
+
+  return builtIndexAssetsCache
 }
 
 const getEntryAssets = () => {
+  if (entryAssetsCache) {
+    return entryAssetsCache
+  }
+
   const manifest = readManifest()
   const entry = manifest?.['index.html'] ?? manifest?.['src/main.tsx']
+
   if (entry) {
-    return {
+    entryAssetsCache = {
       script: entry.file ? `/${entry.file}` : null,
       css: Array.isArray(entry.css) ? entry.css.map((item) => `/${item}`) : [],
+      assets: Array.isArray(entry.assets) ? entry.assets.map((item) => `/${item}`) : [],
     }
+    return entryAssetsCache
   }
-  return readBuiltIndexAssets()
+
+  entryAssetsCache = readBuiltIndexAssets()
+  return entryAssetsCache
 }
 
-const jsonScript = (value) =>
-  JSON.stringify(value).replace(/</g, '\u003c').replace(/>/g, '\u003e')
+const getManifestAssetPath = (key) => {
+  const manifest = readManifest()
+  const entry = manifest?.[key]
+  return entry?.file ? `/${entry.file}` : null
+}
 
 const absoluteUrl = (siteUrl, target) => {
   if (!target) {
     return siteUrl
   }
+
   if (/^https?:\/\//i.test(target)) {
     return target
   }
+
   return new URL(target, siteUrl).toString()
 }
+
+const stripTags = (value) => repairText(String(value ?? '').replace(/<[^>]*>/g, '').trim())
 
 const formatPrice = (value) =>
   new Intl.NumberFormat('fi-FI', {
@@ -74,14 +131,12 @@ const formatPrice = (value) =>
   }).format(Number(value ?? 0))
 
 const getPriceUnitSuffix = (priceUnit, vatNote = '(alv 0%)') => {
-  const suffix = String(priceUnit ?? '')
+  const suffix = repairText(priceUnit ?? '')
     .replace(/^€\s*/u, '')
     .trim()
 
   return suffix ? `${suffix} ${vatNote}` : vatNote
 }
-
-const stripTags = (value) => String(value ?? '').replace(/<[^>]*>/g, '').trim()
 
 const compareFeaturedPriority = (a, b) => {
   const aFeatured = Boolean(a?.featured)
@@ -98,7 +153,7 @@ const compareFeaturedPriority = (a, b) => {
     }
   }
 
-  return String(a?.name ?? '').localeCompare(String(b?.name ?? ''), 'fi')
+  return repairText(a?.name ?? '').localeCompare(repairText(b?.name ?? ''), 'fi')
 }
 
 const getFeaturedProducts = (products, limit = 4) =>
@@ -107,12 +162,86 @@ const getFeaturedProducts = (products, limit = 4) =>
     .sort(compareFeaturedPriority)
     .slice(0, limit)
 
+const getProductAlt = (product) => `${repairText(product?.name ?? '')} yrityksille`
+
+const extractUnitLabel = (priceUnit) => {
+  const unit = repairText(priceUnit ?? '')
+    .replace(/€/g, '')
+    .split('/')
+    .pop()
+    ?.trim()
+    .replace(/^\(|\)$/g, '')
+
+  if (unit) {
+    return unit.charAt(0).toUpperCase() + unit.slice(1)
+  }
+
+  return 'Kpl'
+}
+
+const getDisplayOptionGroups = (product) => {
+  const groups = Array.isArray(product?.optionGroups) ? product.optionGroups : []
+
+  if (groups.length > 0) {
+    return groups
+  }
+
+  if (!product) {
+    return []
+  }
+
+  return [
+    {
+      id: 'default-unit',
+      name: 'Yksikkö',
+      values: [
+        {
+          id: 'default-unit-value',
+          label: extractUnitLabel(product.priceUnit),
+          detail: '1',
+          price: Number(product.price ?? 0),
+        },
+      ],
+    },
+  ]
+}
+
+const getDefaultSelectedOptionPrice = (product) => {
+  const groups = getDisplayOptionGroups(product)
+
+  for (const group of groups) {
+    const firstWithPrice = Array.isArray(group?.values) ? group.values.find((value) => Number.isFinite(Number(value?.price))) : null
+    if (firstWithPrice) {
+      return Number(firstWithPrice.price)
+    }
+  }
+
+  return Number(product?.price ?? 0)
+}
+
+const formatOptionValueMeta = (groupName, value, priceUnit) => {
+  const isUnitGroup = /yksikk|unit/i.test(String(groupName ?? ''))
+  const parts = []
+
+  if (value?.detail) {
+    parts.push(escapeHtml(value.detail))
+  }
+
+  if (Number.isFinite(Number(value?.price)) && (!isUnitGroup || !value?.detail)) {
+    parts.push(`${formatPrice(Number(value.price))} ${escapeHtml(priceUnit)}`)
+  }
+
+  return parts.join(' &bull; ')
+}
+
+const getOptionMetaHeader = (groupName) => (/yksikk|unit/i.test(String(groupName ?? '')) ? 'Määrä' : 'Lisätieto')
+
 const productSeo = (siteUrl, product, category) => {
   const canonical = absoluteUrl(siteUrl, `/tuote/${product.slug}`)
-  const title = product.seoTitle || `${product.name} | Suomen Paperitukku`
+  const title = repairText(product.seoTitle || `${product.name} | Suomen Paperitukku`)
   const description = stripTags(product.metaDescription || product.description || homeMeta.description)
   const image = absoluteUrl(siteUrl, `/og/product/${product.slug}.svg`)
-  const keywords = Array.isArray(product.searchKeywords) ? product.searchKeywords.join(', ') : ''
+  const keywords = Array.isArray(product.searchKeywords) ? repairText(product.searchKeywords.join(', ')) : ''
   const effectivePrice = getDefaultSelectedOptionPrice(product)
 
   const breadcrumbData = {
@@ -128,13 +257,13 @@ const productSeo = (siteUrl, product, category) => {
       {
         '@type': 'ListItem',
         position: 2,
-        name: category?.nameFi ?? 'Tuotteet',
+        name: repairText(category?.nameFi ?? 'Tuotteet'),
         item: absoluteUrl(siteUrl, `/?category=${encodeURIComponent(category?.slug ?? '')}`),
       },
       {
         '@type': 'ListItem',
         position: 3,
-        name: product.name,
+        name: repairText(product.name),
         item: canonical,
       },
     ],
@@ -143,12 +272,12 @@ const productSeo = (siteUrl, product, category) => {
   const productData = {
     '@context': 'https://schema.org',
     '@type': 'Product',
-    name: product.name,
+    name: repairText(product.name),
     description,
-    sku: product.sku,
+    sku: repairText(product.sku),
     image: [absoluteUrl(siteUrl, product.images?.[0] ?? product.image)],
-    category: category?.nameFi ?? product.category,
-    keywords: Array.isArray(product.searchKeywords) ? product.searchKeywords.join(', ') : undefined,
+    category: repairText(category?.nameFi ?? product.category),
+    keywords: Array.isArray(product.searchKeywords) ? repairText(product.searchKeywords.join(', ')) : undefined,
     brand: {
       '@type': 'Brand',
       name: 'Suomen Paperitukku',
@@ -173,6 +302,8 @@ const productSeo = (siteUrl, product, category) => {
     image,
     keywords,
     structuredData: [breadcrumbData, productData],
+    preloadImages: [product.images?.[0] ?? product.image].filter(Boolean),
+    type: 'product',
   }
 }
 
@@ -216,10 +347,10 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
     item: {
       '@type': 'Product',
-      name: product.name,
+      name: repairText(product.name),
       image: absoluteUrl(siteUrl, product.images?.[0] ?? product.image),
-      description: product.metaDescription || product.description,
-      sku: product.sku,
+      description: repairText(product.metaDescription || product.description),
+      sku: repairText(product.sku),
       brand: {
         '@type': 'Brand',
         name: 'Suomen Paperitukku',
@@ -244,76 +375,9 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
   return [organization, website, itemList]
 }
 
-const getProductAlt = (product) => `${product.name} yrityksille`
-
-const extractUnitLabel = (priceUnit) => {
-  const unit = String(priceUnit ?? '')
-    .replace(/€/g, '')
-    .split('/')
-    .pop()
-    ?.trim()
-    .replace(/^\(|\)$/g, '')
-
-  if (unit) {
-    return unit.charAt(0).toUpperCase() + unit.slice(1)
-  }
-
-  return 'Kpl'
-}
-
-const getDisplayOptionGroups = (product) => {
-  const groups = Array.isArray(product?.optionGroups) ? product.optionGroups : []
-  if (groups.length > 0) {
-    return groups
-  }
-
-  if (!product) {
-    return []
-  }
-
-  return [
-    {
-      id: 'default-unit',
-      name: 'Yksikkö',
-      values: [
-        {
-          id: 'default-unit-value',
-          label: extractUnitLabel(product.priceUnit),
-          detail: '1',
-          price: Number(product.price ?? 0),
-        },
-      ],
-    },
-  ]
-}
-
-const getDefaultSelectedOptionPrice = (product) => {
-  const groups = getDisplayOptionGroups(product)
-  for (const group of groups) {
-    const firstWithPrice = Array.isArray(group?.values) ? group.values.find((value) => Number.isFinite(Number(value?.price))) : null
-    if (firstWithPrice) {
-      return Number(firstWithPrice.price)
-    }
-  }
-  return Number(product?.price ?? 0)
-}
-
-const formatOptionValueMeta = (groupName, value, priceUnit) => {
-  const isUnitGroup = /yksikk|unit/i.test(String(groupName ?? ''))
-  const parts = []
-  if (value?.detail) {
-    parts.push(escapeHtml(value.detail))
-  }
-  if (Number.isFinite(Number(value?.price)) && (!isUnitGroup || !value?.detail)) {
-    parts.push(`${formatPrice(Number(value.price))} ${escapeHtml(priceUnit)}`)
-  }
-  return parts.join(' &bull; ')
-}
-
-const getOptionMetaHeader = (groupName) => (/yksikk|unit/i.test(String(groupName ?? '')) ? 'Määrä' : 'Lisätieto')
-
 const renderOptionGroupsMarkup = (product) => {
   const groups = getDisplayOptionGroups(product)
+
   if (groups.length === 0) {
     return ''
   }
@@ -355,12 +419,16 @@ const renderHomeMarkup = ({ catalog }) => {
   const featuredCards = getFeaturedProducts(catalog.products, 4)
   const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
   const categories = catalog.categories.filter((item) => item.id !== 'muut')
+  const categoryCounts = catalog.products.reduce((acc, product) => {
+    acc[product.category] = (acc[product.category] ?? 0) + 1
+    return acc
+  }, {})
 
   return `
     <div class="page">
       <header class="top">
         <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
-          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" />
+          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" decoding="async" fetchpriority="high" />
         </a>
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
@@ -382,7 +450,7 @@ const renderHomeMarkup = ({ catalog }) => {
                 (category) => `
                   <a class="category-card" href="/?category=${encodeURIComponent(category.slug)}">
                     <strong>${escapeHtml(category.nameFi)}</strong>
-                    <span class="muted">${catalog.products.filter((product) => product.category === category.id).length}</span>
+                    <span class="muted">${categoryCounts[category.id] ?? 0}</span>
                   </a>
                 `,
               )
@@ -407,7 +475,7 @@ const renderHomeMarkup = ({ catalog }) => {
                         <article class="card product-card featured-card">
                           <a class="product-card-button" href="/tuote/${encodeURIComponent(product.slug)}">
                             <div class="product-link">
-                              <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" />
+                              <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" loading="lazy" decoding="async" />
                               <h3 class="product-name">${escapeHtml(product.name)}</h3>
                             </div>
                             <div class="product-body">
@@ -448,7 +516,7 @@ const renderHomeMarkup = ({ catalog }) => {
                   <article class="card product-card">
                     <a class="product-card-button" href="/tuote/${encodeURIComponent(product.slug)}">
                       <div class="product-link">
-                        <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" />
+                        <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" loading="lazy" decoding="async" />
                         <h3 class="product-name">${escapeHtml(product.name)}</h3>
                       </div>
                       <div class="product-body">
@@ -495,7 +563,7 @@ const renderHomeMarkup = ({ catalog }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>S?ynetie 16, 01490 Vantaa</p>
+          <p>Säynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>
@@ -508,15 +576,20 @@ const renderHead = ({ siteUrl, meta }) => {
   const image = meta.image ?? absoluteUrl(siteUrl, '/brand-logo.png')
   const robots = meta.robots ?? 'index,follow,max-image-preview:large'
   const structuredData = Array.isArray(meta.structuredData) ? meta.structuredData : []
+  const preloadImages = Array.isArray(meta.preloadImages) ? meta.preloadImages.filter(Boolean) : []
 
   return `
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="${fontsStylesheetHref}" />
+    ${preloadImages.map((href) => `<link rel="preload" as="image" href="${escapeHtml(href)}" />`).join('\n')}
     <title>${escapeHtml(meta.title)}</title>
     <meta name="description" content="${escapeHtml(meta.description)}" />
     <meta name="robots" content="${escapeHtml(robots)}" />
     ${meta.keywords ? `<meta name="keywords" content="${escapeHtml(meta.keywords)}" />` : ''}
-    <meta property="og:type" content="${escapeHtml(meta.type ?? 'product')}" />
+    <meta property="og:type" content="${escapeHtml(meta.type ?? 'website')}" />
     <meta property="og:locale" content="fi_FI" />
     <meta property="og:site_name" content="Suomen Paperitukku" />
     <meta property="og:title" content="${escapeHtml(meta.title)}" />
@@ -531,19 +604,15 @@ const renderHead = ({ siteUrl, meta }) => {
     <link rel="canonical" href="${escapeHtml(canonical)}" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.svg" />
-    ${structuredData
-      .map(
-        (item) =>
-          `<script type="application/ld+json">${jsonScript(item)}</script>`,
-      )
-      .join('\n')}
+    ${structuredData.map((item) => `<script type="application/ld+json">${jsonScript(item)}</script>`).join('\n')}
   `
 }
 
 const renderAssetTags = () => {
   const assets = getEntryAssets()
-  const css = assets.css.map((href) => `<link rel="stylesheet" href="${href}" />`).join('\n')
-  const script = assets.script ? `<script type="module" src="${assets.script}"></script>` : ''
+  const css = assets.css.map((href) => `<link rel="stylesheet" crossorigin href="${href}" />`).join('\n')
+  const script = assets.script ? `<script type="module" crossorigin src="${assets.script}"></script>` : ''
+
   return `${css}
 ${script}`
 }
@@ -560,31 +629,32 @@ const renderProductMarkup = ({ product, category, related }) => {
     </nav>
   `
 
-  const relatedMarkup = related.length > 0
-    ? `
-      <section class="related">
-        <h3>Ehdotetut tuotteet</h3>
-        <div class="grid related-grid">
-          ${related
-            .map(
-              (item) => `
-                <a class="card related-card" href="/tuote/${encodeURIComponent(item.slug)}">
-                  <img class="product-image" src="${escapeHtml(item.images?.[0] ?? item.image)}" alt="${escapeHtml(getProductAlt(item))}" />
-                  <strong class="product-name">${escapeHtml(item.name)}</strong>
-                </a>
-              `,
-            )
-            .join('')}
-        </div>
-      </section>
-    `
-    : ''
+  const relatedMarkup =
+    related.length > 0
+      ? `
+        <section class="related">
+          <h3>Ehdotetut tuotteet</h3>
+          <div class="grid related-grid">
+            ${related
+              .map(
+                (item) => `
+                  <a class="card related-card" href="/tuote/${encodeURIComponent(item.slug)}">
+                    <img class="product-image" src="${escapeHtml(item.images?.[0] ?? item.image)}" alt="${escapeHtml(getProductAlt(item))}" loading="lazy" decoding="async" />
+                    <strong class="product-name">${escapeHtml(item.name)}</strong>
+                  </a>
+                `,
+              )
+              .join('')}
+          </div>
+        </section>
+      `
+      : ''
 
   return `
     <div class="page">
       <header class="top">
         <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
-          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" />
+          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" decoding="async" fetchpriority="high" />
         </a>
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#products">Tuotteet</a>
@@ -594,10 +664,10 @@ const renderProductMarkup = ({ product, category, related }) => {
       <main class="main">
         <section class="detail section" id="product-detail">
           ${breadcrumbs}
-          <div class="detail-shell">
+          <div class="detail-layout">
             <div class="detail-media">
-              <div class="detail-image-frame">
-                <img class="detail-image active" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" />
+              <div class="detail-image-wrap">
+                <img class="detail-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" decoding="async" fetchpriority="high" />
               </div>
             </div>
             <div class="detail-info">
@@ -628,7 +698,7 @@ const renderProductMarkup = ({ product, category, related }) => {
           <p>suomenpaperitukku@gmail.com</p>
         </div>
         <div>
-          <p>S?ynetie 16, 01490 Vantaa</p>
+          <p>Säynetie 16, 01490 Vantaa</p>
           <p>3590057-8</p>
         </div>
       </footer>
@@ -666,6 +736,7 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) =>
       canonical: absoluteUrl(siteUrl, '/'),
       image: absoluteUrl(siteUrl, '/brand-logo.png'),
       structuredData: buildHomeStructuredData(siteUrl, catalog),
+      preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
     },
     initialState: { catalog, route },
     ssrMarkup: renderHomeMarkup({ catalog }),
