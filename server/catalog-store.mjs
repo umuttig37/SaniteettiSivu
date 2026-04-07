@@ -6,6 +6,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const dataDir = path.resolve(__dirname, '..', 'data')
 const seedFile = path.join(__dirname, 'catalog.seed.json')
 const catalogFile = path.join(dataDir, 'catalog.json')
+const inlineImagePattern = /^data:(image\/[a-zA-Z0-9.+-]+);base64,([A-Za-z0-9+/=]+)$/
+
+let catalogCache = null
+let catalogCacheMtimeMs = null
+let publicCatalogCache = null
+let publicCatalogCacheMtimeMs = null
 
 const fallbackCatalog = {
   categories: [
@@ -37,6 +43,40 @@ const ensureDataDir = () => {
   if (!fs.existsSync(dataDir)) {
     fs.mkdirSync(dataDir, { recursive: true })
   }
+}
+
+const readCatalogFromDisk = () => normalizeCatalog(readJson(catalogFile))
+
+const rememberCatalog = (catalog) => {
+  try {
+    catalogCache = catalog
+    catalogCacheMtimeMs = fs.statSync(catalogFile).mtimeMs
+    publicCatalogCache = null
+    publicCatalogCacheMtimeMs = null
+  } catch {
+    catalogCache = catalog
+    catalogCacheMtimeMs = null
+    publicCatalogCache = null
+    publicCatalogCacheMtimeMs = null
+  }
+  return catalog
+}
+
+const getCachedCatalog = () => {
+  if (!catalogCache || catalogCacheMtimeMs === null) {
+    return null
+  }
+
+  try {
+    const stats = fs.statSync(catalogFile)
+    if (stats.mtimeMs === catalogCacheMtimeMs) {
+      return catalogCache
+    }
+  } catch {
+    return null
+  }
+
+  return null
 }
 
 const stripAccents = (value) =>
@@ -229,6 +269,7 @@ export const ensureCatalogStore = () => {
 
   if (!fs.existsSync(catalogFile)) {
     writeJson(catalogFile, seed)
+    rememberCatalog(seed)
     return
   }
 
@@ -239,22 +280,29 @@ export const ensureCatalogStore = () => {
 
     if (shouldBootstrapFromSeed) {
       writeJson(catalogFile, seed)
+      rememberCatalog(seed)
     }
   } catch {
     writeJson(catalogFile, seed)
+    rememberCatalog(seed)
   }
 }
 
 export const readCatalog = () => {
   ensureCatalogStore()
-  return normalizeCatalog(readJson(catalogFile))
+  const cached = getCachedCatalog()
+  if (cached) {
+    return cached
+  }
+
+  return rememberCatalog(readCatalogFromDisk())
 }
 
 export const writeCatalog = (catalog) => {
   ensureCatalogStore()
   const normalized = normalizeCatalog(catalog)
   writeJson(catalogFile, normalized)
-  return normalized
+  return rememberCatalog(normalized)
 }
 
 export const upsertProduct = (input) => {
@@ -387,3 +435,60 @@ export const getProductBySlug = (slug) => readCatalog().products.find((item) => 
 export const getCategoryById = (id) => readCatalog().categories.find((item) => item.id === id) ?? null
 
 export const getCatalogFilePath = () => catalogFile
+
+const getPublicImageUrl = (product, imageIndex, imageValue) => {
+  const raw = String(imageValue ?? '').trim()
+  if (!inlineImagePattern.test(raw)) {
+    return raw
+  }
+
+  return `/media/product/${encodeURIComponent(product.slug ?? product.id ?? 'tuote')}/${imageIndex}`
+}
+
+const toPublicProduct = (product) => {
+  const rawImages = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image]
+  const publicImages = rawImages.map((image, index) => getPublicImageUrl(product, index, image))
+
+  return {
+    ...product,
+    image: publicImages[0],
+    images: publicImages,
+  }
+}
+
+export const readPublicCatalog = () => {
+  const catalog = readCatalog()
+  if (publicCatalogCache && publicCatalogCacheMtimeMs === catalogCacheMtimeMs) {
+    return publicCatalogCache
+  }
+
+  const publicCatalog = {
+    categories: catalog.categories,
+    products: catalog.products.map(toPublicProduct),
+  }
+
+  publicCatalogCache = publicCatalog
+  publicCatalogCacheMtimeMs = catalogCacheMtimeMs
+
+  return publicCatalog
+}
+
+export const getProductMediaAsset = (slug, imageIndex = 0) => {
+  const product = getProductBySlug(slug)
+  if (!product) {
+    return null
+  }
+
+  const images = Array.isArray(product.images) && product.images.length > 0 ? product.images : [product.image]
+  const rawImage = String(images[imageIndex] ?? images[0] ?? '').trim()
+  const match = rawImage.match(inlineImagePattern)
+
+  if (!match) {
+    return null
+  }
+
+  return {
+    contentType: match[1],
+    buffer: Buffer.from(match[2], 'base64'),
+  }
+}

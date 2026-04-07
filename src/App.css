@@ -364,9 +364,11 @@ html {
 
 .hero p {
   max-width: 34rem;
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(255, 255, 255, 0.98);
   font-size: clamp(1rem, 1.5vw, 1.15rem);
   line-height: 1.45;
+  text-shadow: 0 6px 22px rgba(8, 23, 44, 0.38);
+  white-space: pre-line;
 }
 
 .cta {

@@ -1,5 +1,6 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import nodemailer from 'nodemailer'
@@ -12,9 +13,11 @@ import {
   getCategoryById,
   getProductBySlug,
   readCatalog,
+  readPublicCatalog,
   reorderCategories,
   updateCategory,
   upsertProduct,
+  getProductMediaAsset,
 } from './catalog-store.mjs'
 import {
   renderProductOgSvg,
@@ -43,10 +46,13 @@ const mailFrom = process.env.MAIL_FROM ?? smtpUser
 const ownerNotificationEmail = process.env.MAIL_TO ?? 'umut.uygur30@gmail.com'
 const fallbackOwnerEmail = 'umut.uygur30@gmail.com'
 const ownerNotificationRecipients = Array.from(new Set([ownerNotificationEmail.trim(), fallbackOwnerEmail].filter(Boolean)))
-const adminUser = process.env.ADMIN_USER ?? 'admin'
-const adminPass = process.env.ADMIN_PASS ?? 'saniteetti123'
+const adminUser = String(process.env.ADMIN_USER ?? '').trim()
+const adminPass = String(process.env.ADMIN_PASS ?? '').trim()
 const siteUrlEnv = (process.env.PUBLIC_SITE_URL ?? process.env.SITE_URL ?? 'https://suomenpaperitukku.fi').trim().replace(/\/+$/g, '')
 const preferredHost = siteUrlEnv ? new URL(siteUrlEnv).host.toLowerCase() : ''
+const adminSessionCookieName = 'spt_admin_session'
+const adminSessionMaxAgeMs = 1000 * 60 * 60 * 12
+const adminSessions = new Map()
 
 const setStaticAssetHeaders = (res, filePath) => {
   const relativePath = path.relative(projectRoot, filePath).replace(/\\/g, '/')
@@ -93,6 +99,73 @@ app.use((req, res, next) => {
 
 const getSiteUrl = (req) => {
   return siteUrlEnv || `${req.protocol}://${req.get('host')}`
+}
+
+const parseCookies = (cookieHeader) => {
+  const cookieSource = String(cookieHeader ?? '')
+  if (!cookieSource) {
+    return {}
+  }
+
+  return cookieSource.split(';').reduce((acc, part) => {
+    const separatorIndex = part.indexOf('=')
+    if (separatorIndex <= 0) {
+      return acc
+    }
+
+    const key = part.slice(0, separatorIndex).trim()
+    const value = part.slice(separatorIndex + 1).trim()
+    if (!key) {
+      return acc
+    }
+
+    acc[key] = decodeURIComponent(value)
+    return acc
+  }, {})
+}
+
+const isSecureRequest = (req) =>
+  req.secure || String(req.headers['x-forwarded-proto'] ?? '').toLowerCase() === 'https'
+
+const buildSessionCookie = (req, value, maxAgeMs = adminSessionMaxAgeMs) => {
+  const parts = [
+    `${adminSessionCookieName}=${encodeURIComponent(value)}`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    `Max-Age=${Math.floor(maxAgeMs / 1000)}`,
+  ]
+
+  if (isSecureRequest(req)) {
+    parts.push('Secure')
+  }
+
+  return parts.join('; ')
+}
+
+const clearSessionCookie = (req) => {
+  const parts = [
+    `${adminSessionCookieName}=`,
+    'Path=/',
+    'HttpOnly',
+    'SameSite=Lax',
+    'Max-Age=0',
+  ]
+
+  if (isSecureRequest(req)) {
+    parts.push('Secure')
+  }
+
+  return parts.join('; ')
+}
+
+const cleanupExpiredAdminSessions = () => {
+  const now = Date.now()
+  for (const [sessionId, session] of adminSessions.entries()) {
+    if (session.expiresAt <= now) {
+      adminSessions.delete(sessionId)
+    }
+  }
 }
 
 const ensureOrdersStore = () => {
@@ -143,10 +216,49 @@ const createTransporter = () => {
   })
 }
 
+const createAdminSession = () => {
+  cleanupExpiredAdminSessions()
+  const sessionId = crypto.randomBytes(24).toString('hex')
+  adminSessions.set(sessionId, {
+    user: adminUser,
+    expiresAt: Date.now() + adminSessionMaxAgeMs,
+  })
+  return sessionId
+}
+
+const getAdminSession = (req) => {
+  cleanupExpiredAdminSessions()
+  const cookies = parseCookies(req.headers.cookie)
+  const sessionId = cookies[adminSessionCookieName]
+  if (!sessionId) {
+    return null
+  }
+
+  const session = adminSessions.get(sessionId)
+  if (!session) {
+    return null
+  }
+
+  if (session.expiresAt <= Date.now()) {
+    adminSessions.delete(sessionId)
+    return null
+  }
+
+  session.expiresAt = Date.now() + adminSessionMaxAgeMs
+  return { id: sessionId, ...session }
+}
+
 const isValidAdmin = (req) => {
-  const user = req.header('x-admin-user') ?? ''
-  const pass = req.header('x-admin-pass') ?? ''
-  return user === adminUser && pass === adminPass
+  const session = getAdminSession(req)
+  return Boolean(session && session.user === adminUser)
+}
+
+const getPublicCatalogResponse = (productId = null) => {
+  const catalog = readPublicCatalog()
+  return {
+    catalog,
+    product: productId ? catalog.products.find((item) => item.id === productId) ?? null : null,
+  }
 }
 
 const requireAdmin = (req, res, next) => {
@@ -155,6 +267,34 @@ const requireAdmin = (req, res, next) => {
     return
   }
   next()
+}
+
+const resolveStoredImageValue = (value, existingProduct) => {
+  const nextValue = String(value ?? '').trim()
+  if (!nextValue || !existingProduct) {
+    return nextValue
+  }
+
+  const mediaMatch = nextValue.match(/(?:^https?:\/\/[^/]+)?\/media\/product\/([^/]+)\/(\d+)$/)
+  if (!mediaMatch) {
+    return nextValue
+  }
+
+  const [, slug, rawIndex] = mediaMatch
+  if (decodeURIComponent(slug) !== existingProduct.slug) {
+    return nextValue
+  }
+
+  const index = Number(rawIndex)
+  if (!Number.isInteger(index) || index < 0) {
+    return nextValue
+  }
+
+  const existingImages = Array.isArray(existingProduct.images) && existingProduct.images.length > 0
+    ? existingProduct.images
+    : [existingProduct.image]
+
+  return String(existingImages[index] ?? nextValue)
 }
 
 const getOrderLang = (order) => (order.lang === 'en' ? 'en' : 'fi')
@@ -345,6 +485,7 @@ const shippedHtml = (order) => {
 }
 
 const normalizeIncomingProduct = (body, productId = null) => {
+  const existingProduct = productId ? readCatalog().products.find((item) => item.id === productId) ?? null : null
   const searchKeywords = Array.isArray(body.searchKeywords)
     ? body.searchKeywords.map((item) => String(item).trim()).filter(Boolean)
     : []
@@ -391,8 +532,12 @@ const normalizeIncomingProduct = (body, productId = null) => {
     unitNote: String(body.unitNote ?? '').trim() || undefined,
     sku: String(body.sku ?? '').trim(),
     stock: Number(body.stock ?? 0),
-    images: Array.isArray(body.images) ? body.images.filter((item) => typeof item === 'string' && item.trim() !== '') : [],
-    image: body.image,
+    images: Array.isArray(body.images)
+      ? body.images
+          .filter((item) => typeof item === 'string' && item.trim() !== '')
+          .map((item) => resolveStoredImageValue(item, existingProduct))
+      : [],
+    image: resolveStoredImageValue(body.image, existingProduct),
     description: String(body.description ?? '').trim(),
     featured: Boolean(body.featured),
     featuredRank: body.featured ? Number(body.featuredRank ?? 0) : undefined,
@@ -423,8 +568,60 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true })
 })
 
+app.get('/api/admin/session', (req, res) => {
+  const session = getAdminSession(req)
+  if (!session) {
+    res.status(401).json({ authenticated: false })
+    return
+  }
+
+  res.setHeader('Set-Cookie', buildSessionCookie(req, session.id))
+  res.json({ authenticated: true, user: session.user })
+})
+
+app.post('/api/admin/login', (req, res) => {
+  const user = String(req.body?.user ?? '').trim()
+  const pass = String(req.body?.pass ?? '').trim()
+
+  if (!adminUser || !adminPass) {
+    res.status(503).json({ message: 'Admin login is not configured on the server.' })
+    return
+  }
+
+  if (user !== adminUser || pass !== adminPass) {
+    res.status(401).json({ message: 'Unauthorized' })
+    return
+  }
+
+  const sessionId = createAdminSession()
+  res.setHeader('Set-Cookie', buildSessionCookie(req, sessionId))
+  res.json({ ok: true })
+})
+
+app.post('/api/admin/logout', (req, res) => {
+  const cookies = parseCookies(req.headers.cookie)
+  const sessionId = cookies[adminSessionCookieName]
+  if (sessionId) {
+    adminSessions.delete(sessionId)
+  }
+
+  res.setHeader('Set-Cookie', clearSessionCookie(req))
+  res.json({ ok: true })
+})
+
 app.get('/api/catalog', (_req, res) => {
-  res.json(readCatalog())
+  res.json(readPublicCatalog())
+})
+
+app.get('/media/product/:slug/:imageIndex', (req, res) => {
+  const media = getProductMediaAsset(req.params.slug, Number(req.params.imageIndex))
+  if (!media) {
+    res.status(404).send('Not found')
+    return
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=604800, stale-while-revalidate=86400')
+  res.type(media.contentType).send(media.buffer)
 })
 
 app.post('/api/admin/products', requireAdmin, (req, res) => {
@@ -435,9 +632,8 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
     return
   }
 
-  const catalog = upsertProduct(payload)
-  const product = catalog.products.find((item) => item.id === payload.id) ?? null
-  res.status(201).json({ catalog, product })
+  upsertProduct(payload)
+  res.status(201).json(getPublicCatalogResponse(payload.id))
 })
 
 app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {
@@ -448,14 +644,13 @@ app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {
     return
   }
 
-  const catalog = upsertProduct(payload)
-  const product = catalog.products.find((item) => item.id === payload.id) ?? null
-  res.json({ catalog, product })
+  upsertProduct(payload)
+  res.json(getPublicCatalogResponse(payload.id))
 })
 
 app.delete('/api/admin/products/:productId', requireAdmin, (req, res) => {
-  const catalog = deleteProduct(req.params.productId)
-  res.json({ catalog })
+  deleteProduct(req.params.productId)
+  res.json(getPublicCatalogResponse())
 })
 
 app.post('/api/admin/categories', requireAdmin, (req, res) => {
@@ -466,13 +661,13 @@ app.post('/api/admin/categories', requireAdmin, (req, res) => {
     return
   }
 
-  const catalog = addCategory({ nameFi, nameEn, id: nameFi })
-  res.status(201).json({ catalog })
+  addCategory({ nameFi, nameEn, id: nameFi })
+  res.status(201).json(getPublicCatalogResponse())
 })
 
 app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
-  const catalog = deleteCategory(req.params.categoryId)
-  res.json({ catalog })
+  deleteCategory(req.params.categoryId)
+  res.json(getPublicCatalogResponse())
 })
 
 app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
@@ -483,14 +678,14 @@ app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
     return
   }
 
-  const catalog = updateCategory(req.params.categoryId, { nameFi, nameEn })
-  res.json({ catalog })
+  updateCategory(req.params.categoryId, { nameFi, nameEn })
+  res.json(getPublicCatalogResponse())
 })
 
 app.post('/api/admin/categories/reorder', requireAdmin, (req, res) => {
   const order = Array.isArray(req.body?.order) ? req.body.order : []
-  const catalog = reorderCategories(order)
-  res.json({ catalog })
+  reorderCategories(order)
+  res.json(getPublicCatalogResponse())
 })
 
 app.get('/api/orders', requireAdmin, (req, res) => {
@@ -615,7 +810,7 @@ app.get('/og/product/:slug.svg', (req, res) => {
 })
 
 app.get('/tuote/:slug', (req, res) => {
-  const catalog = readCatalog()
+  const catalog = readPublicCatalog()
   const product = catalog.products.find((item) => item.slug === req.params.slug)
   if (!product) {
     res.status(404).send('Product not found')
@@ -636,7 +831,7 @@ app.get('/tuote/:slug', (req, res) => {
 })
 
 app.get(/^(?!\/api\/|\/robots\.txt$|\/sitemap\.xml$|\/og\/).*/, (req, res) => {
-  const catalog = readCatalog()
+  const catalog = readPublicCatalog()
   const legacyProductId = String(req.query.product ?? '').trim()
   if (legacyProductId) {
     const match = catalog.products.find((item) => item.id === legacyProductId)

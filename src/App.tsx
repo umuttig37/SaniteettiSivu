@@ -262,7 +262,7 @@ const rawText = {
   fi: {
     nav: ['Kategoriat', 'Tuotteet', 'Kirjaudu'],
     heroTitle: 'Tervetuloa Suomen Paperitukkuun',
-    heroText: 'Tilaa laskulla saniteettitarvikkeet, paperituotteet ja paljon muuta helposti.',
+    heroText: 'Suomen edullisimpia saniteettitarvikkeita laskulla?\nMeilt\u00E4 mahdollista tilata helposti, nopeasti ja kilpailukykyisin hinnoin.',
     ctaShop: 'Selaa tuotteita',
     ctaAccount: 'Pyydä yritystili',
     trustTitle: 'Luotettava yritystoimittaja',
@@ -273,7 +273,7 @@ const rawText = {
     ],
     categoriesTitle: 'Kategoriat',
     productsTitle: 'Tuotteet',
-    productsNote: 'Toimitus arkipäivässä',
+    productsNote: '',
     productsBillingNote: 'Maksu laskulla',
     productsShippingNote: `Toimitus: ${shippingFee} € alle ${freeShippingThreshold} € tilauksille`,
     productsFreeShippingNote: `Ilmainen toimitus yli ${freeShippingThreshold} € tilauksille`,
@@ -356,8 +356,8 @@ const rawText = {
   },
   en: {
     nav: ['Categories', 'Products', 'Login'],
-    heroTitle: 'Suomen Paperitukku',
-    heroText: 'Order sanitary supplies for your business. Add to cart, fill delivery details, and order by invoice.',
+    heroTitle: 'Welcome to Suomen Paperitukku',
+    heroText: "Some of Finland's most affordable sanitary supplies on invoice?\nOrder easily, quickly and at competitive prices from us.",
     ctaShop: 'Browse products',
     ctaAccount: 'Request company account',
     trustTitle: 'Reliable business supplier',
@@ -368,7 +368,7 @@ const rawText = {
     ],
     categoriesTitle: 'Categories',
     productsTitle: 'Products',
-    productsNote: 'Delivery on business days',
+    productsNote: '',
     productsBillingNote: 'Pay by invoice',
     productsShippingNote: `Delivery: ${shippingFee} € for orders below ${freeShippingThreshold} €`,
     productsFreeShippingNote: `Free delivery for orders above ${freeShippingThreshold} €`,
@@ -607,11 +607,6 @@ const products: Record<Lang, Product[]> = {
       description: 'Gentle liquid soap for professional use.',
     },
   ],
-}
-
-const adminCreds = {
-  user: 'admin',
-  pass: 'saniteetti123',
 }
 
 const pageSize = 16
@@ -1316,6 +1311,7 @@ function App() {
   const [adminPass, setAdminPass] = useState('')
   const [adminError, setAdminError] = useState('')
   const [adminAuthed, setAdminAuthed] = useState(false)
+  const [adminSessionLoading, setAdminSessionLoading] = useState(false)
   const [productQuery, setProductQuery] = useState(() => getRouteFromUrl().searchQuery ?? '')
   const [activeCategory, setActiveCategory] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
@@ -1604,6 +1600,42 @@ function App() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminPage, adminAuthed])
+
+  useEffect(() => {
+    if (!isAdminPage || adminAuthed) {
+      setAdminSessionLoading(false)
+      return
+    }
+
+    let active = true
+    setAdminSessionLoading(true)
+
+    const restoreAdminSession = async () => {
+      try {
+        const response = await fetch('/api/admin/session', {
+          credentials: 'include',
+        })
+        if (!active) {
+          return
+        }
+        setAdminAuthed(response.ok)
+      } catch {
+        if (active) {
+          setAdminAuthed(false)
+        }
+      } finally {
+        if (active) {
+          setAdminSessionLoading(false)
+        }
+      }
+    }
+
+    void restoreAdminSession()
+
+    return () => {
+      active = false
+    }
+  }, [adminAuthed, isAdminPage])
 
   useEffect(() => {
     setAdminProductForm((prev) =>
@@ -1907,19 +1939,59 @@ function App() {
     setLastOrderId('')
   }
 
-  const handleAdminLogin = () => {
-    if (adminUser === adminCreds.user && adminPass === adminCreds.pass) {
+  const adminFetch = (input: string, init: RequestInit = {}) =>
+    fetch(input, {
+      ...init,
+      credentials: 'include',
+    })
+
+  const handleAdminUnauthorized = () => {
+    setAdminAuthed(false)
+    setAdminSessionLoading(false)
+    setAdminOrders([])
+    setAdminError(lang === 'fi' ? 'Kirjautuminen vanheni. Kirjaudu uudelleen.' : 'Your session expired. Please sign in again.')
+  }
+
+  const handleAdminLogin = async () => {
+    setAdminError('')
+    try {
+      const response = await adminFetch('/api/admin/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user: adminUser.trim(),
+          pass: adminPass,
+        }),
+      })
+      const payload = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        setAdminAuthed(false)
+        setAdminError(payload.message ?? (lang === 'fi' ? 'Väärä käyttäjä tai salasana.' : 'Invalid username or password.'))
+        return
+      }
+
       setAdminAuthed(true)
       setAdminError('')
       setIsAdminPage(true)
-      return
+    } catch {
+      setAdminAuthed(false)
+      setAdminError(lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Login failed.')
     }
-    setAdminAuthed(false)
-    setAdminError(lang === 'fi' ? 'Väärä käyttäjä tai salasana.' : 'Invalid username or password.')
   }
 
-  const handleAdminLogout = () => {
+  const handleAdminLogout = async () => {
+    try {
+      await adminFetch('/api/admin/logout', {
+        method: 'POST',
+      })
+    } catch {
+      // Logout still continues locally even if the network request fails.
+    }
+
     setAdminAuthed(false)
+    setAdminSessionLoading(false)
     setAdminUser('')
     setAdminPass('')
     setAdminError('')
@@ -1927,11 +1999,6 @@ function App() {
     setAdminOrders([])
     setAdminOrdersError('')
   }
-
-  const adminAuthHeaders = () => ({
-    'x-admin-user': adminUser || adminCreds.user,
-    'x-admin-pass': adminPass || adminCreds.pass,
-  })
 
   const syncCatalogState = (payload: CatalogPayload) => {
     const normalized = normalizeCatalog(payload)
@@ -1943,10 +2010,12 @@ function App() {
     setAdminOrdersLoading(true)
     setAdminOrdersError('')
     try {
-      const response = await fetch('/api/orders', {
-        headers: adminAuthHeaders(),
-      })
+      const response = await adminFetch('/api/orders')
       const payload = (await response.json()) as { orders?: AdminOrder[]; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok) {
         setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.'))
         return
@@ -1963,11 +2032,14 @@ function App() {
     setShipActionOrderId(orderId)
     setAdminOrdersError('')
     try {
-      const response = await fetch(`/api/orders/${orderId}/shipped`, {
+      const response = await adminFetch(`/api/orders/${orderId}/shipped`, {
         method: 'POST',
-        headers: adminAuthHeaders(),
       })
       const payload = (await response.json()) as { order?: AdminOrder; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok) {
         setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Lähetysviestin lähetys epäonnistui.' : 'Failed to send shipped email.'))
         return
@@ -2042,15 +2114,18 @@ function App() {
     }
 
     try {
-      const response = await fetch(adminProductForm.id ? `/api/admin/products/${adminProductForm.id}` : '/api/admin/products', {
+      const response = await adminFetch(adminProductForm.id ? `/api/admin/products/${adminProductForm.id}` : '/api/admin/products', {
         method: adminProductForm.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...adminAuthHeaders(),
         },
         body: JSON.stringify(payload),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Tuotteen tallennus epäonnistui.' : 'Failed to save product.'))
         return
@@ -2227,11 +2302,14 @@ function App() {
 
   const deleteProductFromAdmin = async (productId: string) => {
     try {
-      const response = await fetch(`/api/admin/products/${productId}`, {
+      const response = await adminFetch(`/api/admin/products/${productId}`, {
         method: 'DELETE',
-        headers: adminAuthHeaders(),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Tuotteen poisto epäonnistui.' : 'Failed to delete product.'))
         return
@@ -2264,15 +2342,18 @@ function App() {
       return
     }
     try {
-      const response = await fetch('/api/admin/categories', {
+      const response = await adminFetch('/api/admin/categories', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...adminAuthHeaders(),
         },
         body: JSON.stringify({ nameFi, nameEn }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian lisäys epäonnistui.' : 'Failed to add category.'))
         return
@@ -2288,11 +2369,14 @@ function App() {
 
   const deleteCategory = async (categoryId: string) => {
     try {
-      const response = await fetch(`/api/admin/categories/${categoryId}`, {
+      const response = await adminFetch(`/api/admin/categories/${categoryId}`, {
         method: 'DELETE',
-        headers: adminAuthHeaders(),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian poisto epäonnistui.' : 'Failed to delete category.'))
         return
@@ -2320,15 +2404,18 @@ function App() {
     nextOrder.splice(nextIndex, 0, moved)
 
     try {
-      const response = await fetch('/api/admin/categories/reorder', {
+      const response = await adminFetch('/api/admin/categories/reorder', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...adminAuthHeaders(),
         },
         body: JSON.stringify({ order: nextOrder.map((item) => item.id) }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian järjestyksen päivitys epäonnistui.' : 'Failed to update category order.'))
         return
@@ -2362,19 +2449,21 @@ function App() {
     }
 
     try {
-      const response = await fetch(`/api/admin/categories/${categoryId}`, {
+      const response = await adminFetch(`/api/admin/categories/${categoryId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ nameFi, nameEn }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
       if (!response.ok || !result.catalog) {
         setAdminError(result.message ?? (lang === 'fi' ? 'Kategorian päivitys epäonnistui.' : 'Failed to update category.'))
         return
       }
-      const normalized = normalizeCatalog(result.catalog)
-      setCategories(normalized.categories)
-      setProductCatalog(normalized.products)
+      syncCatalogState(result.catalog)
       setAdminError('')
     } catch {
       setAdminError(lang === 'fi' ? 'Kategorian päivitys epäonnistui.' : 'Failed to update category.')
@@ -2546,22 +2635,28 @@ function App() {
             {!adminAuthed ? (
               <div className="admin-login-page">
                 <div className="admin-login">
-                  <input
-                    placeholder={t.adminLogin.user}
-                    value={adminUser}
-                    onChange={(event) => setAdminUser(event.target.value)}
-                  />
-                  <input
-                    placeholder={t.adminLogin.pass}
-                    type="password"
-                    value={adminPass}
-                    onChange={(event) => setAdminPass(event.target.value)}
-                  />
-                  {adminError && <div className="error">{adminError}</div>}
-                  <button className="primary" type="button" onClick={handleAdminLogin}>
-                    {t.adminLogin.login}
-                  </button>
-                  {t.adminLogin.hint ? <span className="muted small">{t.adminLogin.hint}</span> : null}
+                  {adminSessionLoading ? (
+                    <span className="muted small">{lang === 'fi' ? 'Tarkistetaan kirjautumista...' : 'Checking your session...'}</span>
+                  ) : (
+                    <>
+                      <input
+                        placeholder={t.adminLogin.user}
+                        value={adminUser}
+                        onChange={(event) => setAdminUser(event.target.value)}
+                      />
+                      <input
+                        placeholder={t.adminLogin.pass}
+                        type="password"
+                        value={adminPass}
+                        onChange={(event) => setAdminPass(event.target.value)}
+                      />
+                      {adminError && <div className="error">{adminError}</div>}
+                      <button className="primary" type="button" onClick={handleAdminLogin}>
+                        {t.adminLogin.login}
+                      </button>
+                      {t.adminLogin.hint ? <span className="muted small">{t.adminLogin.hint}</span> : null}
+                    </>
+                  )}
                 </div>
               </div>
             ) : (
@@ -3266,7 +3361,6 @@ function App() {
           <div className="products-header">
             <div>
               <h2>{t.productsTitle}</h2>
-              <p className="products-info-line">{t.productsNote}</p>
               <p className="products-info-line">{t.productsBillingNote}</p>
               <p className="products-info-line shipping-note">{t.productsFreeShippingNote}</p>
             </div>

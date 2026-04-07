@@ -438,8 +438,8 @@ const renderHomeMarkup = ({ catalog }) => {
       </header>
       <main class="main">
         <section class="hero" id="home">
-          <h1>Suomen Paperitukku</h1>
-          <p>Suomen Paperitukku toimittaa käsi- ja wc-paperit, annostelijat ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen.</p>
+          <h1>Tervetuloa Suomen Paperitukkuun</h1>
+          <p>Suomen edullisimpia saniteettitarvikkeita laskulla?<br />Meilt&auml; mahdollista tilata helposti, nopeasti ja kilpailukykyisin hinnoin.</p>
         </section>
 
         <section class="section" id="categories">
@@ -504,7 +504,6 @@ const renderHomeMarkup = ({ catalog }) => {
           <div class="products-header">
             <div>
               <h2>Tuotteet</h2>
-              <p class="muted">Toimitus arkipäivässä</p>
               <p class="muted">Maksu laskulla</p>
               <p class="muted shipping-note">Ilmainen toimitus yli 300 € tilauksille</p>
             </div>
