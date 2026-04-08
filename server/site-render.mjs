@@ -416,7 +416,7 @@ const renderOptionGroupsMarkup = (product) => {
 }
 
 const renderHomeMarkup = ({ catalog }) => {
-  const featuredCards = getFeaturedProducts(catalog.products, 4)
+  const featuredCards = getFeaturedProducts(catalog.products, 8)
   const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
   const categories = catalog.categories.filter((item) => item.id !== 'muut')
   const categoryCounts = catalog.products.reduce((acc, product) => {

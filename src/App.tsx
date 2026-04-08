@@ -1443,7 +1443,7 @@ function App() {
   )
   const selectedProductUnitPrice = selectedProduct ? getResolvedUnitPrice(selectedProduct, selectedProductOptions) : 0
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : [] 
-  const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 4), [productCatalog])
+  const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 8), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
 
   useEffect(() => {
