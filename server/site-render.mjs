@@ -561,8 +561,10 @@ const renderHomeMarkup = ({ catalog }) => {
           <p>+358 44 978 2446</p>
           <p>suomenpaperitukku@gmail.com</p>
         </div>
-        <div>
-          <p>Säynetie 16, 01490 Vantaa</p>
+        <div class="footer-center">
+          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
+        </div>
+        <div class="footer-meta">
           <p>3590057-8</p>
         </div>
       </footer>
@@ -696,8 +698,10 @@ const renderProductMarkup = ({ product, category, related }) => {
           <p>+358 44 978 2446</p>
           <p>suomenpaperitukku@gmail.com</p>
         </div>
-        <div>
-          <p>Säynetie 16, 01490 Vantaa</p>
+        <div class="footer-center">
+          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
+        </div>
+        <div class="footer-meta">
           <p>3590057-8</p>
         </div>
       </footer>

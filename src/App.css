@@ -469,9 +469,30 @@ html {
   padding: 2rem 3rem 3rem;
   background: #0e1b33;
   color: #d7e1ff;
+  position: relative;
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   gap: 2rem;
+}
+
+.footer-center {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  text-align: center;
+  font-size: 0.84rem;
+  color: rgba(215, 225, 255, 0.68);
+  pointer-events: none;
+}
+
+.footer-center p {
+  margin: 0;
+}
+
+.footer-meta {
+  text-align: right;
 }
 
 .footer-admin-link {
@@ -1820,8 +1841,20 @@ html {
   }
 
   .footer {
-    flex-direction: column;
+    display: grid;
+    grid-template-columns: 1fr;
     align-items: flex-start;
+  }
+
+  .footer-meta {
+    text-align: left;
+  }
+
+  .footer-center {
+    position: static;
+    transform: none;
+    margin-top: 0.1rem;
+    text-align: left;
   }
 
   .cart-toast {

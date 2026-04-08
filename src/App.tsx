@@ -349,9 +349,9 @@ const rawText = {
       service: 'Asiakaspalvelu',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
-      address: 'Säynetie 16, 01490 Vantaa',
       hours: '',
       legal: '3590057-8',
+      copyright: '© 2026 Suomen Paperitukku - Kastamonu Tmi',
     },
   },
   en: {
@@ -444,9 +444,9 @@ const rawText = {
       service: 'Customer service',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
-      address: 'Säynetie 16, 01490 Vantaa',
       hours: '',
       legal: '3590057-8',
+      copyright: '© 2026 Suomen Paperitukku - Kastamonu Tmi',
     },
   },
 } as const
@@ -1296,7 +1296,7 @@ function App() {
   const initialCatalog = getInitialCatalog()
   const hasInitialCatalog = initialCatalog.products.length > 0 && initialCatalog.categories.length > 0
   const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
-  const [lang, setLang] = useState<Lang>('fi')
+  const [lang] = useState<Lang>('fi')
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
   const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
   const [, setCatalogLoading] = useState(!hasInitialCatalog)
@@ -2580,14 +2580,6 @@ function App() {
               {lang === 'fi' ? 'Takaisin kauppaan' : 'Back to store'}
             </button>
           )}
-          <div className="lang">
-            <button className={lang === 'fi' ? 'active' : ''} onClick={() => setLang('fi')}>
-              FI
-            </button>
-            <button className={lang === 'en' ? 'active' : ''} onClick={() => setLang('en')}>
-              EN
-            </button>
-          </div>
           </div>
         </div>
       </header>
@@ -3515,8 +3507,10 @@ function App() {
             {t.nav[2]}
           </button>
         </div>
-        <div>
-          <p>{t.footer.address}</p>
+        <div className="footer-center">
+          <p>{t.footer.copyright}</p>
+        </div>
+        <div className="footer-meta">
           {t.footer.hours ? <p>{t.footer.hours}</p> : null}
           <p>{t.footer.legal}</p>
         </div>
