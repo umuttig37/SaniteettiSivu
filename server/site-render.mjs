@@ -709,6 +709,77 @@ const renderProductMarkup = ({ product, category, related }) => {
   `
 }
 
+const getUtilityPageMeta = (siteUrl, route) => {
+  switch (route?.type) {
+    case 'cart':
+      return {
+        title: 'Ostoskori | Suomen Paperitukku',
+        description: 'Tarkista ostoskorin sisalto ja siirry kassalle.',
+        canonical: absoluteUrl(siteUrl, '/ostoskori'),
+      }
+    case 'checkout':
+      return {
+        title: 'Kassa | Suomen Paperitukku',
+        description: route?.guestCheckout
+          ? 'Viimeistele korttimaksu ilman rekisteroitymista.'
+          : 'Viimeistele tilaus yritystililla.',
+        canonical: absoluteUrl(siteUrl, route?.guestCheckout ? '/kassa?guest=1' : '/kassa'),
+      }
+    case 'auth':
+      return {
+        title: route?.authMode === 'register' ? 'Rekisteroidy | Suomen Paperitukku' : 'Kirjaudu | Suomen Paperitukku',
+        description: 'Luo yritystili tai kirjaudu sisaan tilausta varten.',
+        canonical: absoluteUrl(siteUrl, '/tili'),
+      }
+    case 'paytrail-return':
+      return {
+        title: 'Maksun vahvistus | Suomen Paperitukku',
+        description: 'Paytrail-maksun vahvistus.',
+        canonical: absoluteUrl(siteUrl, route?.paytrailResult === 'cancel' ? '/kassa/paytrail/cancel' : '/kassa/paytrail/success'),
+      }
+    default:
+      return null
+  }
+}
+
+const renderUtilityMarkup = (route) => {
+  if (!route?.type) {
+    return ''
+  }
+
+  let title = 'Suomen Paperitukku'
+  let description = 'Ladataan sivua...'
+
+  if (route.type === 'cart') {
+    title = 'Ostoskori'
+    description = 'Ladataan ostoskoria...'
+  } else if (route.type === 'checkout') {
+    title = 'Kassa'
+    description = route.guestCheckout ? 'Valmistellaan korttimaksua...' : 'Valmistellaan kassaa...'
+  } else if (route.type === 'auth') {
+    title = route.authMode === 'register' ? 'Rekisteroidy' : 'Kirjaudu'
+    description = 'Ladataan asiakastilia...'
+  } else if (route.type === 'paytrail-return') {
+    title = 'Maksun vahvistus'
+    description = 'Vahvistetaan Paytrail-maksun tila...'
+  }
+
+  return `
+    <div class="page">
+      <main class="main">
+        <section class="section utility-page">
+          <div class="utility-page-head">
+            <div>
+              <h1>${escapeHtml(title)}</h1>
+              <p class="muted">${escapeHtml(description)}</p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  `
+}
+
 const renderDocument = ({ siteUrl, meta, initialState, ssrMarkup = '' }) => {
   const rootAttributes = ssrMarkup ? ' data-booting="true"' : ''
 
@@ -730,20 +801,31 @@ const renderDocument = ({ siteUrl, meta, initialState, ssrMarkup = '' }) => {
 </html>`
 }
 
-export const renderSpaPage = ({ siteUrl, catalog, route = null }) =>
-  renderDocument({
+export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
+  const utilityMeta = getUtilityPageMeta(siteUrl, route)
+
+  return renderDocument({
     siteUrl,
-    meta: {
-      ...homeMeta,
-      type: 'website',
-      canonical: absoluteUrl(siteUrl, '/'),
-      image: absoluteUrl(siteUrl, '/brand-logo.png'),
-      structuredData: buildHomeStructuredData(siteUrl, catalog),
-      preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
-    },
+    meta: utilityMeta
+      ? {
+          ...utilityMeta,
+          type: 'website',
+          image: absoluteUrl(siteUrl, '/brand-logo.png'),
+          structuredData: [],
+          preloadImages: [],
+        }
+      : {
+          ...homeMeta,
+          type: 'website',
+          canonical: absoluteUrl(siteUrl, '/'),
+          image: absoluteUrl(siteUrl, '/brand-logo.png'),
+          structuredData: buildHomeStructuredData(siteUrl, catalog),
+          preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
+        },
     initialState: { catalog, route },
-    ssrMarkup: renderHomeMarkup({ catalog }),
+    ssrMarkup: utilityMeta ? renderUtilityMarkup(route) : renderHomeMarkup({ catalog }),
   })
+}
 
 export const renderProductPage = ({ siteUrl, catalog, product, category, related }) =>
   renderDocument({

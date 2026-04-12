@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="72" viewBox="0 0 320 72" fill="none">
+  <rect width="320" height="72" rx="18" fill="#F4F8FF"/>
+  <rect x="14" y="14" width="62" height="44" rx="12" fill="white" stroke="#D9E5F8"/>
+  <text x="45" y="41" text-anchor="middle" fill="#18407B" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="700">VISA</text>
+  <rect x="90" y="14" width="88" height="44" rx="12" fill="white" stroke="#D9E5F8"/>
+  <circle cx="122" cy="36" r="11" fill="#EA5A3D"/>
+  <circle cx="136" cy="36" r="11" fill="#F5AE35" fill-opacity="0.92"/>
+  <text x="159" y="41" fill="#18407B" font-family="Arial, Helvetica, sans-serif" font-size="12" font-weight="700">MC</text>
+  <rect x="192" y="14" width="54" height="44" rx="12" fill="white" stroke="#D9E5F8"/>
+  <text x="219" y="41" text-anchor="middle" fill="#18407B" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="700">DEBIT</text>
+  <rect x="260" y="14" width="46" height="44" rx="12" fill="#0F6CBD"/>
+  <path d="M281 24L284.8 31.2L292.8 32.3L287.1 37.8L288.5 45.6L281 41.8L273.5 45.6L274.9 37.8L269.2 32.3L277.2 31.2L281 24Z" fill="white"/>
+</svg>

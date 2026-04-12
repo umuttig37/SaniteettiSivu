@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSPropert
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/hero-background.webp'
+import paytrailBadge from './assets/paytrail-badge.svg'
+import paytrailCards from './assets/paytrail-cards.svg'
 
 type Lang = 'fi' | 'en'
 
@@ -92,6 +94,41 @@ type AdminProductForm = {
   optionGroups: AdminOptionGroupForm[]
 }
 
+type CustomerAddress = {
+  streetAddress: string
+  postalCode: string
+  city: string
+  country: string
+}
+
+type CustomerProfile = {
+  id: string
+  firstName: string
+  lastName: string
+  companyName: string
+  businessId: string
+  phone: string
+  email: string
+  defaultShippingAddress: CustomerAddress | null
+  defaultBillingCompany: string
+  defaultBillingAddress: CustomerAddress | null
+}
+
+type LoginForm = {
+  email: string
+  password: string
+}
+
+type RegisterForm = {
+  firstName: string
+  lastName: string
+  companyName: string
+  businessId: string
+  phone: string
+  email: string
+  password: string
+}
+
 type CheckoutForm = {
   company: string
   contact: string
@@ -100,9 +137,15 @@ type CheckoutForm = {
   address: string
   zip: string
   city: string
+  deliveryAddress: string
+  deliveryZip: string
+  deliveryCity: string
   billingCompany: string
   billingAddress: string
+  billingZip: string
+  billingCity: string
   notes: string
+  paymentMethod: 'invoice' | 'card'
 }
 
 type CategoryDef = {
@@ -118,11 +161,25 @@ type CatalogPayload = {
 }
 
 type RouteState = {
-  type: 'home' | 'product'
+  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'paytrail-return'
   slug: string | null
   categorySlug: string | null
   searchQuery: string | null
   legacyProductId: string | null
+  authMode: 'login' | 'register'
+  nextPath: string | null
+  paytrailResult: 'success' | 'cancel' | null
+  guestCheckout: boolean
+  checkoutPaymentState: 'success' | 'cancel' | 'pending' | 'failed' | 'error' | null
+  checkoutOrderId: string | null
+  checkoutMailWarning: boolean
+}
+
+type CheckoutSuccessState = {
+  orderId: string
+  paymentMethod: 'invoice' | 'paytrail'
+  paymentStatus: 'invoice_pending' | 'paid'
+  isGuest: boolean
 }
 
 type CartToast = {
@@ -142,7 +199,7 @@ type FreeShippingToast = {
 declare global {
   interface Window {
     __INITIAL_CATALOG__?: CatalogPayload
-    __INITIAL_ROUTE__?: { type?: string; slug?: string } | null
+    __INITIAL_ROUTE__?: Partial<RouteState> | null
     __SITE_URL__?: string
   }
 }
@@ -164,6 +221,9 @@ type AdminOrder = {
   status: OrderStatus
   createdAt: string
   shippedAt: string | null
+  paymentMethod?: 'invoice' | 'paytrail'
+  paymentStatus?: string
+  confirmationEmailSentAt?: string | null
   customer: {
     company: string
     contact: string
@@ -174,12 +234,17 @@ type AdminOrder = {
     city: string
     billingCompany: string
     billingAddress: string
+    billingZip?: string
+    billingCity?: string
     notes: string
+    businessId?: string
   }
   items: AdminOrderItem[]
   subtotal: number
   shipping: number
   total: number
+  vatAmount?: number
+  grossTotal?: number
 }
 
 const svgData = (label: string, color: string) => {
@@ -806,6 +871,113 @@ const buildCartLineId = (productId: string, selectedOptions: SelectedProductOpti
   return suffix ? `${productId}__${suffix}` : productId
 }
 
+const cartStorageKey = 'spt_cart_v2'
+const checkoutSuccessStorageKey = 'spt_checkout_success_v1'
+
+const readStoredCart = (): Record<string, CartLine> => {
+  if (typeof window === 'undefined') {
+    return {}
+  }
+
+  try {
+    const raw = window.localStorage.getItem(cartStorageKey)
+    if (!raw) {
+      return {}
+    }
+
+    const parsed = JSON.parse(raw) as Record<string, CartLine>
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+const buildAuthHref = (mode: 'login' | 'register', nextPath: string | null = null) => {
+  const search = new URLSearchParams()
+  search.set('mode', mode)
+  if (nextPath) {
+    search.set('next', nextPath)
+  }
+  return `/tili${search.toString() ? `?${search.toString()}` : ''}`
+}
+
+const formatBusinessIdInput = (value: string) => {
+  const cleaned = value.replace(/[^0-9]/g, '').slice(0, 8)
+  if (cleaned.length <= 7) {
+    return cleaned
+  }
+  return `${cleaned.slice(0, 7)}-${cleaned.slice(7)}`
+}
+
+const businessIdChecksumWeights = [7, 9, 10, 5, 8, 4, 2]
+
+const isValidBusinessId = (value: string) => {
+  const normalized = formatBusinessIdInput(value)
+  if (!/^\d{7}-\d$/.test(normalized.trim())) {
+    return false
+  }
+
+  const digits = normalized.replace('-', '')
+  const checksumSource = digits
+    .slice(0, 7)
+    .split('')
+    .reduce((sum, digit, index) => sum + Number(digit) * businessIdChecksumWeights[index], 0)
+  const remainder = checksumSource % 11
+
+  if (remainder === 1) {
+    return false
+  }
+
+  const expectedCheckDigit = remainder === 0 ? 0 : 11 - remainder
+  return Number(digits[7]) === expectedCheckDigit
+}
+
+const formatPostalCodeInput = (value: string) => value.replace(/\D/g, '').slice(0, 5)
+
+const isValidPostalCode = (value: string) => /^\d{5}$/.test(formatPostalCodeInput(value))
+
+const normalizePhoneInput = (value: string) => {
+  const trimmed = value.trim()
+  const hasLeadingPlus = trimmed.startsWith('+')
+  const digits = trimmed.replace(/\D/g, '').slice(0, 15)
+  return hasLeadingPlus && digits ? `+${digits}` : digits
+}
+
+const isValidPhone = (value: string) => {
+  const digitCount = value.replace(/\D/g, '').length
+  return digitCount >= 7 && digitCount <= 15
+}
+
+const readStoredCheckoutSuccess = (): CheckoutSuccessState | null => {
+  if (typeof window === 'undefined') {
+    return null
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(checkoutSuccessStorageKey)
+    if (!raw) {
+      return null
+    }
+
+    const parsed = JSON.parse(raw) as CheckoutSuccessState | null
+    if (!parsed?.orderId || !parsed?.paymentMethod || !parsed?.paymentStatus) {
+      return null
+    }
+
+    return {
+      orderId: String(parsed.orderId),
+      paymentMethod: parsed.paymentMethod === 'paytrail' ? 'paytrail' : 'invoice',
+      paymentStatus: parsed.paymentStatus === 'paid' ? 'paid' : 'invoice_pending',
+      isGuest: Boolean(parsed.isGuest),
+    }
+  } catch {
+    return null
+  }
+}
+
+const getDisplayName = (customer: CustomerProfile | null) =>
+  customer ? [customer.firstName, customer.lastName].filter(Boolean).join(' ').trim() : ''
+
 const formatSelectedOptionsText = (selectedOptions: SelectedProductOption[], separator = ' • ') =>
   selectedOptions
     .map((item) => `${item.groupName}: ${item.valueLabel}${item.valueDetail ? ` (${item.valueDetail})` : ''}`)
@@ -813,18 +985,82 @@ const formatSelectedOptionsText = (selectedOptions: SelectedProductOption[], sep
 
 const getRouteFromUrl = (): RouteState => {
   if (typeof window === 'undefined') {
-    return { type: 'home', slug: null, categorySlug: null, searchQuery: null, legacyProductId: null }
+    return {
+      type: 'home',
+      slug: null,
+      categorySlug: null,
+      searchQuery: null,
+      legacyProductId: null,
+      authMode: 'login',
+      nextPath: null,
+      paytrailResult: null,
+      guestCheckout: false,
+      checkoutPaymentState: null,
+      checkoutOrderId: null,
+      checkoutMailWarning: false,
+    }
   }
   const url = new URL(window.location.href)
-  const productMatch = url.pathname.match(/^\/tuote\/([^/]+)\/?$/)
+  const pathname = url.pathname.replace(/\/+$/g, '') || '/'
+  const productMatch = pathname.match(/^\/tuote\/([^/]+)$/)
+  const paytrailMatch = pathname.match(/^\/kassa\/paytrail\/(success|cancel)$/)
+  const guestCheckout = url.searchParams.get('guest') === '1'
+  const checkoutPaymentState = pathname === '/kassa'
+    ? ((url.searchParams.get('paytrail') as RouteState['checkoutPaymentState']) ?? null)
+    : null
+  let type: RouteState['type'] = 'home'
+
+  if (productMatch) {
+    type = 'product'
+  } else if (pathname === '/ostoskori') {
+    type = 'cart'
+  } else if (pathname === '/kassa') {
+    type = 'checkout'
+  } else if (pathname === '/tili') {
+    type = 'auth'
+  } else if (paytrailMatch) {
+    type = 'paytrail-return'
+  }
 
   return {
-    type: productMatch ? 'product' : 'home',
+    type,
     slug: productMatch ? decodeURIComponent(productMatch[1]) : null,
-    categorySlug: url.searchParams.get('category'),
-    searchQuery: url.searchParams.get('q'),
+    categorySlug: type === 'home' ? url.searchParams.get('category') : null,
+    searchQuery: type === 'home' ? url.searchParams.get('q') : null,
     legacyProductId: url.searchParams.get('product'),
+    authMode: url.searchParams.get('mode') === 'register' ? 'register' : 'login',
+    nextPath: url.searchParams.get('next'),
+    paytrailResult: paytrailMatch ? (paytrailMatch[1] as 'success' | 'cancel') : null,
+    guestCheckout,
+    checkoutPaymentState,
+    checkoutOrderId: pathname === '/kassa' ? url.searchParams.get('orderId') : null,
+    checkoutMailWarning: pathname === '/kassa' && url.searchParams.get('mailWarning') === '1',
   }
+}
+
+const buildCheckoutReturnHref = ({
+  guestCheckout = false,
+  paymentState,
+  orderId = '',
+  mailWarning = false,
+}: {
+  guestCheckout?: boolean
+  paymentState: NonNullable<RouteState['checkoutPaymentState']>
+  orderId?: string
+  mailWarning?: boolean
+}) => {
+  const params = new URLSearchParams()
+  if (guestCheckout) {
+    params.set('guest', '1')
+  }
+  params.set('paytrail', paymentState)
+  if (orderId) {
+    params.set('orderId', orderId)
+  }
+  if (mailWarning) {
+    params.set('mailWarning', '1')
+  }
+  return `/kassa?${params.toString()}`
 }
 
 const getStockTone = (stock: number): 'ok' | 'warn' | 'low' => {
@@ -856,6 +1092,8 @@ const formatPrice = (value: number, lang: Lang) => {
     maximumFractionDigits: 2,
   }).format(value)
 }
+
+const roundCurrency = (value: number) => Math.round(value * 100) / 100
 
 const getResolvedUnitPrice = (product: Product, selectedOptions: SelectedProductOption[]) =>
   selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
@@ -921,7 +1159,7 @@ const getFreeShippingHint = (
 
 const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())
 
-const grossPrice = (value: number) => value * vatMultiplier
+const grossPrice = (value: number) => roundCurrency(value * vatMultiplier)
 
 const normalizeCategoryId = (rawCategory: string) => {
   const trimmed = rawCategory.trim()
@@ -1213,6 +1451,25 @@ const applyAdminSeo = (lang: Lang, adminAuthed: boolean) => {
   applyStructuredData([])
 }
 
+const applyUtilitySeo = (title: string, description: string, path: string) => {
+  const siteUrl = getSiteUrl()
+  document.title = title
+  upsertMeta('meta[name="description"]', { name: 'description', content: description })
+  upsertMeta('meta[name="robots"]', { name: 'robots', content: adminRobotsContent })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: description })
+  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: `${siteUrl}${path}` })
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: description })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${siteUrl}/brand-logo.png` })
+  upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: `${siteUrl}${path}` })
+  upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: `${siteUrl}${path}` })
+  applyStructuredData([])
+}
+
 const applyProductSeo = (product: Product, category: CategoryDef | undefined) => {
   const siteUrl = getSiteUrl()
   const canonical = `${siteUrl}${getProductHref(product)}`
@@ -1296,22 +1553,39 @@ function App() {
   const initialCatalog = getInitialCatalog()
   const hasInitialCatalog = initialCatalog.products.length > 0 && initialCatalog.categories.length > 0
   const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
+  const initialCheckoutSuccessRef = useRef<CheckoutSuccessState | null>(readStoredCheckoutSuccess())
+  const initialCheckoutSuccess = initialCheckoutSuccessRef.current
   const [lang] = useState<Lang>('fi')
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
   const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
   const [, setCatalogLoading] = useState(!hasInitialCatalog)
-  const [cart, setCart] = useState<Record<string, CartLine>>({})
+  const [cart, setCart] = useState<Record<string, CartLine>>(() => readStoredCart())
   const [cartToast, setCartToast] = useState<CartToast | null>(null)
   const [freeShippingToast, setFreeShippingToast] = useState<FreeShippingToast | null>(null)
-  const [orderSent, setOrderSent] = useState(false)
-  const [showCheckout, setShowCheckout] = useState(false)
-  const [checkoutStep, setCheckoutStep] = useState<1 | 2>(1)
+  const [orderSent, setOrderSent] = useState(Boolean(initialCheckoutSuccess))
   const [isAdminPage, setIsAdminPage] = useState(false)
   const [adminUser, setAdminUser] = useState('')
   const [adminPass, setAdminPass] = useState('')
   const [adminError, setAdminError] = useState('')
   const [adminAuthed, setAdminAuthed] = useState(false)
   const [adminSessionLoading, setAdminSessionLoading] = useState(false)
+  const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null)
+  const [customerSessionLoading, setCustomerSessionLoading] = useState(false)
+  const [authLoading, setAuthLoading] = useState(false)
+  const [authError, setAuthError] = useState('')
+  const [authNotice, setAuthNotice] = useState('')
+  const [paymentReturnLoading, setPaymentReturnLoading] = useState(false)
+  const [paymentReturnMessage, setPaymentReturnMessage] = useState('')
+  const [loginForm, setLoginForm] = useState<LoginForm>({ email: '', password: '' })
+  const [registerForm, setRegisterForm] = useState<RegisterForm>({
+    firstName: '',
+    lastName: '',
+    companyName: '',
+    businessId: '',
+    phone: '',
+    email: '',
+    password: '',
+  })
   const [productQuery, setProductQuery] = useState(() => getRouteFromUrl().searchQuery ?? '')
   const [activeCategory, setActiveCategory] = useState('all')
   const [currentPage, setCurrentPage] = useState(1)
@@ -1348,13 +1622,7 @@ function App() {
   const [adminSeoTouched, setAdminSeoTouched] = useState(false)
   const [adminMetaTouched, setAdminMetaTouched] = useState(false)
   const [adminKeywordsTouched, setAdminKeywordsTouched] = useState(false)
-  const [routeState, setRouteState] = useState<RouteState>(() => {
-    const next = getRouteFromUrl()
-    if (initialRoute?.type === 'product' && initialRoute.slug) {
-      return { ...next, type: 'product', slug: initialRoute.slug }
-    }
-    return next
-  })
+  const [routeState, setRouteState] = useState<RouteState>(() => ({ ...(initialRoute ?? {}), ...getRouteFromUrl() }))
   const [checkoutForm, setCheckoutForm] = useState<CheckoutForm>({
     company: '',
     contact: '',
@@ -1363,17 +1631,26 @@ function App() {
     address: '',
     zip: '',
     city: '',
+    deliveryAddress: '',
+    deliveryZip: '',
+    deliveryCity: '',
     billingCompany: '',
     billingAddress: '',
+    billingZip: '',
+    billingCity: '',
     notes: '',
+    paymentMethod: 'invoice',
   })
   const [formError, setFormError] = useState('')
   const [placingOrder, setPlacingOrder] = useState(false)
-  const [lastOrderId, setLastOrderId] = useState('')
+  const [lastOrderId, setLastOrderId] = useState(initialCheckoutSuccess?.orderId ?? '')
+  const [checkoutSuccess, setCheckoutSuccess] = useState<CheckoutSuccessState | null>(initialCheckoutSuccess)
   const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [adminOrdersError, setAdminOrdersError] = useState('')
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
+  const isGuestCheckout = routeState.type === 'checkout' && routeState.guestCheckout && !customerProfile
+  const selectedPaymentMethod = isGuestCheckout ? 'card' : checkoutForm.paymentMethod
   const previousStorePageRef = useRef(currentPage)
   const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
@@ -1404,6 +1681,22 @@ function App() {
     adminCategoryLabel,
     adminProductForm.sku.trim(),
   ).join(', ')
+
+  const clearOrderState = (options: { keepPaymentMessage?: boolean } = {}) => {
+    setCheckoutSuccess(null)
+    setOrderSent(false)
+    setLastOrderId('')
+    if (!options.keepPaymentMessage) {
+      setPaymentReturnMessage('')
+    }
+  }
+
+  const rememberOrderSuccess = (success: CheckoutSuccessState, message = '') => {
+    setCheckoutSuccess(success)
+    setOrderSent(true)
+    setLastOrderId(success.orderId)
+    setPaymentReturnMessage(message)
+  }
 
   const filteredProducts = useMemo(() => {
     const query = productQuery.trim().toLowerCase()
@@ -1486,6 +1779,72 @@ function App() {
   }, [hasInitialCatalog, initialCatalog.products.length])
 
   useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      window.localStorage.setItem(cartStorageKey, JSON.stringify(cart))
+    } catch {
+      // Ignore storage quota and private browsing failures.
+    }
+  }, [cart])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+
+    try {
+      if (checkoutSuccess) {
+        window.sessionStorage.setItem(checkoutSuccessStorageKey, JSON.stringify(checkoutSuccess))
+      } else {
+        window.sessionStorage.removeItem(checkoutSuccessStorageKey)
+      }
+    } catch {
+      // Ignore storage failures in private browsing or full quotas.
+    }
+  }, [checkoutSuccess])
+
+  useEffect(() => {
+    let active = true
+    setCustomerSessionLoading(true)
+
+    const restoreCustomerSession = async () => {
+      try {
+        const response = await fetch('/api/customer/session', {
+          credentials: 'include',
+        })
+        if (!active) {
+          return
+        }
+
+        if (!response.ok) {
+          setCustomerProfile(null)
+          return
+        }
+
+        const payload = (await response.json()) as { customer?: CustomerProfile }
+        setCustomerProfile(payload.customer ?? null)
+      } catch {
+        if (active) {
+          setCustomerProfile(null)
+        }
+      } finally {
+        if (active) {
+          setCustomerSessionLoading(false)
+        }
+      }
+    }
+
+    void restoreCustomerSession()
+
+    return () => {
+      active = false
+    }
+  }, [])
+
+  useEffect(() => {
     setCurrentPage(1)
   }, [productQuery, activeCategory, sortBy])
 
@@ -1508,6 +1867,49 @@ function App() {
   }, [lang, routeState.slug, selectedProduct])
 
   useEffect(() => {
+    if (!customerProfile) {
+      return
+    }
+
+    setCheckoutForm((prev) => ({
+      ...prev,
+      deliveryAddress: prev.deliveryAddress || customerProfile.defaultShippingAddress?.streetAddress || '',
+      deliveryZip: prev.deliveryZip || customerProfile.defaultShippingAddress?.postalCode || '',
+      deliveryCity: prev.deliveryCity || customerProfile.defaultShippingAddress?.city || '',
+      billingCompany: prev.billingCompany || customerProfile.defaultBillingCompany || customerProfile.companyName,
+      billingAddress: prev.billingAddress || customerProfile.defaultBillingAddress?.streetAddress || '',
+      billingZip: prev.billingZip || customerProfile.defaultBillingAddress?.postalCode || '',
+      billingCity: prev.billingCity || customerProfile.defaultBillingAddress?.city || '',
+    }))
+  }, [customerProfile])
+
+  useEffect(() => {
+    if (!isGuestCheckout) {
+      return
+    }
+
+    setCheckoutForm((prev) => {
+      const next = {
+        ...prev,
+        paymentMethod: 'card' as const,
+        billingCompany: prev.billingCompany || prev.company,
+        billingAddress: prev.billingAddress || prev.deliveryAddress,
+        billingZip: prev.billingZip || prev.deliveryZip,
+        billingCity: prev.billingCity || prev.deliveryCity,
+      }
+
+      const changed =
+        next.paymentMethod !== prev.paymentMethod
+        || next.billingCompany !== prev.billingCompany
+        || next.billingAddress !== prev.billingAddress
+        || next.billingZip !== prev.billingZip
+        || next.billingCity !== prev.billingCity
+
+      return changed ? next : prev
+    })
+  }, [isGuestCheckout])
+
+  useEffect(() => {
     if (!cartToast) {
       return
     }
@@ -1526,6 +1928,10 @@ function App() {
     }, 6000)
     return () => window.clearTimeout(timer)
   }, [freeShippingToast])
+
+  useEffect(() => {
+    setRouteState(getRouteFromUrl())
+  }, [])
 
   useEffect(() => {
     const onPopState = () => {
@@ -1553,6 +1959,134 @@ function App() {
   }, [routeState.searchQuery, routeState.type])
 
   useEffect(() => {
+    if (routeState.type !== 'paytrail-return') {
+      return
+    }
+
+    let active = true
+    setPaymentReturnLoading(true)
+    setPaymentReturnMessage('')
+
+    const confirmReturn = async () => {
+      try {
+        const response = await fetch(`/api/paytrail/redirect/confirm${window.location.search}`, {
+          credentials: 'include',
+        })
+        const payload = (await response.json()) as { orderId?: string; paymentStatus?: string; isGuest?: boolean; mailWarning?: boolean; message?: string }
+        if (!active) {
+          return
+        }
+
+        if (!response.ok) {
+          setPaymentReturnMessage(
+            payload.message ??
+              (lang === 'fi' ? 'Korttimaksun vahvistus ei onnistunut.' : 'Card payment confirmation failed.'),
+          )
+          return
+        }
+
+        setLastOrderId(payload.orderId ?? '')
+        if (payload.paymentStatus === 'paid') {
+          const isGuest = Boolean(payload.isGuest ?? routeState.guestCheckout)
+          rememberOrderSuccess(
+            {
+              orderId: payload.orderId ?? '',
+              paymentMethod: 'paytrail',
+              paymentStatus: 'paid',
+              isGuest,
+            },
+            payload.mailWarning
+              ? (lang === 'fi'
+                  ? 'Korttimaksu onnistui, mutta tilausvahvistuksen sähköpostia ei saatu lähetettyä juuri nyt.'
+                  : 'Card payment succeeded, but the order confirmation email could not be sent right now.')
+              : (lang === 'fi'
+                  ? 'Korttimaksu onnistui ja tilaus on vahvistettu maksetuksi.'
+                  : 'Card payment succeeded and the order has been marked as paid.'),
+          )
+          setCart({})
+          navigateTo(
+            buildCheckoutReturnHref({
+              guestCheckout: isGuest,
+              paymentState: 'success',
+              orderId: payload.orderId ?? '',
+              mailWarning: Boolean(payload.mailWarning),
+            }),
+            true,
+          )
+          return
+        }
+
+        clearOrderState({ keepPaymentMessage: true })
+        setPaymentReturnMessage(
+          routeState.paytrailResult === 'cancel'
+            ? (lang === 'fi' ? 'Maksu keskeytettiin. Voit yrittää uudelleen kassalla.' : 'Payment was cancelled. You can try again in checkout.')
+            : (lang === 'fi' ? 'Maksu odottaa vahvistusta. Tarkista tila hetken kuluttua.' : 'Payment is still pending. Please check again in a moment.'),
+        )
+      } catch {
+        if (active) {
+          setPaymentReturnMessage(lang === 'fi' ? 'Korttimaksun vahvistus ei onnistunut.' : 'Card payment confirmation failed.')
+        }
+      } finally {
+        if (active) {
+          setPaymentReturnLoading(false)
+        }
+      }
+    }
+
+    void confirmReturn()
+
+    return () => {
+      active = false
+    }
+  }, [lang, routeState.paytrailResult, routeState.type])
+
+  useEffect(() => {
+    if (routeState.type !== 'checkout' || !routeState.checkoutPaymentState) {
+      return
+    }
+
+    if (routeState.checkoutPaymentState === 'success') {
+      rememberOrderSuccess(
+        {
+          orderId: routeState.checkoutOrderId ?? '',
+          paymentMethod: 'paytrail',
+          paymentStatus: 'paid',
+          isGuest: routeState.guestCheckout,
+        },
+        routeState.checkoutMailWarning
+          ? (lang === 'fi'
+              ? 'Korttimaksu onnistui, mutta tilausvahvistuksen sähköpostia ei saatu lähetettyä juuri nyt.'
+              : 'Card payment succeeded, but the order confirmation email could not be sent right now.')
+          : (lang === 'fi'
+              ? 'Korttimaksu onnistui ja tilaus on vahvistettu maksetuksi.'
+              : 'Card payment succeeded and the order has been marked as paid.'),
+      )
+      setCart({})
+      setFormError('')
+      return
+    }
+
+    clearOrderState({ keepPaymentMessage: true })
+    setFormError('')
+    setPaymentReturnMessage(
+      routeState.checkoutPaymentState === 'cancel'
+        ? (lang === 'fi' ? 'Maksu keskeytettiin. Voit yrittää uudelleen kassalla.' : 'Payment was cancelled. You can try again in checkout.')
+        : routeState.checkoutPaymentState === 'pending'
+          ? (lang === 'fi' ? 'Maksu odottaa vahvistusta. Tarkista tila hetken kuluttua.' : 'Payment is still pending. Please check again in a moment.')
+          : routeState.checkoutPaymentState === 'failed'
+            ? (lang === 'fi' ? 'Korttimaksu ei onnistunut. Yritä uudelleen kassalla.' : 'Card payment failed. Please try again in checkout.')
+            : (lang === 'fi' ? 'Korttimaksun vahvistus ei onnistunut.' : 'Card payment confirmation failed.'),
+    )
+  }, [
+    lang,
+    routeState.checkoutMailWarning,
+    routeState.checkoutOrderId,
+    routeState.checkoutPaymentState,
+    routeState.guestCheckout,
+    routeState.type,
+  ])
+
+  useEffect(() => {
     if (routeState.legacyProductId && productCatalog.length > 0) {
       const match = productCatalog.find((item) => item.id === routeState.legacyProductId)
       if (match) {
@@ -1575,8 +2109,42 @@ function App() {
       applyProductSeo(selectedProduct, selectedCategory)
       return
     }
+    if (routeState.type === 'cart') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Ostoskori | Suomen Paperitukku' : 'Cart | Suomen Paperitukku',
+        lang === 'fi' ? 'Tarkista ostoskorin sisalto ja siirry kassalle.' : 'Review your cart and proceed to checkout.',
+        '/ostoskori',
+      )
+      return
+    }
+    if (routeState.type === 'checkout') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Kassa | Suomen Paperitukku' : 'Checkout | Suomen Paperitukku',
+        lang === 'fi' ? 'Viimeistele tilaus yritystililla.' : 'Complete your order with your company account.',
+        '/kassa',
+      )
+      return
+    }
+    if (routeState.type === 'auth') {
+      applyUtilitySeo(
+        routeState.authMode === 'register'
+          ? (lang === 'fi' ? 'Rekisteroidy | Suomen Paperitukku' : 'Register | Suomen Paperitukku')
+          : (lang === 'fi' ? 'Kirjaudu | Suomen Paperitukku' : 'Sign in | Suomen Paperitukku'),
+        lang === 'fi' ? 'Luo yritystili tai kirjaudu sisaan tilausta varten.' : 'Create a company account or sign in to order.',
+        '/tili',
+      )
+      return
+    }
+    if (routeState.type === 'paytrail-return') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Maksun vahvistus | Suomen Paperitukku' : 'Payment confirmation | Suomen Paperitukku',
+        lang === 'fi' ? 'Paytrail-maksun vahvistus.' : 'Paytrail payment confirmation.',
+        routeState.paytrailResult === 'cancel' ? '/kassa/paytrail/cancel' : '/kassa/paytrail/success',
+      )
+      return
+    }
     applyHomeSeo(productCatalog)
-  }, [adminAuthed, isAdminPage, productCatalog, selectedCategory, selectedProduct, lang])
+  }, [adminAuthed, isAdminPage, productCatalog, routeState.authMode, routeState.paytrailResult, routeState.type, selectedCategory, selectedProduct, lang])
 
   useEffect(() => {
     document.getElementById('ssr-root')?.remove()
@@ -1680,7 +2248,7 @@ function App() {
   ])
 
   const addToCart = (product: Product, quantity = 1, selectedOptions: SelectedProductOption[] = []) => {
-    setOrderSent(false)
+    clearOrderState()
     const qty = Math.max(1, quantity)
     const lineId = buildCartLineId(product.id, selectedOptions)
     const unitPrice = getResolvedUnitPrice(product, selectedOptions)
@@ -1714,7 +2282,7 @@ function App() {
   }
 
   const updateCartLineQuantity = (lineId: string, delta: number) => {
-    setOrderSent(false)
+    clearOrderState()
     setCart((prev) => {
       const next = { ...prev }
       const line = next[lineId]
@@ -1732,15 +2300,31 @@ function App() {
   }
 
   const clearCart = () => {
-    setOrderSent(false)
+    clearOrderState()
     setCart({})
   }
 
-  const updateForm = (field: keyof CheckoutForm, value: string) => {
+  const updateForm = <K extends keyof CheckoutForm>(field: K, value: CheckoutForm[K]) => {
     setCheckoutForm((prev) => ({ ...prev, [field]: value }))
   }
 
-  const syncProductInUrl = (product: Product | null) => {
+  const navigateTo = (path: string, replace = false) => {
+    const nextPath = path || '/'
+    if (replace) {
+      window.history.replaceState({}, '', nextPath)
+    } else {
+      window.history.pushState({}, '', nextPath)
+    }
+    setRouteState(getRouteFromUrl())
+  }
+
+  const scrollToSectionId = (sectionId: string) => {
+    window.setTimeout(() => {
+      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    }, 0)
+  }
+
+  const syncProductInUrl = (product: Product | null, nextQuery: string | null = null) => {
     const url = new URL(window.location.href)
     if (product) {
       url.pathname = getProductHref(product)
@@ -1754,21 +2338,79 @@ function App() {
       } else {
         url.searchParams.delete('category')
       }
-      if (productQuery.trim()) {
-        url.searchParams.set('q', productQuery.trim())
+      const query = nextQuery ?? productQuery.trim()
+      if (query.trim()) {
+        url.searchParams.set('q', query.trim())
       } else {
         url.searchParams.delete('q')
       }
     }
-    const next = `${url.pathname}${url.search}${url.hash}`
-    window.history.pushState({}, '', next)
-    setRouteState(getRouteFromUrl())
+    navigateTo(`${url.pathname}${url.search}${url.hash}`)
+  }
+
+  const goToAuth = (mode: 'login' | 'register', nextPath: string | null = null, replace = false) => {
+    setIsAdminPage(false)
+    setAuthError('')
+    navigateTo(buildAuthHref(mode, nextPath), replace)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const goToCart = () => {
+    setIsAdminPage(false)
+    setFormError('')
+    navigateTo('/ostoskori')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const goToCheckout = () => {
+    setIsAdminPage(false)
+    clearOrderState()
+    if (!customerProfile) {
+      goToAuth('login', '/kassa')
+      return
+    }
+    setFormError('')
+    navigateTo('/kassa')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const goToGuestCheckout = () => {
+    setIsAdminPage(false)
+    clearOrderState()
+    setCheckoutForm((prev) => ({
+      ...prev,
+      paymentMethod: 'card',
+      billingCompany: prev.billingCompany || prev.company,
+    }))
+    setFormError('')
+    navigateTo('/kassa?guest=1')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const handleTopSearch = (value: string) => {
     setProductQuery(value)
+    if (routeState.type !== 'home' && routeState.type !== 'product') {
+      const url = new URL(window.location.href)
+      url.pathname = '/'
+      url.hash = ''
+      url.searchParams.delete('product')
+      if (activeCategory !== 'all' && categoryMap[activeCategory]) {
+        url.searchParams.set('category', categoryMap[activeCategory].slug)
+      } else {
+        url.searchParams.delete('category')
+      }
+      if (value.trim()) {
+        url.searchParams.set('q', value.trim())
+      } else {
+        url.searchParams.delete('q')
+      }
+      navigateTo(`${url.pathname}${url.search}`)
+      scrollToSectionId('products')
+      return
+    }
+
     if (selectedProduct) {
-      syncProductInUrl(null)
+      syncProductInUrl(null, value.trim())
     } else {
       const url = new URL(window.location.href)
       if (value.trim()) {
@@ -1776,26 +2418,19 @@ function App() {
       } else {
         url.searchParams.delete('q')
       }
-      window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`)
-      setRouteState(getRouteFromUrl())
+      navigateTo(`${url.pathname}${url.search}${url.hash}`, true)
     }
-    setTimeout(() => {
-      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
-    }, 0)
+    scrollToSectionId('products')
   }
 
   const openProduct = (product: Product) => {
     syncProductInUrl(product)
-    setTimeout(() => {
-      document.getElementById('product-detail')?.scrollIntoView({ behavior: 'smooth' })
-    }, 0)
+    scrollToSectionId('product-detail')
   }
 
   const closeProduct = () => {
     syncProductInUrl(null)
-    setTimeout(() => {
-      document.getElementById('products')?.scrollIntoView({ behavior: 'smooth' })
-    }, 0)
+    scrollToSectionId('products')
   }
 
   const goPrevDetailImage = () => {
@@ -1815,21 +2450,21 @@ function App() {
   const goHome = () => {
     setIsAdminPage(false)
     setActiveCategory('all')
-    window.history.pushState({}, '', '/')
-    setRouteState(getRouteFromUrl())
-    setTimeout(() => {
-      document.getElementById('home')?.scrollIntoView({ behavior: 'smooth' })
-    }, 0)
+    navigateTo('/')
+    scrollToSectionId('home')
   }
 
   const goToSection = (sectionId: 'categories' | 'products') => {
     setIsAdminPage(false)
     if (selectedProduct) {
       syncProductInUrl(null)
+      scrollToSectionId(sectionId)
+      return
     }
-    setTimeout(() => {
-      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth' })
-    }, 0)
+    if (routeState.type !== 'home') {
+      navigateTo('/')
+    }
+    scrollToSectionId(sectionId)
   }
 
   const cartItems = Object.values(cart)
@@ -1839,84 +2474,109 @@ function App() {
     })
     .filter((item): item is CartLine & { product: Product } => Boolean(item))
   const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0)
-  const subtotal = cartItems.reduce((sum, item) => sum + getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, 0)
+  const subtotal = roundCurrency(cartItems.reduce((sum, item) => sum + getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, 0))
   const shipping = totalItems === 0 ? 0 : deliveryCost(subtotal)
-  const total = subtotal + shipping
-
-  const handleNextStep = () => {
+  const total = roundCurrency(subtotal + shipping)
+  const vatAmount = roundCurrency(grossPrice(total) - total)
+  const grossTotal = grossPrice(total)
+  const validateCheckout = () => {
+    if (!customerProfile && !isGuestCheckout) {
+      return lang === 'fi' ? 'Kirjaudu sisään jatkaaksesi kassalle.' : 'Sign in to continue to checkout.'
+    }
     if (totalItems === 0) {
-      setFormError(lang === 'fi' ? 'Lisää tuotteita koriin.' : 'Add items to cart.')
-      return
+      return lang === 'fi' ? 'Lisää tuotteita koriin.' : 'Add items to cart.'
     }
-    if (!checkoutForm.company || !checkoutForm.contact || !checkoutForm.email || !checkoutForm.address) {
-      setFormError(
-        lang === 'fi'
-          ? 'Täytä vähintään yritys, yhteyshenkilö, sähköposti ja osoite.'
-          : 'Fill company, contact, email, and address.'
-      )
-      return
+    if (isGuestCheckout) {
+      if (!checkoutForm.company.trim() || !checkoutForm.contact.trim() || !checkoutForm.email.trim() || !checkoutForm.phone.trim()) {
+        return lang === 'fi'
+          ? 'Täytä yrityksen nimi, yhteyshenkilö, sähköposti ja puhelin.'
+          : 'Fill in company name, contact person, email and phone.'
+      }
+      if (!isValidEmail(checkoutForm.email)) {
+        return lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.'
+      }
+      if (!isValidPhone(checkoutForm.phone)) {
+        return lang === 'fi' ? 'Puhelinnumerossa tulee olla 7-15 numeroa.' : 'Phone number must contain 7-15 digits.'
+      }
     }
-    if (!isValidEmail(checkoutForm.email)) {
-      setFormError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
-      return
+    if (!checkoutForm.deliveryAddress || !checkoutForm.deliveryZip || !checkoutForm.deliveryCity) {
+      return lang === 'fi'
+        ? 'Täytä toimitusosoite, postinumero ja kaupunki.'
+        : 'Fill in delivery address, postal code and city.'
     }
-    setFormError('')
-    setCheckoutStep(2)
+    if (!isValidPostalCode(checkoutForm.deliveryZip)) {
+      return lang === 'fi' ? 'Toimituksen postinumerossa tulee olla 5 numeroa.' : 'Delivery postal code must contain 5 digits.'
+    }
+    if (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity) {
+      return lang === 'fi'
+        ? 'Täytä laskutusyritys, laskutusosoite, postinumero ja kaupunki.'
+        : 'Fill in billing company, billing address, postal code and city.'
+    }
+    if (!isValidPostalCode(checkoutForm.billingZip)) {
+      return lang === 'fi' ? 'Laskutuksen postinumerossa tulee olla 5 numeroa.' : 'Billing postal code must contain 5 digits.'
+    }
+    return ''
   }
 
   const handleOrder = async () => {
-    if (!checkoutForm.billingCompany || !checkoutForm.billingAddress) {
-      setFormError(
-        lang === 'fi'
-          ? 'Täytä vähintään laskutusyritys ja laskutusosoite.'
-          : 'Fill at least billing company and billing address.'
-      )
+    const validationMessage = validateCheckout()
+    if (validationMessage) {
+      setFormError(validationMessage)
       return
     }
-    if (!isValidEmail(checkoutForm.email)) {
-      setFormError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
-      return
-    }
+
     setFormError('')
     setPlacingOrder(true)
     try {
       const payload = {
         lang,
-        customer: checkoutForm,
+        ...checkoutForm,
+        paymentMethod: selectedPaymentMethod,
         items: cartItems.map((item) => ({
           productId: item.product.id,
-          name: item.product.name,
           quantity: item.quantity,
-          unitPrice: getResolvedUnitPrice(item.product, item.selectedOptions),
-          priceUnit: item.product.priceUnit,
           selectedOptions: item.selectedOptions,
         })),
-        subtotal,
-        shipping,
-        total,
       }
 
-      const response = await fetch('/api/orders', {
+      const endpoint =
+        selectedPaymentMethod === 'card'
+          ? (isGuestCheckout ? '/api/checkout/paytrail/guest/start' : '/api/checkout/paytrail/start')
+          : '/api/checkout/invoice'
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
+        credentials: 'include',
         body: JSON.stringify(payload),
       })
-      const data = (await response.json()) as { orderId?: string; message?: string }
+      const data = (await response.json()) as { orderId?: string; message?: string; redirectUrl?: string; mailWarning?: boolean }
       if (!response.ok) {
-        const friendlyMessage =
-          data.message === 'No recipients defined'
-            ? (lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
-            : data.message ?? (lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
-        setFormError(friendlyMessage)
+        setFormError(data.message ?? (lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.'))
         return
       }
 
-      setLastOrderId(data.orderId ?? '')
-      setOrderSent(true)
+      if (selectedPaymentMethod === 'card') {
+        if (!data.redirectUrl) {
+          setFormError(lang === 'fi' ? 'Korttimaksun aloitus epäonnistui.' : 'Failed to start card payment.')
+          return
+        }
+        window.location.assign(data.redirectUrl)
+        return
+      }
+
+      rememberOrderSuccess({
+        orderId: data.orderId ?? '',
+        paymentMethod: 'invoice',
+        paymentStatus: 'invoice_pending',
+        isGuest: false,
+      }, data.mailWarning
+        ? (lang === 'fi'
+            ? 'Tilaus vastaanotettiin, mutta tilausvahvistuksen sähköpostia ei saatu lähetettyä juuri nyt.'
+            : 'Order received, but the confirmation email could not be sent right now.')
+        : '')
       setCart({})
-      setCheckoutStep(1)
     } catch {
       setFormError(lang === 'fi' ? 'Tilauksen lähetys epäonnistui.' : 'Order submission failed.')
     } finally {
@@ -1924,19 +2584,168 @@ function App() {
     }
   }
 
-  const openCheckout = () => {
-    setShowCheckout(true)
-    setCheckoutStep(1)
-    setFormError('')
-    setOrderSent(false)
-    setLastOrderId('')
+  const handleCustomerLogin = async () => {
+    if (!isValidEmail(loginForm.email)) {
+      setAuthError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
+      return
+    }
+    if (!loginForm.password) {
+      setAuthError(lang === 'fi' ? 'Anna salasana.' : 'Enter your password.')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const response = await fetch('/api/customer/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify(loginForm),
+      })
+      const payload = (await response.json()) as { customer?: CustomerProfile; message?: string }
+      if (!response.ok) {
+        setAuthError(payload.message ?? (lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Sign in failed.'))
+        return
+      }
+
+      setCustomerProfile(payload.customer ?? null)
+      setAuthNotice('')
+      setLoginForm((prev) => ({ ...prev, password: '' }))
+      navigateTo(routeState.nextPath || '/kassa', true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      setAuthError(lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Sign in failed.')
+    } finally {
+      setAuthLoading(false)
+    }
   }
 
-  const closeCheckout = () => {
-    setShowCheckout(false)
+  const handleCustomerRegister = async () => {
+    if (
+      !registerForm.firstName.trim()
+      || !registerForm.lastName.trim()
+      || !registerForm.companyName.trim()
+      || !registerForm.phone.trim()
+      || !registerForm.email.trim()
+      || !registerForm.password
+    ) {
+      setAuthError(lang === 'fi' ? 'Täytä kaikki rekisteröitymisen kentät.' : 'Fill in all registration fields.')
+      return
+    }
+
+    if (!isValidBusinessId(registerForm.businessId)) {
+      setAuthError(lang === 'fi' ? 'Anna kelvollinen y-tunnus muodossa 1234567-8.' : 'Enter a valid business ID in the format 1234567-8.')
+      return
+    }
+
+    if (!isValidPhone(registerForm.phone)) {
+      setAuthError(lang === 'fi' ? 'Puhelinnumerossa tulee olla 7-15 numeroa.' : 'Phone number must contain 7-15 digits.')
+      return
+    }
+
+    if (!isValidEmail(registerForm.email)) {
+      setAuthError(lang === 'fi' ? 'Anna kelvollinen sähköpostiosoite.' : 'Enter a valid email address.')
+      return
+    }
+
+    if (registerForm.password.length < 8) {
+      setAuthError(lang === 'fi' ? 'Salasanassa tulee olla vähintään 8 merkkiä.' : 'Password must be at least 8 characters long.')
+      return
+    }
+
+    setAuthLoading(true)
+    setAuthError('')
+    try {
+      const response = await fetch('/api/customer/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...registerForm,
+          businessId: formatBusinessIdInput(registerForm.businessId),
+          phone: normalizePhoneInput(registerForm.phone),
+          email: registerForm.email.trim(),
+        }),
+      })
+      const payload = (await response.json()) as { message?: string; mailWarning?: boolean }
+      if (!response.ok) {
+        setAuthError(payload.message ?? (lang === 'fi' ? 'Tilin luonti epäonnistui.' : 'Account creation failed.'))
+        return
+      }
+
+      const nextPath = routeState.nextPath || '/kassa'
+      setAuthNotice(
+        payload.mailWarning
+          ? (lang === 'fi'
+              ? 'Tili luotiin, mutta tervetulosähköpostia ei saatu lähetettyä juuri nyt. Kirjaudu sisään jatkaaksesi.'
+              : 'Account created, but the welcome email could not be sent right now. Sign in to continue.')
+          : (lang === 'fi'
+              ? 'Tili luotiin onnistuneesti. Kirjaudu sisään jatkaaksesi tilausta.'
+              : 'Account created successfully. Sign in to continue your order.'),
+      )
+      setLoginForm({ email: registerForm.email.trim(), password: '' })
+      setRegisterForm({
+        firstName: '',
+        lastName: '',
+        companyName: '',
+        businessId: '',
+        phone: '',
+        email: '',
+        password: '',
+      })
+      navigateTo(buildAuthHref('login', nextPath), true)
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    } catch {
+      setAuthError(lang === 'fi' ? 'Tilin luonti epäonnistui.' : 'Account creation failed.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  const handleCustomerLogout = async () => {
+    try {
+      await fetch('/api/customer/logout', {
+        method: 'POST',
+        credentials: 'include',
+      })
+    } catch {
+      // Local sign-out still continues if the network request fails.
+    }
+
+    setCustomerProfile(null)
+    clearOrderState()
     setFormError('')
-    setOrderSent(false)
-    setLastOrderId('')
+    setCheckoutForm({
+      company: '',
+      contact: '',
+      email: '',
+      phone: '',
+      address: '',
+      zip: '',
+      city: '',
+      deliveryAddress: '',
+      deliveryZip: '',
+      deliveryCity: '',
+      billingCompany: '',
+      billingAddress: '',
+      billingZip: '',
+      billingCity: '',
+      notes: '',
+      paymentMethod: 'invoice',
+    })
+
+    if (routeState.type === 'checkout') {
+      goToAuth('login', '/kassa', true)
+      return
+    }
+
+    navigateTo('/tili', true)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
   }
 
   const adminFetch = (input: string, init: RequestInit = {}) =>
@@ -2483,6 +3292,101 @@ function App() {
   const adminPages = Math.max(1, Math.ceil(adminFilteredProducts.length / pageSize))
   const safeAdminPage = Math.min(adminPage, adminPages)
   const adminPageItems = adminFilteredProducts.slice((safeAdminPage - 1) * pageSize, safeAdminPage * pageSize)
+  const customerDisplayName = getDisplayName(customerProfile)
+  const showCheckoutSuccess =
+    routeState.type === 'checkout'
+    && Boolean(checkoutSuccess)
+    && (orderSent || routeState.checkoutPaymentState === 'success')
+  const showCheckoutPaymentWarning =
+    !showCheckoutSuccess
+    && !orderSent
+    && routeState.type === 'checkout'
+    && Boolean(routeState.checkoutPaymentState)
+    && routeState.checkoutPaymentState !== 'success'
+    && Boolean(paymentReturnMessage)
+  const renderOrderSuccessCard = () => (
+    <div className="order-success-shell">
+      <div className="order-confetti" aria-hidden="true">
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
+        <span />
+      </div>
+      <div className="success order-success">
+        <div className="order-success-check" aria-hidden="true">âœ“</div>
+        <span className={`payment-status-pill ${checkoutSuccess?.paymentStatus === 'paid' ? 'success' : 'warning'}`}>
+          {checkoutSuccess?.paymentStatus === 'paid'
+            ? (lang === 'fi' ? 'Maksettu' : 'Paid')
+            : (lang === 'fi' ? 'Lasku' : 'Invoice')}
+        </span>
+        <h3>{checkoutSuccess?.paymentStatus === 'paid' ? (lang === 'fi' ? 'Maksu vastaanotettu' : 'Payment received') : (lang === 'fi' ? 'Tilaus vastaanotettu' : 'Order received')}</h3>
+        <p>
+          {paymentReturnMessage
+            || (checkoutSuccess?.paymentStatus === 'paid'
+              ? (lang === 'fi' ? 'Paytrail-maksu onnistui ja tilausvahvistus on lÃ¤hetetty sÃ¤hkÃ¶postiin.' : 'Your Paytrail payment succeeded and the confirmation email has been sent.')
+              : t.checkoutSuccess)}
+        </p>
+        {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
+        <div className="order-success-actions">
+          <button className="primary" type="button" onClick={goHome}>
+            {lang === 'fi' ? 'Takaisin etusivulle' : 'Back to home'}
+          </button>
+          <button className="ghost" type="button" onClick={() => goToSection('products')}>
+            {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+  const currentStorePath = typeof window === 'undefined' ? '/' : `${window.location.pathname}${window.location.search}`
+  const headerAuthNextPath = routeState.type === 'cart' || routeState.type === 'checkout' ? '/kassa' : currentStorePath
+  const cartSuggestions = featuredHomeProducts.filter((item) => !cartItems.some((cartItem) => cartItem.product.id === item.id)).slice(0, 4)
+  const utilityHighlights = (
+    <section className="section utility-highlights-section" aria-label={lang === 'fi' ? 'Palvelun hyödyt' : 'Store benefits'}>
+      <div className="top-highlights top-highlights-home">
+        <div className="top-highlight-card">
+          <span className="top-highlight-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.61 2.61a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6.09 6.09l1.47-1.27a2 2 0 0 1 2.11-.45c.84.28 1.71.49 2.61.61A2 2 0 0 1 22 16.92Z" />
+            </svg>
+          </span>
+          <div className="top-highlight-copy">
+            <strong>{lang === 'fi' ? 'Puhelin' : 'Phone'}</strong>
+            <span>{t.footer.phone}</span>
+          </div>
+        </div>
+        <div className="top-highlight-card">
+          <span className="top-highlight-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M10 17h4V5H2v12h3" />
+              <path d="M14 8h4l4 4v5h-3" />
+              <circle cx="7.5" cy="17.5" r="2.5" />
+              <circle cx="17.5" cy="17.5" r="2.5" />
+            </svg>
+          </span>
+          <div className="top-highlight-copy">
+            <strong>{lang === 'fi' ? 'Ilmainen toimitus' : 'Free delivery'}</strong>
+            <span>{lang === 'fi' ? `yli ${freeShippingThreshold} € tilauksille` : `for orders over ${freeShippingThreshold} €`}</span>
+          </div>
+        </div>
+        <div className="top-highlight-card">
+          <span className="top-highlight-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <rect x="3" y="5" width="18" height="14" rx="2" />
+              <path d="M3 10h18" />
+              <path d="M7 15h3" />
+            </svg>
+          </span>
+          <div className="top-highlight-copy">
+            <strong>{lang === 'fi' ? 'Lasku tai kortti' : 'Invoice or card'}</strong>
+            <span>{lang === 'fi' ? 'Yritysasiakkaille sujuva kassa' : 'Smooth checkout for business customers'}</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  )
 
   return (
     <div className="page">
@@ -2563,23 +3467,60 @@ function App() {
             </div>
           )}
           <div className="actions">
-          {!isAdminPage && (
-            <>
-              <div className="top-search">
-                <span className="search-icon">{lang === 'fi' ? 'Haku' : 'Search'}</span>
-                <input value={productQuery} onChange={(event) => handleTopSearch(event.target.value)} placeholder={t.search} />
-              </div>
-              <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} onClick={openCheckout}>
-                <span>{t.cartTitle}: {totalItems}</span>
-                {totalItems > 0 && <strong>{lang === 'fi' ? 'tilaa' : 'order'}</strong>}
+            {!isAdminPage && (
+              <>
+                <div className="top-search">
+                  <span className="search-icon">{lang === 'fi' ? 'Haku' : 'Search'}</span>
+                  <input value={productQuery} onChange={(event) => handleTopSearch(event.target.value)} placeholder={t.search} />
+                </div>
+                <div className="auth-links" aria-label={lang === 'fi' ? 'Asiakastili' : 'Customer account'}>
+                  {customerSessionLoading ? (
+                    <span className="muted small">{lang === 'fi' ? 'Tarkistetaan tiliä...' : 'Checking account...'}</span>
+                  ) : customerProfile ? (
+                    <>
+                      <button className="auth-link-button" type="button" onClick={() => navigateTo('/tili')}>
+                        <span>{lang === 'fi' ? 'Yritystili' : 'Account'}</span>
+                        <strong>{customerDisplayName || customerProfile.companyName}</strong>
+                      </button>
+                      <button className="ghost small" type="button" onClick={handleCustomerLogout}>
+                        {lang === 'fi' ? 'Kirjaudu ulos' : 'Log out'}
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <a
+                        href={buildAuthHref('login', headerAuthNextPath)}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          goToAuth('login', headerAuthNextPath)
+                        }}
+                      >
+                        {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
+                      </a>
+                      <span>/</span>
+                      <a
+                        href={buildAuthHref('register', headerAuthNextPath)}
+                        onClick={(event) => {
+                          event.preventDefault()
+                          goToAuth('register', headerAuthNextPath)
+                        }}
+                      >
+                        {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                      </a>
+                    </>
+                  )}
+                </div>
+                <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} type="button" onClick={goToCart}>
+                  <span>{t.cartTitle}: {totalItems}</span>
+                  {totalItems > 0 && <strong>{formatPrice(total, lang)} €</strong>}
+                </button>
+              </>
+            )}
+            {isAdminPage && (
+              <button className="ghost" onClick={() => goToSection('products')}>
+                {lang === 'fi' ? 'Takaisin kauppaan' : 'Back to store'}
               </button>
-            </>
-          )}
-          {isAdminPage && (
-            <button className="ghost" onClick={() => goToSection('products')}>
-              {lang === 'fi' ? 'Takaisin kauppaan' : 'Back to store'}
-            </button>
-          )}
+            )}
           </div>
         </div>
       </header>
@@ -2606,7 +3547,7 @@ function App() {
         </div>
       )}
 
-      {!isAdminPage && freeShippingToast && !showCheckout && (
+      {!isAdminPage && freeShippingToast && routeState.type !== 'checkout' && routeState.type !== 'paytrail-return' && (
         <div className="free-shipping-banner" role="status" aria-live="polite">
           <span className="free-shipping-banner-icon">!</span>
           <span>{freeShippingToast.message}</span>
@@ -3118,8 +4059,742 @@ function App() {
               </div>
             )}
           </section>
-        ) : (
-        selectedProduct ? (
+        ) : routeState.type === 'auth' ? (
+          <section className="section utility-page auth-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{routeState.authMode === 'register' ? (lang === 'fi' ? 'Rekisteröidy' : 'Register') : (lang === 'fi' ? 'Kirjaudu' : 'Sign in')}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Luo yritystili tai kirjaudu sisään, jotta voit tehdä tilauksia verkossa.'
+                    : 'Create a company account or sign in to place orders online.'}
+                </p>
+              </div>
+            </div>
+
+            {customerSessionLoading ? (
+              <div className="auth-shell">
+                <div className="card auth-card">
+                  <p className="muted">{lang === 'fi' ? 'Tarkistetaan asiakastiliä...' : 'Checking your customer account...'}</p>
+                </div>
+              </div>
+            ) : customerProfile ? (
+              <div className="auth-shell">
+                <div className="card auth-card account-card">
+                  <span className="auth-kicker">{lang === 'fi' ? 'Yritystili aktiivinen' : 'Company account active'}</span>
+                  <h2>{customerProfile.companyName}</h2>
+                  <p className="muted">
+                    {customerDisplayName} · {customerProfile.email}
+                  </p>
+                  <div className="account-grid">
+                    <div>
+                      <span className="muted small">{lang === 'fi' ? 'Y-tunnus' : 'Business ID'}</span>
+                      <strong>{customerProfile.businessId}</strong>
+                    </div>
+                    <div>
+                      <span className="muted small">{lang === 'fi' ? 'Puhelin' : 'Phone'}</span>
+                      <strong>{customerProfile.phone}</strong>
+                    </div>
+                  </div>
+                  <div className="auth-actions">
+                    <button className="primary" type="button" onClick={goToCheckout}>
+                      {lang === 'fi' ? 'Jatka kassalle' : 'Continue to checkout'}
+                    </button>
+                    <button className="ghost" type="button" onClick={handleCustomerLogout}>
+                      {lang === 'fi' ? 'Kirjaudu ulos' : 'Log out'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="auth-shell auth-shell-grid">
+                <div className="card auth-card">
+                  <div className="auth-tabs">
+                    <button
+                      className={`auth-tab ${routeState.authMode === 'login' ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => goToAuth('login', routeState.nextPath, true)}
+                    >
+                      {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
+                    </button>
+                    <button
+                      className={`auth-tab ${routeState.authMode === 'register' ? 'active' : ''}`}
+                      type="button"
+                      onClick={() => goToAuth('register', routeState.nextPath, true)}
+                    >
+                      {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                    </button>
+                  </div>
+
+                  {authNotice && <div className="success">{authNotice}</div>}
+                  {authError && <div className="error">{authError}</div>}
+
+                  {routeState.authMode === 'login' ? (
+                    <form
+                      className="checkout-form checkout-form-wide"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void handleCustomerLogin()
+                      }}
+                    >
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Sähköposti' : 'Email'}</label>
+                        <input
+                          type="email"
+                          value={loginForm.email}
+                          onChange={(event) => setLoginForm((prev) => ({ ...prev, email: event.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Salasana' : 'Password'}</label>
+                        <input
+                          type="password"
+                          value={loginForm.password}
+                          onChange={(event) => setLoginForm((prev) => ({ ...prev, password: event.target.value }))}
+                        />
+                      </div>
+                      <button className="primary" type="submit" disabled={authLoading}>
+                        {authLoading ? (lang === 'fi' ? 'Kirjaudutaan...' : 'Signing in...') : (lang === 'fi' ? 'Kirjaudu sisään' : 'Sign in')}
+                      </button>
+                    </form>
+                  ) : (
+                    <form
+                      className="checkout-form checkout-form-wide"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void handleCustomerRegister()
+                      }}
+                    >
+                      <div className="form-row">
+                        <div className="field">
+                          <label>{lang === 'fi' ? 'Nimi' : 'First name'}</label>
+                          <input
+                            value={registerForm.firstName}
+                            onChange={(event) => setRegisterForm((prev) => ({ ...prev, firstName: event.target.value }))}
+                          />
+                        </div>
+                        <div className="field">
+                          <label>{lang === 'fi' ? 'Sukunimi' : 'Last name'}</label>
+                          <input
+                            value={registerForm.lastName}
+                            onChange={(event) => setRegisterForm((prev) => ({ ...prev, lastName: event.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Yrityksen nimi' : 'Company name'}</label>
+                        <input
+                          value={registerForm.companyName}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, companyName: event.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Yrityksen y-tunnus' : 'Business ID'}</label>
+                        <input
+                          value={registerForm.businessId}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, businessId: formatBusinessIdInput(event.target.value) }))}
+                          placeholder="1234567-8"
+                        />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Puhelinnumero' : 'Phone number'}</label>
+                        <input
+                          value={registerForm.phone}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, phone: normalizePhoneInput(event.target.value) }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Sähköposti' : 'Email'}</label>
+                        <input
+                          type="email"
+                          value={registerForm.email}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, email: event.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Salasana' : 'Password'}</label>
+                        <input
+                          type="password"
+                          value={registerForm.password}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, password: event.target.value }))}
+                        />
+                      </div>
+                      <button className="primary" type="submit" disabled={authLoading}>
+                        {authLoading ? (lang === 'fi' ? 'Luodaan tiliä...' : 'Creating account...') : (lang === 'fi' ? 'Luo tili' : 'Create account')}
+                      </button>
+                    </form>
+                  )}
+                </div>
+
+                <div className="card auth-side-card">
+                  <span className="auth-kicker">{lang === 'fi' ? 'Tilaa yrityksellesi' : 'Order for your company'}</span>
+                  <h2>{lang === 'fi' ? 'Miten uusi tilausvirta toimii?' : 'How the new ordering flow works'}</h2>
+                  <p className="muted">
+                    {lang === 'fi'
+                      ? 'Voit luoda yritystilin lasku- ja Paytrail-maksuja varten tai jatkaa ilman tiliä suoraan Paytrail-korttimaksuun.'
+                      : 'Create a company account for invoice and Paytrail payments, or continue without an account directly to Paytrail card payment.'}
+                  </p>
+                  <div className="account-grid">
+                    <div>
+                      <span className="muted small">{lang === 'fi' ? 'Korissa nyt' : 'Currently in cart'}</span>
+                      <strong>{totalItems} {lang === 'fi' ? 'tuotetta' : 'items'}</strong>
+                    </div>
+                    <div>
+                      <span className="muted small">{lang === 'fi' ? 'Välisummaa' : 'Subtotal'}</span>
+                      <strong>{formatPrice(subtotal, lang)} €</strong>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : routeState.type === 'cart' ? (
+          <section className="section utility-page cart-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{t.cartTitle}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Tarkista ostoskorin sisältö, päivitä määrät ja siirry kassalle omalla yritystililläsi.'
+                    : 'Review your cart, update quantities and continue to checkout with your company account.'}
+                </p>
+              </div>
+              {cartItems.length > 0 && (
+                <button className="ghost small" type="button" onClick={clearCart}>
+                  {t.clearCart}
+                </button>
+              )}
+            </div>
+
+            <div className="checkout cart-page-layout">
+              <div className="cart-page-main">
+                {cartItems.length === 0 ? (
+                  <div className="card empty-state-card">
+                    <h2>{lang === 'fi' ? 'Ostoskori on vielä tyhjä' : 'Your cart is still empty'}</h2>
+                    <p className="muted">
+                      {lang === 'fi'
+                        ? 'Lisää tuotteita katalogista, niin pääset jatkamaan kassalle.'
+                        : 'Add products from the catalog and then continue to checkout.'}
+                    </p>
+                    <button className="primary" type="button" onClick={() => goToSection('products')}>
+                      {lang === 'fi' ? 'Selaa tuotteita' : 'Browse products'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="cart-page-items">
+                    {cartItems.map((item) => (
+                      <article key={item.id} className="card cart-page-item">
+                        <img className="cart-page-image" src={getProductImage(item.product)} alt={getProductAlt(item.product)} loading="lazy" />
+                        <div className="cart-page-item-body">
+                          <div className="cart-page-item-copy">
+                            <strong>{item.product.name}</strong>
+                            <span className="muted small">SKU {item.product.sku}</span>
+                            {item.selectedOptions.length > 0 && <span className="muted small">{formatSelectedOptionsText(item.selectedOptions)}</span>}
+                            <span className="tag">
+                              {formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions), lang)} € {getPriceUnitSuffix(item.product.priceUnit, t.product.vatNote)}
+                            </span>
+                          </div>
+                          <div className="cart-page-item-tools">
+                            <div className="cart-actions">
+                              <button className="ghost" type="button" onClick={() => updateCartLineQuantity(item.id, -1)}>
+                                -
+                              </button>
+                              <span>{item.quantity}</span>
+                              <button className="ghost" type="button" onClick={() => updateCartLineQuantity(item.id, 1)}>
+                                +
+                              </button>
+                            </div>
+                            <div className="cart-page-line-total">
+                              <span className="muted small">{lang === 'fi' ? 'Rivin summa alv 0%' : 'Line total excl. VAT'}</span>
+                              <strong>{formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, lang)} €</strong>
+                            </div>
+                          </div>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                )}
+
+                {cartSuggestions.length > 0 && (
+                  <section className="cart-suggestions">
+                    <div className="utility-page-head compact">
+                      <div>
+                        <h2>{lang === 'fi' ? 'Muut asiakkaat lisäävät usein myös näitä' : 'Customers often add these too'}</h2>
+                      </div>
+                    </div>
+                    <div className="grid featured-grid">
+                      {cartSuggestions.map((item) => (
+                        <div key={`cart-suggestion-${item.id}`} className="card product-card featured-card">
+                          <button className="product-card-button" type="button" onClick={() => openProduct(item)}>
+                            <div className="product-link">
+                              <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
+                              <strong className="product-name">{item.name}</strong>
+                            </div>
+                            <div className="product-body">
+                              <div className="price-block">
+                                <span className="muted">
+                                  {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                                </span>
+                                <span className="price-top">
+                                  <span className="price-main">{formatPrice(item.price, lang)} €</span>
+                                  <span className="price-suffix">{getPriceUnitSuffix(item.priceUnit, t.product.vatNote)}</span>
+                                </span>
+                              </div>
+                            </div>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </section>
+                )}
+              </div>
+
+              <aside className="cart cart-page-summary">
+                <div className="cart-header">
+                  <h2>{lang === 'fi' ? 'Yhteenveto' : 'Summary'}</h2>
+                </div>
+                <div className="cart-summary">
+                  <div>
+                    <span>{lang === 'fi' ? 'Välisummaa alv 0%' : 'Subtotal excl. VAT'}</span>
+                    <strong>{formatPrice(subtotal, lang)} €</strong>
+                  </div>
+                  <div>
+                    <span>{lang === 'fi' ? 'Toimitus alv 0%' : 'Delivery excl. VAT'}</span>
+                    <strong>{totalItems === 0 ? '-' : formatDelivery(shipping, lang)}</strong>
+                  </div>
+                  <div>
+                    <span>{lang === 'fi' ? 'ALV 25,5 %' : 'VAT 25.5%'}</span>
+                    <strong>{totalItems === 0 ? '-' : `${formatPrice(vatAmount, lang)} €`}</strong>
+                  </div>
+                  <div className="cart-total">
+                    <span>{lang === 'fi' ? 'Verollinen yhteensä' : 'Total incl. VAT'}</span>
+                    <strong>{formatPrice(grossTotal, lang)} €</strong>
+                  </div>
+                </div>
+
+                {!customerProfile ? (
+                  <div className="account-note">
+                    <p className="muted">
+                      {lang === 'fi'
+                        ? 'Voit kirjautua yritystilille tai jatkaa rekisteröitymättä suoraan Paytrail-korttimaksuun.'
+                        : 'Sign in with your company account or continue directly to Paytrail card payment without registering.'}
+                    </p>
+                    <div className="auth-actions">
+                      <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
+                        {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
+                      </button>
+                      <button className="ghost" type="button" onClick={() => goToAuth('register', '/kassa')}>
+                        {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                      </button>
+                      <button className="ghost" type="button" onClick={goToGuestCheckout}>
+                        {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="account-note">
+                    <span className="muted small">{lang === 'fi' ? 'Kirjautunut käyttäjä' : 'Signed in as'}</span>
+                    <strong>{customerProfile.companyName}</strong>
+                    <span className="muted small">{customerDisplayName}</span>
+                  </div>
+                )}
+
+                {customerProfile ? (
+                  <button className="primary full" type="button" onClick={goToCheckout} disabled={cartItems.length === 0 || customerSessionLoading}>
+                    {lang === 'fi' ? 'Jatka kassalle' : 'Continue to checkout'}
+                  </button>
+                ) : (
+                  <div className="cart-summary-actions">
+                    <button className="primary full" type="button" onClick={() => goToAuth('login', '/kassa')} disabled={cartItems.length === 0 || customerSessionLoading}>
+                      {lang === 'fi' ? 'Kirjaudu kassalle' : 'Sign in to checkout'}
+                    </button>
+                    <button className="ghost full" type="button" onClick={goToGuestCheckout} disabled={cartItems.length === 0}>
+                      {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
+                    </button>
+                  </div>
+                )}
+              </aside>
+            </div>
+          </section>
+        ) : routeState.type === 'checkout' ? (
+          <section className="section utility-page checkout-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{lang === 'fi' ? 'Kassa' : 'Checkout'}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? (isGuestCheckout ? 'Täytä yhteystiedot ja toimitusosoite. Maksu jatkuu suoraan turvalliseen Paytrail-korttimaksuun.' : 'Täytä osoitetiedot ja valitse maksatko laskulla vai Paytrailin korttimaksulla.')
+                    : (isGuestCheckout ? 'Fill in your contact details and delivery address. Payment continues directly to secure Paytrail card payment.' : 'Fill in your addresses and choose invoice or Paytrail card payment.')}
+                </p>
+              </div>
+            </div>
+
+            {showCheckoutSuccess ? (
+              <div className="order-success-shell">
+                <div className="order-confetti" aria-hidden="true">
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="success order-success">
+                  <div className="order-success-check" aria-hidden="true">✓</div>
+                  <span className={`payment-status-pill ${checkoutSuccess?.paymentStatus === 'paid' ? 'success' : 'warning'}`}>
+                    {checkoutSuccess?.paymentStatus === 'paid'
+                      ? (lang === 'fi' ? 'Maksettu' : 'Paid')
+                      : (lang === 'fi' ? 'Lasku' : 'Invoice')}
+                  </span>
+                  <h3>{checkoutSuccess?.paymentStatus === 'paid' ? (lang === 'fi' ? 'Maksu vastaanotettu' : 'Payment received') : (lang === 'fi' ? 'Tilaus vastaanotettu' : 'Order received')}</h3>
+                  <p>
+                    {paymentReturnMessage
+                      || (checkoutSuccess?.paymentStatus === 'paid'
+                        ? (lang === 'fi' ? 'Paytrail-maksu onnistui ja tilausvahvistus on lähetetty sähköpostiin.' : 'Your Paytrail payment succeeded and the confirmation email has been sent.')
+                        : t.checkoutSuccess)}
+                  </p>
+                  {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
+                  <div className="order-success-actions">
+                    <button className="primary" type="button" onClick={goHome}>
+                      {lang === 'fi' ? 'Takaisin etusivulle' : 'Back to home'}
+                    </button>
+                    <button className="ghost" type="button" onClick={() => goToSection('products')}>
+                      {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : customerSessionLoading && !isGuestCheckout ? (
+              <div className="card auth-card">
+                <p className="muted">{lang === 'fi' ? 'Tarkistetaan asiakastiliä...' : 'Checking your customer account...'}</p>
+              </div>
+            ) : !customerProfile && !isGuestCheckout ? (
+              <div className="card auth-required-card">
+                <h2>{lang === 'fi' ? 'Kirjaudu jatkaaksesi kassalle' : 'Sign in to continue to checkout'}</h2>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Voit kirjautua yritystilille tai jatkaa rekisteröitymättä suoraan Paytrail-korttimaksuun.'
+                    : 'Sign in with your company account or continue directly to Paytrail card payment without registering.'}
+                </p>
+                <div className="auth-actions">
+                  <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
+                    {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
+                  </button>
+                  <button className="ghost" type="button" onClick={() => goToAuth('register', '/kassa')}>
+                    {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                  </button>
+                  <button className="ghost" type="button" onClick={goToGuestCheckout}>
+                    {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="checkout checkout-page-layout">
+                <div className="checkout-main">
+                  <div className="card account-summary-card">
+                    <span className="auth-kicker">{isGuestCheckout ? (lang === 'fi' ? 'Korttimaksu ilman tiliä' : 'Card payment without account') : (lang === 'fi' ? 'Kirjautunut asiakas' : 'Signed-in customer')}</span>
+                    <h2>{isGuestCheckout ? (checkoutForm.company || (lang === 'fi' ? 'Vieraskassa' : 'Guest checkout')) : customerProfile?.companyName}</h2>
+                    <p className="muted">
+                      {isGuestCheckout
+                        ? [checkoutForm.contact, checkoutForm.email, checkoutForm.phone].filter(Boolean).join(' · ') || (lang === 'fi' ? 'Täytä tiedot jatkaaksesi Paytrailiin.' : 'Fill in your details to continue to Paytrail.')
+                        : `${customerDisplayName} · ${customerProfile?.email ?? ''} · ${customerProfile?.phone ?? ''}`}
+                    </p>
+                  </div>
+
+                  {showCheckoutPaymentWarning && (
+                    <div className="card payment-return-card">
+                      <span className="payment-status-pill warning">
+                        {routeState.checkoutPaymentState === 'cancel'
+                          ? (lang === 'fi' ? 'Maksu keskeytettiin' : 'Payment cancelled')
+                          : routeState.checkoutPaymentState === 'pending'
+                            ? (lang === 'fi' ? 'Maksu odottaa vahvistusta' : 'Payment pending')
+                            : (lang === 'fi' ? 'Maksu epäonnistui' : 'Payment failed')}
+                      </span>
+                      <p className="muted">{paymentReturnMessage}</p>
+                    </div>
+                  )}
+
+                  {orderSent ? null : (
+                    <>
+                      {formError && <div className="error">{formError}</div>}
+                      <form
+                        className="checkout-form checkout-form-wide"
+                        onSubmit={(event) => {
+                          event.preventDefault()
+                          void handleOrder()
+                        }}
+                      >
+                        {isGuestCheckout && (
+                          <div className="checkout-form-block">
+                            <h2>{lang === 'fi' ? 'Yhteystiedot' : 'Contact details'}</h2>
+                            <div className="field">
+                              <label>{lang === 'fi' ? 'Yrityksen nimi' : 'Company name'}</label>
+                              <input
+                                value={checkoutForm.company}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value
+                                  updateForm('company', nextValue)
+                                  if (!checkoutForm.billingCompany) {
+                                    updateForm('billingCompany', nextValue)
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div className="field">
+                              <label>{lang === 'fi' ? 'Yhteyshenkilö' : 'Contact person'}</label>
+                              <input value={checkoutForm.contact} onChange={(event) => updateForm('contact', event.target.value)} />
+                            </div>
+                            <div className="form-row">
+                              <div className="field">
+                                <label>{t.form.email}</label>
+                                <input value={checkoutForm.email} onChange={(event) => updateForm('email', event.target.value)} />
+                              </div>
+                              <div className="field">
+                                <label>{t.form.phone}</label>
+                                <input value={checkoutForm.phone} onChange={(event) => updateForm('phone', normalizePhoneInput(event.target.value))} />
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        <div className="checkout-form-block">
+                          <h2>{lang === 'fi' ? 'Toimitusosoite' : 'Delivery address'}</h2>
+                          <div className="field">
+                            <label>{t.form.address}</label>
+                            <input
+                              value={checkoutForm.deliveryAddress}
+                              onChange={(event) => {
+                                const nextValue = event.target.value
+                                updateForm('deliveryAddress', nextValue)
+                                if (isGuestCheckout && !checkoutForm.billingAddress) {
+                                  updateForm('billingAddress', nextValue)
+                                }
+                              }}
+                            />
+                          </div>
+                          <div className="form-row">
+                            <div className="field">
+                              <label>{t.form.zip}</label>
+                              <input
+                                value={checkoutForm.deliveryZip}
+                                inputMode="numeric"
+                                onChange={(event) => {
+                                  const nextValue = formatPostalCodeInput(event.target.value)
+                                  updateForm('deliveryZip', nextValue)
+                                  if (isGuestCheckout && !checkoutForm.billingZip) {
+                                    updateForm('billingZip', nextValue)
+                                  }
+                                }}
+                              />
+                            </div>
+                            <div className="field">
+                              <label>{t.form.city}</label>
+                              <input
+                                value={checkoutForm.deliveryCity}
+                                onChange={(event) => {
+                                  const nextValue = event.target.value
+                                  updateForm('deliveryCity', nextValue)
+                                  if (isGuestCheckout && !checkoutForm.billingCity) {
+                                    updateForm('billingCity', nextValue)
+                                  }
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="checkout-form-block">
+                          <h2>{lang === 'fi' ? 'Laskutustiedot' : 'Billing details'}</h2>
+                          <div className="field">
+                            <label>{t.form.billingCompany}</label>
+                            <input value={checkoutForm.billingCompany} onChange={(event) => updateForm('billingCompany', event.target.value)} />
+                          </div>
+                          <div className="field">
+                            <label>{t.form.billingAddress}</label>
+                            <input value={checkoutForm.billingAddress} onChange={(event) => updateForm('billingAddress', event.target.value)} />
+                          </div>
+                          <div className="form-row">
+                            <div className="field">
+                              <label>{t.form.zip}</label>
+                              <input value={checkoutForm.billingZip} inputMode="numeric" onChange={(event) => updateForm('billingZip', formatPostalCodeInput(event.target.value))} />
+                            </div>
+                            <div className="field">
+                              <label>{t.form.city}</label>
+                              <input value={checkoutForm.billingCity} onChange={(event) => updateForm('billingCity', event.target.value)} />
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="field">
+                          <label>{t.form.notes}</label>
+                          <textarea rows={4} value={checkoutForm.notes} onChange={(event) => updateForm('notes', event.target.value)} />
+                        </div>
+
+                        <div className="checkout-form-block">
+                          <h2>{lang === 'fi' ? 'Maksutapa' : 'Payment method'}</h2>
+                          <div className="payment-methods">
+                            {!isGuestCheckout && (
+                              <label className={`payment-method-card ${selectedPaymentMethod === 'invoice' ? 'active' : ''}`}>
+                                <input
+                                  type="radio"
+                                  name="payment-method"
+                                  checked={selectedPaymentMethod === 'invoice'}
+                                  onChange={() => updateForm('paymentMethod', 'invoice')}
+                                />
+                                <div className="payment-method-body">
+                                  <span className="payment-method-icon invoice" aria-hidden="true">
+                                    <span />
+                                  </span>
+                                  <div className="payment-method-copy">
+                                    <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
+                                    <span className="muted small">{lang === 'fi' ? 'Yrityslasku hyväksytyille asiakkaille' : 'Company invoice for approved customers'}</span>
+                                  </div>
+                                </div>
+                              </label>
+                            )}
+                            <label className={`payment-method-card ${selectedPaymentMethod === 'card' ? 'active' : ''}`}>
+                              <input
+                                type="radio"
+                                name="payment-method"
+                                checked={selectedPaymentMethod === 'card'}
+                                onChange={() => updateForm('paymentMethod', 'card')}
+                                disabled={isGuestCheckout}
+                              />
+                              <div className="payment-method-body">
+                                <img className="payment-method-logo" src={paytrailBadge} alt="Paytrail" />
+                                <div className="payment-method-copy">
+                                  <strong>Paytrail</strong>
+                                  <span className="muted small">{lang === 'fi' ? 'Ohjaus turvalliseen Paytrail-maksuun' : 'Redirect to secure Paytrail payment'}</span>
+                                  <img className="payment-trust-strip" src={paytrailCards} alt={lang === 'fi' ? 'Korttimaksut Paytrailin kautta' : 'Card payments via Paytrail'} />
+                                </div>
+                              </div>
+                            </label>
+                          </div>
+                        </div>
+
+                        <div className="checkout-form-actions">
+                          <button className="ghost" type="button" onClick={goToCart}>
+                            {lang === 'fi' ? 'Takaisin ostoskoriin' : 'Back to cart'}
+                          </button>
+                          <button className="primary" type="submit" disabled={placingOrder || totalItems === 0}>
+                            {placingOrder
+                              ? (lang === 'fi' ? 'Käsitellään...' : 'Processing...')
+                              : selectedPaymentMethod === 'card'
+                                ? (lang === 'fi' ? 'Siirry Paytrailiin' : 'Continue to Paytrail')
+                                : (lang === 'fi' ? 'Lähetä tilaus' : 'Place order')}
+                          </button>
+                        </div>
+                      </form>
+                    </>
+                  )}
+                </div>
+
+                <aside className="cart cart-page-summary">
+                  <div className="cart-header">
+                    <h2>{lang === 'fi' ? 'Tilauksen yhteenveto' : 'Order summary'}</h2>
+                  </div>
+                  {cartItems.length === 0 ? (
+                    <p className="muted">{t.cartEmpty}</p>
+                  ) : (
+                    <div className="cart-items">
+                      {cartItems.map((item) => (
+                        <div key={`checkout-${item.id}`} className="cart-item">
+                          <div className="cart-item-info">
+                            <strong>{item.product.name}</strong>
+                            {item.selectedOptions.length > 0 && <span className="muted small">{formatSelectedOptionsText(item.selectedOptions)}</span>}
+                            <span className="muted small">
+                              {item.quantity} × {formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions), lang)} €
+                            </span>
+                          </div>
+                          <strong>{formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, lang)} €</strong>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <div className="cart-summary">
+                    <div>
+                      <span>{lang === 'fi' ? 'Välisummaa alv 0%' : 'Subtotal excl. VAT'}</span>
+                      <strong>{formatPrice(subtotal, lang)} €</strong>
+                    </div>
+                    <div>
+                      <span>{lang === 'fi' ? 'Toimitus alv 0%' : 'Delivery excl. VAT'}</span>
+                      <strong>{totalItems === 0 ? '-' : `${formatPrice(shipping, lang)} €`}</strong>
+                    </div>
+                    <div>
+                      <span>{lang === 'fi' ? 'ALV 25,5 %' : 'VAT 25.5%'}</span>
+                      <strong>{formatPrice(vatAmount, lang)} €</strong>
+                    </div>
+                    <div className="cart-total">
+                      <span>{lang === 'fi' ? 'Verollinen yhteensä' : 'Total incl. VAT'}</span>
+                      <strong>{formatPrice(grossTotal, lang)} €</strong>
+                    </div>
+                  </div>
+                  <div className="account-note payment-options-note">
+                    <span className="muted small">{lang === 'fi' ? 'Maksutavat' : 'Payment options'}</span>
+                    <div className="payment-option-list">
+                      {!isGuestCheckout && (
+                        <div className="payment-option-chip">
+                          <span className="payment-method-icon invoice small" aria-hidden="true">
+                            <span />
+                          </span>
+                          <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
+                        </div>
+                      )}
+                      <div className="payment-option-chip">
+                        <img className="payment-option-chip-logo" src={paytrailBadge} alt="Paytrail" />
+                        <strong>Paytrail</strong>
+                      </div>
+                    </div>
+                  </div>
+                </aside>
+              </div>
+            )}
+          </section>
+        ) : routeState.type === 'paytrail-return' ? (
+          <section className="section utility-page payment-return-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{lang === 'fi' ? 'Maksun vahvistus' : 'Payment confirmation'}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Vahvistamme Paytrail-maksun lopputuloksen ennen tilauksen viimeistelyä.'
+                    : 'We are confirming the Paytrail payment result before finalizing your order.'}
+                </p>
+              </div>
+            </div>
+
+            {paymentReturnLoading ? (
+              <div className="card payment-return-card">
+                <p className="muted">{lang === 'fi' ? 'Haetaan maksun tilaa...' : 'Checking payment status...'}</p>
+              </div>
+            ) : orderSent ? (
+              renderOrderSuccessCard()
+            ) : (
+              <div className="card payment-return-card">
+                <span className="payment-status-pill warning">
+                  {routeState.paytrailResult === 'cancel'
+                    ? (lang === 'fi' ? 'Maksu keskeytettiin' : 'Payment cancelled')
+                    : (lang === 'fi' ? 'Maksu odottaa vahvistusta' : 'Payment pending')}
+                </span>
+                <h2>
+                  {routeState.paytrailResult === 'cancel'
+                    ? (lang === 'fi' ? 'Korttimaksu peruttiin' : 'Card payment was cancelled')
+                    : (lang === 'fi' ? 'Tarkista maksun tila hetken kuluttua' : 'Please check the payment status again shortly')}
+                </h2>
+                <p className="muted">{paymentReturnMessage}</p>
+                {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
+                <div className="auth-actions">
+                  <button className="primary" type="button" onClick={routeState.guestCheckout ? goToGuestCheckout : goToCheckout}>
+                    {lang === 'fi' ? 'Palaa kassalle' : 'Return to checkout'}
+                  </button>
+                  <button className="ghost" type="button" onClick={goToCart}>
+                    {lang === 'fi' ? 'Avaa ostoskori' : 'Open cart'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        ) : selectedProduct ? (
           <section className="section product-detail" id="product-detail">
             <nav className="breadcrumbs" aria-label="Breadcrumb">
               <a href="/" onClick={(event) => { event.preventDefault(); goHome() }}>
@@ -3287,6 +4962,8 @@ function App() {
             </button>
           </div>
         </section>
+
+        {utilityHighlights}
 
         <section className="section" id="categories">
           <h2 className="sr-only">{t.categoriesTitle}</h2>
@@ -3487,7 +5164,7 @@ function App() {
           )}
         </section>
           </>
-        ))}
+        )}
       </main>
 
       {!isAdminPage && <footer className="footer">
@@ -3516,50 +5193,9 @@ function App() {
         </div>
       </footer>}
 
-      {showCheckout && !isAdminPage && (
-        <div className="checkout-overlay">
-          <div className="checkout-backdrop" onClick={closeCheckout} />
-          <section className="checkout-panel" id="checkout">
-            <div className="checkout-top">
-              <div>
-                <h2>{t.checkoutTitle}</h2>
-                <p className="muted">
-                  {orderSent
-                    ? (lang === 'fi' ? 'Tilauksesi on vastaanotettu.' : 'Your order has been received.')
-                    : t.checkoutNote}
-                </p>
-              </div>
-              <button className="ghost small" onClick={closeCheckout}>
-                {t.checkoutClose}
-              </button>
-            </div>
+      {/* Legacy checkout overlay disabled.
 
-            {!orderSent && (
-              <div className="checkout-steps">
-                <div className={`step-chip ${checkoutStep === 1 ? 'active' : 'done'}`}>
-                  <span>1</span>
-                  <strong>{t.checkoutStepInfo}</strong>
-                </div>
-                <div className={`step-chip ${checkoutStep === 2 ? 'active' : ''}`}>
-                  <span>2</span>
-                  <strong>{t.checkoutStepBilling}</strong>
-                </div>
-              </div>
-            )}
-
-            <div className="checkout">
-              <div>
-                {orderSent && (
-                  <div className="order-success-shell">
-                    <div className="order-confetti" aria-hidden="true">
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                      <span />
-                    </div>
-                    <div className="success order-success">
+      
                       <div className="order-success-check" aria-hidden="true">✓</div>
                       <h3>{lang === 'fi' ? 'Tilaus valmis' : 'Order complete'}</h3>
                       <p>{t.checkoutSuccess}</p>
@@ -3712,6 +5348,8 @@ function App() {
         </section>
         </div>
       )}
+
+      */}
 
     </div>
   )
