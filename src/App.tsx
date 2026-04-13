@@ -170,9 +170,6 @@ type RouteState = {
   nextPath: string | null
   paytrailResult: 'success' | 'cancel' | null
   guestCheckout: boolean
-  checkoutPaymentState: 'success' | 'cancel' | 'pending' | 'failed' | 'error' | null
-  checkoutOrderId: string | null
-  checkoutMailWarning: boolean
 }
 
 type CheckoutSuccessState = {
@@ -995,9 +992,6 @@ const getRouteFromUrl = (): RouteState => {
       nextPath: null,
       paytrailResult: null,
       guestCheckout: false,
-      checkoutPaymentState: null,
-      checkoutOrderId: null,
-      checkoutMailWarning: false,
     }
   }
   const url = new URL(window.location.href)
@@ -1005,9 +999,6 @@ const getRouteFromUrl = (): RouteState => {
   const productMatch = pathname.match(/^\/tuote\/([^/]+)$/)
   const paytrailMatch = pathname.match(/^\/kassa\/paytrail\/(success|cancel)$/)
   const guestCheckout = url.searchParams.get('guest') === '1'
-  const checkoutPaymentState = pathname === '/kassa'
-    ? ((url.searchParams.get('paytrail') as RouteState['checkoutPaymentState']) ?? null)
-    : null
   let type: RouteState['type'] = 'home'
 
   if (productMatch) {
@@ -1032,35 +1023,7 @@ const getRouteFromUrl = (): RouteState => {
     nextPath: url.searchParams.get('next'),
     paytrailResult: paytrailMatch ? (paytrailMatch[1] as 'success' | 'cancel') : null,
     guestCheckout,
-    checkoutPaymentState,
-    checkoutOrderId: pathname === '/kassa' ? url.searchParams.get('orderId') : null,
-    checkoutMailWarning: pathname === '/kassa' && url.searchParams.get('mailWarning') === '1',
   }
-}
-
-const buildCheckoutReturnHref = ({
-  guestCheckout = false,
-  paymentState,
-  orderId = '',
-  mailWarning = false,
-}: {
-  guestCheckout?: boolean
-  paymentState: NonNullable<RouteState['checkoutPaymentState']>
-  orderId?: string
-  mailWarning?: boolean
-}) => {
-  const params = new URLSearchParams()
-  if (guestCheckout) {
-    params.set('guest', '1')
-  }
-  params.set('paytrail', paymentState)
-  if (orderId) {
-    params.set('orderId', orderId)
-  }
-  if (mailWarning) {
-    params.set('mailWarning', '1')
-  }
-  return `/kassa?${params.toString()}`
 }
 
 const getStockTone = (stock: number): 'ok' | 'warn' | 'low' => {
@@ -2004,15 +1967,7 @@ function App() {
                   : 'Card payment succeeded and the order has been marked as paid.'),
           )
           setCart({})
-          navigateTo(
-            buildCheckoutReturnHref({
-              guestCheckout: isGuest,
-              paymentState: 'success',
-              orderId: payload.orderId ?? '',
-              mailWarning: Boolean(payload.mailWarning),
-            }),
-            true,
-          )
+          navigateTo(isGuest ? '/kassa/paytrail/success?guest=1' : '/kassa/paytrail/success', true)
           return
         }
 
@@ -2039,52 +1994,6 @@ function App() {
       active = false
     }
   }, [lang, routeState.paytrailResult, routeState.type])
-
-  useEffect(() => {
-    if (routeState.type !== 'checkout' || !routeState.checkoutPaymentState) {
-      return
-    }
-
-    if (routeState.checkoutPaymentState === 'success') {
-      rememberOrderSuccess(
-        {
-          orderId: routeState.checkoutOrderId ?? '',
-          paymentMethod: 'paytrail',
-          paymentStatus: 'paid',
-          isGuest: routeState.guestCheckout,
-        },
-        routeState.checkoutMailWarning
-          ? (lang === 'fi'
-              ? 'Korttimaksu onnistui, mutta tilausvahvistuksen sähköpostia ei saatu lähetettyä juuri nyt.'
-              : 'Card payment succeeded, but the order confirmation email could not be sent right now.')
-          : (lang === 'fi'
-              ? 'Korttimaksu onnistui ja tilaus on vahvistettu maksetuksi.'
-              : 'Card payment succeeded and the order has been marked as paid.'),
-      )
-      setCart({})
-      setFormError('')
-      return
-    }
-
-    clearOrderState({ keepPaymentMessage: true })
-    setFormError('')
-    setPaymentReturnMessage(
-      routeState.checkoutPaymentState === 'cancel'
-        ? (lang === 'fi' ? 'Maksu keskeytettiin. Voit yrittää uudelleen kassalla.' : 'Payment was cancelled. You can try again in checkout.')
-        : routeState.checkoutPaymentState === 'pending'
-          ? (lang === 'fi' ? 'Maksu odottaa vahvistusta. Tarkista tila hetken kuluttua.' : 'Payment is still pending. Please check again in a moment.')
-          : routeState.checkoutPaymentState === 'failed'
-            ? (lang === 'fi' ? 'Korttimaksu ei onnistunut. Yritä uudelleen kassalla.' : 'Card payment failed. Please try again in checkout.')
-            : (lang === 'fi' ? 'Korttimaksun vahvistus ei onnistunut.' : 'Card payment confirmation failed.'),
-    )
-  }, [
-    lang,
-    routeState.checkoutMailWarning,
-    routeState.checkoutOrderId,
-    routeState.checkoutPaymentState,
-    routeState.guestCheckout,
-    routeState.type,
-  ])
 
   useEffect(() => {
     if (routeState.legacyProductId && productCatalog.length > 0) {
@@ -3293,17 +3202,6 @@ function App() {
   const safeAdminPage = Math.min(adminPage, adminPages)
   const adminPageItems = adminFilteredProducts.slice((safeAdminPage - 1) * pageSize, safeAdminPage * pageSize)
   const customerDisplayName = getDisplayName(customerProfile)
-  const showCheckoutSuccess =
-    routeState.type === 'checkout'
-    && Boolean(checkoutSuccess)
-    && (orderSent || routeState.checkoutPaymentState === 'success')
-  const showCheckoutPaymentWarning =
-    !showCheckoutSuccess
-    && !orderSent
-    && routeState.type === 'checkout'
-    && Boolean(routeState.checkoutPaymentState)
-    && routeState.checkoutPaymentState !== 'success'
-    && Boolean(paymentReturnMessage)
   const renderOrderSuccessCard = () => (
     <div className="order-success-shell">
       <div className="order-confetti" aria-hidden="true">
@@ -4429,7 +4327,7 @@ function App() {
               </div>
             </div>
 
-            {showCheckoutSuccess ? (
+            {orderSent ? (
               <div className="order-success-shell">
                 <div className="order-confetti" aria-hidden="true">
                   <span />
@@ -4500,19 +4398,6 @@ function App() {
                         : `${customerDisplayName} · ${customerProfile?.email ?? ''} · ${customerProfile?.phone ?? ''}`}
                     </p>
                   </div>
-
-                  {showCheckoutPaymentWarning && (
-                    <div className="card payment-return-card">
-                      <span className="payment-status-pill warning">
-                        {routeState.checkoutPaymentState === 'cancel'
-                          ? (lang === 'fi' ? 'Maksu keskeytettiin' : 'Payment cancelled')
-                          : routeState.checkoutPaymentState === 'pending'
-                            ? (lang === 'fi' ? 'Maksu odottaa vahvistusta' : 'Payment pending')
-                            : (lang === 'fi' ? 'Maksu epäonnistui' : 'Payment failed')}
-                      </span>
-                      <p className="muted">{paymentReturnMessage}</p>
-                    </div>
-                  )}
 
                   {orderSent ? null : (
                     <>

@@ -149,30 +149,12 @@ const isPaytrailPublicUrlAllowed = (value) => {
   }
 }
 
-const buildCheckoutReturnPath = ({ paymentState, orderId = '', guestCheckout = false, mailWarning = false }) => {
-  const params = new URLSearchParams()
-  if (guestCheckout) {
-    params.set('guest', '1')
-  }
-  params.set('paytrail', paymentState)
-  if (orderId) {
-    params.set('orderId', orderId)
-  }
-  if (mailWarning) {
-    params.set('mailWarning', '1')
-  }
-  return `/kassa?${params.toString()}`
-}
-
 const getSpaRouteFromRequest = (req) => {
   const pathname = String(req.path ?? '').replace(/\/+$/g, '') || '/'
   const guestCheckout = String(req.query?.guest ?? '').trim() === '1'
   const authMode = String(req.query?.mode ?? '').trim() === 'register' ? 'register' : 'login'
   const nextPath = String(req.query?.next ?? '').trim() || null
   const paytrailMatch = pathname.match(/^\/kassa\/paytrail\/(success|cancel)$/)
-  const checkoutPaymentState = pathname === '/kassa' ? String(req.query?.paytrail ?? '').trim() || null : null
-  const checkoutOrderId = pathname === '/kassa' ? String(req.query?.orderId ?? '').trim() || null : null
-  const checkoutMailWarning = pathname === '/kassa' && String(req.query?.mailWarning ?? '').trim() === '1'
 
   if (pathname === '/ostoskori') {
     return {
@@ -181,9 +163,6 @@ const getSpaRouteFromRequest = (req) => {
       authMode: 'login',
       nextPath: null,
       paytrailResult: null,
-      checkoutPaymentState: null,
-      checkoutOrderId: null,
-      checkoutMailWarning: false,
     }
   }
 
@@ -194,9 +173,6 @@ const getSpaRouteFromRequest = (req) => {
       authMode: 'login',
       nextPath: null,
       paytrailResult: null,
-      checkoutPaymentState,
-      checkoutOrderId,
-      checkoutMailWarning,
     }
   }
 
@@ -207,9 +183,6 @@ const getSpaRouteFromRequest = (req) => {
       authMode,
       nextPath,
       paytrailResult: null,
-      checkoutPaymentState: null,
-      checkoutOrderId: null,
-      checkoutMailWarning: false,
     }
   }
 
@@ -220,9 +193,6 @@ const getSpaRouteFromRequest = (req) => {
       authMode: 'login',
       nextPath: null,
       paytrailResult: paytrailMatch[1],
-      checkoutPaymentState: null,
-      checkoutOrderId: null,
-      checkoutMailWarning: false,
     }
   }
 
@@ -1913,42 +1883,6 @@ app.get('/og/product/:slug.svg', (req, res) => {
   }
   const category = getCategoryById(product.category)
   res.type('image/svg+xml').send(renderProductOgSvg({ product, category }))
-})
-
-app.get(/^\/kassa\/paytrail\/(success|cancel)$/, async (req, res) => {
-  const result = String(req.params?.[0] ?? '').trim()
-  const guestCheckout = String(req.query?.guest ?? '').trim() === '1'
-  const fallbackState = result === 'cancel' ? 'cancel' : 'error'
-
-  if (!req.query?.signature || !req.query['checkout-reference']) {
-    res.redirect(303, buildCheckoutReturnPath({ paymentState: fallbackState, guestCheckout }))
-    return
-  }
-
-  try {
-    const { order, mailResult } = await finalizePaytrailOrder(req, 'redirect')
-    const paymentState =
-      order.paymentStatus === 'paid'
-        ? 'success'
-        : order.paymentStatus === 'pending'
-          ? 'pending'
-          : result === 'cancel'
-            ? 'cancel'
-            : 'failed'
-
-    res.redirect(
-      303,
-      buildCheckoutReturnPath({
-        paymentState,
-        orderId: order.id,
-        guestCheckout: guestCheckout || !order.customerId,
-        mailWarning: paymentState === 'success' && !mailResult.ok,
-      }),
-    )
-  } catch (error) {
-    console.error('[paytrail] redirect return handling failed', error)
-    res.redirect(303, buildCheckoutReturnPath({ paymentState: fallbackState, guestCheckout }))
-  }
 })
 
 app.get('/tuote/:slug', (req, res) => {
