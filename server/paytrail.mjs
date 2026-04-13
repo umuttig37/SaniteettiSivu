@@ -1,19 +1,30 @@
 import crypto from 'node:crypto'
+import { normalizeStringValue, readFirstEnvValue } from './env-utils.mjs'
 
 const paytrailApiOrigin = 'https://services.paytrail.com'
 const supportedAlgorithms = new Set(['sha256', 'sha512'])
-
-const normalizeStringValue = (value) => {
-  if (Array.isArray(value)) {
-    return normalizeStringValue(value[0] ?? '')
-  }
-  return String(value ?? '')
-}
+const truthyEnvValues = new Set(['1', 'true', 'yes', 'on'])
 
 export const getPaytrailConfig = (env = process.env) => {
-  const explicitAccount = normalizeStringValue(env.PAYTRAIL_ACCOUNT_ID).trim()
-  const explicitSecret = normalizeStringValue(env.PAYTRAIL_SECRET).trim()
-  const fallbackToTest = !explicitAccount && !explicitSecret && normalizeStringValue(env.NODE_ENV).trim() !== 'production'
+  const explicitAccount = readFirstEnvValue(env, [
+    'PAYTRAIL_ACCOUNT_ID',
+    'PAYTRAIL_MERCHANT_ID',
+    'PAYTRAIL_ACCOUNT',
+    'CHECKOUT_ACCOUNT',
+  ])
+  const explicitSecret = readFirstEnvValue(env, [
+    'PAYTRAIL_SECRET',
+    'PAYTRAIL_SECRET_KEY',
+    'PAYTRAIL_API_SECRET',
+    'CHECKOUT_SECRET',
+  ])
+  const testModeRequested = truthyEnvValues.has(
+    readFirstEnvValue(env, ['PAYTRAIL_TEST_MODE', 'PAYTRAIL_USE_TEST_CREDENTIALS']).toLowerCase(),
+  )
+  const fallbackToTest =
+    !explicitAccount &&
+    !explicitSecret &&
+    (testModeRequested || normalizeStringValue(env.NODE_ENV).toLowerCase() !== 'production')
   const algorithm = normalizeStringValue(env.PAYTRAIL_ALGORITHM || 'sha256').trim().toLowerCase()
   const account = explicitAccount || (fallbackToTest ? '375917' : '')
   const secret = explicitSecret || (fallbackToTest ? 'SAIPPUAKAUPPIAS' : '')

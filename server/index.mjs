@@ -44,6 +44,14 @@ import {
   requestPaytrail,
   validatePaytrailHmac,
 } from './paytrail.mjs'
+import {
+  getConfiguredPaytrailSiteUrl,
+  getConfiguredSiteUrl,
+  getPublicSiteUrlFromEnv,
+  getRequestPublicSiteUrl,
+  getRequestSiteUrl,
+  isPublicHttpsUrl,
+} from './env-utils.mjs'
 
 dotenv.config()
 
@@ -70,8 +78,9 @@ const fallbackOwnerEmail = 'umut.uygur30@gmail.com'
 const ownerNotificationRecipients = Array.from(new Set([ownerNotificationEmail.trim(), fallbackOwnerEmail].filter(Boolean)))
 const adminUser = String(process.env.ADMIN_USER ?? '').trim()
 const adminPass = String(process.env.ADMIN_PASS ?? '').trim()
-const siteUrlEnv = String(process.env.PUBLIC_SITE_URL ?? process.env.SITE_URL ?? '').trim().replace(/\/+$/g, '')
-const paytrailSiteUrlEnv = String(process.env.PAYTRAIL_SITE_URL ?? '').trim().replace(/\/+$/g, '')
+const siteUrlEnv = getConfiguredSiteUrl(process.env)
+const publicSiteUrlEnv = getPublicSiteUrlFromEnv(process.env)
+const paytrailSiteUrlEnv = getConfiguredPaytrailSiteUrl(process.env) || publicSiteUrlEnv
 const preferredHost = siteUrlEnv ? new URL(siteUrlEnv).host.toLowerCase() : ''
 const adminSessionCookieName = 'spt_admin_session'
 const adminSessionMaxAgeMs = 1000 * 60 * 60 * 12
@@ -80,6 +89,10 @@ const customerSessionMaxAgeMs = 1000 * 60 * 60 * 24 * 30
 const adminSessions = new Map()
 const customerSessions = new Map()
 const paytrailConfig = getPaytrailConfig(process.env)
+const paytrailConfigErrorMessage =
+  'Paytrail is not configured on the server. Set PAYTRAIL_ACCOUNT_ID (or PAYTRAIL_MERCHANT_ID) and PAYTRAIL_SECRET.'
+const paytrailSiteUrlErrorMessage =
+  'Paytrail requires a public HTTPS URL for redirects and callbacks. Set PAYTRAIL_SITE_URL (or SITE_URL) to your public site URL or HTTPS tunnel URL.'
 const shippingFee = 15
 const freeShippingThreshold = 300
 const vatMultiplier = 1.255
@@ -132,22 +145,14 @@ app.use((req, res, next) => {
 })
 
 const getSiteUrl = (req) => {
-  return siteUrlEnv || `${req.protocol}://${req.get('host')}`
+  return publicSiteUrlEnv || getRequestSiteUrl(req)
 }
 
 const getPaytrailSiteUrl = (req) => {
-  return paytrailSiteUrlEnv || getSiteUrl(req)
+  return paytrailSiteUrlEnv || getRequestPublicSiteUrl(req) || getSiteUrl(req)
 }
 
-const isPaytrailPublicUrlAllowed = (value) => {
-  try {
-    const url = new URL(String(value ?? ''))
-    const hostname = url.hostname.toLowerCase()
-    return url.protocol === 'https:' && hostname !== 'localhost' && hostname !== '127.0.0.1' && hostname !== '::1'
-  } catch {
-    return false
-  }
-}
+const isPaytrailPublicUrlAllowed = (value) => isPublicHttpsUrl(value)
 
 const getSpaRouteFromRequest = (req) => {
   const pathname = String(req.path ?? '').replace(/\/+$/g, '') || '/'
@@ -1500,14 +1505,14 @@ app.post('/api/checkout/invoice', requireCustomer, async (req, res) => {
 app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
   try {
     if (!paytrailConfig.account || !paytrailConfig.secret) {
-      res.status(503).json({ message: 'Paytrail is not configured on the server.' })
+      res.status(503).json({ message: paytrailConfigErrorMessage })
       return
     }
 
     const siteUrl = getPaytrailSiteUrl(req)
     if (!isPaytrailPublicUrlAllowed(siteUrl)) {
       res.status(400).json({
-        message: 'Paytrail requires a public HTTPS URL for redirects and callbacks. Set PAYTRAIL_SITE_URL (or SITE_URL) to your HTTPS tunnel URL.',
+        message: paytrailSiteUrlErrorMessage,
       })
       return
     }
@@ -1620,14 +1625,14 @@ app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
 app.post('/api/checkout/paytrail/guest/start', async (req, res) => {
   try {
     if (!paytrailConfig.account || !paytrailConfig.secret) {
-      res.status(503).json({ message: 'Paytrail is not configured on the server.' })
+      res.status(503).json({ message: paytrailConfigErrorMessage })
       return
     }
 
     const siteUrl = getPaytrailSiteUrl(req)
     if (!isPaytrailPublicUrlAllowed(siteUrl)) {
       res.status(400).json({
-        message: 'Paytrail requires a public HTTPS URL for redirects and callbacks. Set PAYTRAIL_SITE_URL (or SITE_URL) to your HTTPS tunnel URL.',
+        message: paytrailSiteUrlErrorMessage,
       })
       return
     }
