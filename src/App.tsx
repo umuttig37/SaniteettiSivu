@@ -2,8 +2,12 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSPropert
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/hero-background.webp'
-import paytrailBadge from './assets/paytrail-badge.svg'
-import paytrailCards from './assets/paytrail-cards.svg'
+import paytrailBadge from './assets/paytrail-logo.png'
+import visaLogo from './assets/payment-brands/visa.svg'
+import mastercardLogo from './assets/payment-brands/mastercard-symbol.svg'
+import americanExpressLogo from './assets/payment-brands/american-express.svg'
+import accountCircleIcon from './assets/ui-icons/account-circle.svg'
+import cartCircleIcon from './assets/ui-icons/cart-circle.svg'
 
 type Lang = 'fi' | 'en'
 
@@ -103,6 +107,8 @@ type CustomerAddress = {
 
 type CustomerProfile = {
   id: string
+  approvalStatus: 'pending' | 'approved'
+  approvedAt: string | null
   firstName: string
   lastName: string
   companyName: string
@@ -242,6 +248,20 @@ type AdminOrder = {
   total: number
   vatAmount?: number
   grossTotal?: number
+}
+
+type AdminCustomer = {
+  id: string
+  createdAt: string
+  updatedAt: string
+  approvalStatus: 'pending' | 'approved'
+  approvedAt: string | null
+  firstName: string
+  lastName: string
+  companyName: string
+  businessId: string
+  phone: string
+  email: string
 }
 
 const svgData = (label: string, color: string) => {
@@ -390,7 +410,7 @@ const rawText = {
     contactText: 'Tarvitsetko tarjouksen tai isomman erän? Autetaan nopeasti.',
     contactCta: 'Lähetä viesti',
     adminTitle: 'Kirjaudu',
-    adminNote: 'Tuotteiden lisäys (demo)',
+    adminNote: 'Tuotehallinta',
     adminLogin: {
       title: 'Kirjaudu',
       user: 'Käyttäjä',
@@ -485,7 +505,7 @@ const rawText = {
     contactText: 'Need a quote or a larger batch? We reply quickly.',
     contactCta: 'Send message',
     adminTitle: 'Login',
-    adminNote: 'Add products (demo)',
+    adminNote: 'Product management',
     adminLogin: {
       title: 'Login',
       user: 'Username',
@@ -906,27 +926,9 @@ const formatBusinessIdInput = (value: string) => {
   return `${cleaned.slice(0, 7)}-${cleaned.slice(7)}`
 }
 
-const businessIdChecksumWeights = [7, 9, 10, 5, 8, 4, 2]
-
 const isValidBusinessId = (value: string) => {
   const normalized = formatBusinessIdInput(value)
-  if (!/^\d{7}-\d$/.test(normalized.trim())) {
-    return false
-  }
-
-  const digits = normalized.replace('-', '')
-  const checksumSource = digits
-    .slice(0, 7)
-    .split('')
-    .reduce((sum, digit, index) => sum + Number(digit) * businessIdChecksumWeights[index], 0)
-  const remainder = checksumSource % 11
-
-  if (remainder === 1) {
-    return false
-  }
-
-  const expectedCheckDigit = remainder === 0 ? 0 : 11 - remainder
-  return Number(digits[7]) === expectedCheckDigit
+  return /^\d{7}-\d$/.test(normalized.trim())
 }
 
 const formatPostalCodeInput = (value: string) => value.replace(/\D/g, '').slice(0, 5)
@@ -937,12 +939,50 @@ const normalizePhoneInput = (value: string) => {
   const trimmed = value.trim()
   const hasLeadingPlus = trimmed.startsWith('+')
   const digits = trimmed.replace(/\D/g, '').slice(0, 15)
-  return hasLeadingPlus && digits ? `+${digits}` : digits
+
+  if (hasLeadingPlus) {
+    return digits ? `+${digits}` : '+'
+  }
+
+  return digits
 }
 
 const isValidPhone = (value: string) => {
   const digitCount = value.replace(/\D/g, '').length
   return digitCount >= 7 && digitCount <= 15
+}
+
+const localizeAuthMessage = (message: string | undefined, lang: Lang) => {
+  if (!message || lang !== 'fi') {
+    return message
+  }
+
+  const translations: Record<string, string> = {
+    'Invalid email or password.': 'Virheellinen s\u00E4hk\u00F6posti tai salasana.',
+    'Business ID must be valid and in the format 1234567-8.': 'Anna kelvollinen y-tunnus muodossa 1234567-8.',
+    'Enter a valid email address.': 'Anna kelvollinen s\u00E4hk\u00F6postiosoite.',
+    'Password must be at least 8 characters long.': 'Salasanassa tulee olla v\u00E4hint\u00E4\u00E4n 8 merkki\u00E4.',
+    'An account with this email already exists.': 'T\u00E4ll\u00E4 s\u00E4hk\u00F6postiosoitteella on jo olemassa tili.',
+    'Authentication required.': 'Kirjautuminen vaaditaan.',
+    'Account pending approval.': 'Tilisi odottaa viel\u00E4 yll\u00E4pidon hyv\u00E4ksynt\u00E4\u00E4. Saat s\u00E4hk\u00F6postin, kun tili on aktivoitu.',
+  }
+
+  return translations[message] ?? message
+}
+
+const localizeAdminMessage = (message: string | undefined, lang: Lang) => {
+  if (!message || lang !== 'fi') {
+    return message
+  }
+
+  const translations: Record<string, string> = {
+    'Unauthorized': 'V\u00E4\u00E4r\u00E4 k\u00E4ytt\u00E4j\u00E4 tai salasana.',
+    'Admin login is not configured on the server. Set ADMIN_USER (or ADMIN_USERNAME) and ADMIN_PASS (or ADMIN_PASSWORD).':
+      'Admin-kirjautumista ei ole m\u00E4\u00E4ritetty palvelimelle. Aseta ADMIN_USER tai ADMIN_USERNAME sek\u00E4 ADMIN_PASS tai ADMIN_PASSWORD.',
+    'Customer not found.': 'K\u00E4ytt\u00E4j\u00E4\u00E4 ei l\u00F6ytynyt.',
+  }
+
+  return translations[message] ?? message
 }
 
 const readStoredCheckoutSuccess = (): CheckoutSuccessState | null => {
@@ -1391,8 +1431,8 @@ const applyAdminSeo = (lang: Lang, adminAuthed: boolean) => {
     : (lang === 'fi' ? 'Kirjaudu sis\u00E4\u00E4n | Suomen Paperitukku' : 'Sign in | Suomen Paperitukku')
   const description = adminAuthed
     ? (lang === 'fi'
-        ? 'Suomen Paperitukun hallintapaneeli tuotteiden ja tilausten k\u00E4sittelyyn.'
-        : 'Suomen Paperitukku admin for managing products and orders.')
+        ? 'Suomen Paperitukun hallintapaneeli tuotteiden, tilausten ja k\u00E4ytt\u00E4jien k\u00E4sittelyyn.'
+        : 'Suomen Paperitukku admin for managing products, orders, and customers.')
     : (lang === 'fi'
         ? 'Kirjaudu Suomen Paperitukun hallintaan.'
         : 'Sign in to Suomen Paperitukku admin.')
@@ -1518,7 +1558,7 @@ function App() {
   const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
   const initialCheckoutSuccessRef = useRef<CheckoutSuccessState | null>(readStoredCheckoutSuccess())
   const initialCheckoutSuccess = initialCheckoutSuccessRef.current
-  const [lang] = useState<Lang>('fi')
+  const lang: Lang = 'fi'
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
   const [categories, setCategories] = useState<CategoryDef[]>(initialCatalog.categories)
   const [, setCatalogLoading] = useState(!hasInitialCatalog)
@@ -1611,10 +1651,17 @@ function App() {
   const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [adminOrdersError, setAdminOrdersError] = useState('')
+  const [adminCustomers, setAdminCustomers] = useState<AdminCustomer[]>([])
+  const [adminCustomersLoading, setAdminCustomersLoading] = useState(false)
+  const [adminCustomersError, setAdminCustomersError] = useState('')
+  const [adminCustomersNotice, setAdminCustomersNotice] = useState('')
+  const [customerActionCustomerId, setCustomerActionCustomerId] = useState<string | null>(null)
+  const [customerActionType, setCustomerActionType] = useState<'approve' | 'delete' | null>(null)
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
   const isGuestCheckout = routeState.type === 'checkout' && routeState.guestCheckout && !customerProfile
   const selectedPaymentMethod = isGuestCheckout ? 'card' : checkoutForm.paymentMethod
   const previousStorePageRef = useRef(currentPage)
+  const checkoutErrorRef = useRef<HTMLDivElement | null>(null)
   const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
   const categoriesForFilters = categories
@@ -1856,21 +1903,28 @@ function App() {
         ...prev,
         paymentMethod: 'card' as const,
         billingCompany: prev.billingCompany || prev.company,
-        billingAddress: prev.billingAddress || prev.deliveryAddress,
-        billingZip: prev.billingZip || prev.deliveryZip,
-        billingCity: prev.billingCity || prev.deliveryCity,
       }
 
       const changed =
         next.paymentMethod !== prev.paymentMethod
         || next.billingCompany !== prev.billingCompany
-        || next.billingAddress !== prev.billingAddress
-        || next.billingZip !== prev.billingZip
-        || next.billingCity !== prev.billingCity
 
       return changed ? next : prev
     })
   }, [isGuestCheckout])
+
+  useEffect(() => {
+    if (!formError || routeState.type !== 'checkout') {
+      return
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      checkoutErrorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      checkoutErrorRef.current?.focus({ preventScroll: true })
+    })
+
+    return () => window.cancelAnimationFrame(frameId)
+  }, [formError, routeState.type])
 
   useEffect(() => {
     if (!cartToast) {
@@ -1993,7 +2047,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [lang, routeState.paytrailResult, routeState.type])
+  }, [lang, routeState.guestCheckout, routeState.paytrailResult, routeState.type])
 
   useEffect(() => {
     if (routeState.legacyProductId && productCatalog.length > 0) {
@@ -2047,7 +2101,7 @@ function App() {
     if (routeState.type === 'paytrail-return') {
       applyUtilitySeo(
         lang === 'fi' ? 'Maksun vahvistus | Suomen Paperitukku' : 'Payment confirmation | Suomen Paperitukku',
-        lang === 'fi' ? 'Paytrail-maksun vahvistus.' : 'Paytrail payment confirmation.',
+        lang === 'fi' ? 'Korttimaksun vahvistus.' : 'Card payment confirmation.',
         routeState.paytrailResult === 'cancel' ? '/kassa/paytrail/cancel' : '/kassa/paytrail/success',
       )
       return
@@ -2074,6 +2128,7 @@ function App() {
   useEffect(() => {
     if (isAdminPage && adminAuthed) {
       void loadAdminOrders()
+      void loadAdminCustomers()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAdminPage, adminAuthed])
@@ -2388,6 +2443,23 @@ function App() {
   const total = roundCurrency(subtotal + shipping)
   const vatAmount = roundCurrency(grossPrice(total) - total)
   const grossTotal = grossPrice(total)
+  const showFinalPricing = routeState.type === 'checkout'
+  const calculatedAtCheckoutText = lang === 'fi' ? 'Lasketaan kassalla' : 'Calculated at checkout'
+  const deliverySummaryValue = totalItems === 0
+    ? '-'
+    : showFinalPricing || shipping === 0
+      ? formatDelivery(shipping, lang)
+      : calculatedAtCheckoutText
+  const vatSummaryValue = totalItems === 0
+    ? '-'
+    : showFinalPricing
+      ? `${formatPrice(vatAmount, lang)} €`
+      : calculatedAtCheckoutText
+  const grossTotalSummaryValue = totalItems === 0
+    ? '-'
+    : showFinalPricing
+      ? `${formatPrice(grossTotal, lang)} €`
+      : calculatedAtCheckoutText
   const validateCheckout = () => {
     if (!customerProfile && !isGuestCheckout) {
       return lang === 'fi' ? 'Kirjaudu sisään jatkaaksesi kassalle.' : 'Sign in to continue to checkout.'
@@ -2516,7 +2588,7 @@ function App() {
       })
       const payload = (await response.json()) as { customer?: CustomerProfile; message?: string }
       if (!response.ok) {
-        setAuthError(payload.message ?? (lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Sign in failed.'))
+        setAuthError(localizeAuthMessage(payload.message, lang) ?? (lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Sign in failed.'))
         return
       }
 
@@ -2583,7 +2655,7 @@ function App() {
       })
       const payload = (await response.json()) as { message?: string; mailWarning?: boolean }
       if (!response.ok) {
-        setAuthError(payload.message ?? (lang === 'fi' ? 'Tilin luonti epäonnistui.' : 'Account creation failed.'))
+        setAuthError(localizeAuthMessage(payload.message, lang) ?? (lang === 'fi' ? 'Tilin luonti epäonnistui.' : 'Account creation failed.'))
         return
       }
 
@@ -2591,11 +2663,11 @@ function App() {
       setAuthNotice(
         payload.mailWarning
           ? (lang === 'fi'
-              ? 'Tili luotiin, mutta tervetulosähköpostia ei saatu lähetettyä juuri nyt. Kirjaudu sisään jatkaaksesi.'
-              : 'Account created, but the welcome email could not be sent right now. Sign in to continue.')
+              ? 'Tili luotiin odottamaan hyv\u00E4ksynt\u00E4\u00E4, mutta vahvistuss\u00E4hk\u00F6postia ei saatu l\u00E4hetetty\u00E4 juuri nyt. Hyv\u00E4ksynn\u00E4st\u00E4 l\u00E4htee uusi viesti.'
+              : 'Account created and is waiting for approval, but the confirmation email could not be sent right now. A new email will be sent after approval.')
           : (lang === 'fi'
-              ? 'Tili luotiin onnistuneesti. Kirjaudu sisään jatkaaksesi tilausta.'
-              : 'Account created successfully. Sign in to continue your order.'),
+              ? 'Tili luotiin ja l\u00E4hetettiin hyv\u00E4ksytt\u00E4v\u00E4ksi. Saat s\u00E4hk\u00F6postin, kun yll\u00E4pito on hyv\u00E4ksynyt tilin.'
+              : 'Account created and sent for approval. You will receive an email once the admin approves the account.'),
       )
       setLoginForm({ email: registerForm.email.trim(), password: '' })
       setRegisterForm({
@@ -2610,7 +2682,7 @@ function App() {
       navigateTo(buildAuthHref('login', nextPath), true)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
-      setAuthError(lang === 'fi' ? 'Tilin luonti epäonnistui.' : 'Account creation failed.')
+      setAuthError(lang === 'fi' ? 'Tilin luonti ep\u00E4onnistui.' : 'Account creation failed.')
     } finally {
       setAuthLoading(false)
     }
@@ -2667,6 +2739,11 @@ function App() {
     setAdminAuthed(false)
     setAdminSessionLoading(false)
     setAdminOrders([])
+    setAdminCustomers([])
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+    setCustomerActionCustomerId(null)
+    setCustomerActionType(null)
     setAdminError(lang === 'fi' ? 'Kirjautuminen vanheni. Kirjaudu uudelleen.' : 'Your session expired. Please sign in again.')
   }
 
@@ -2686,7 +2763,7 @@ function App() {
       const payload = (await response.json()) as { message?: string }
       if (!response.ok) {
         setAdminAuthed(false)
-        setAdminError(payload.message ?? (lang === 'fi' ? 'Väärä käyttäjä tai salasana.' : 'Invalid username or password.'))
+        setAdminError(localizeAdminMessage(payload.message, lang) ?? (lang === 'fi' ? 'Väärä käyttäjä tai salasana.' : 'Invalid username or password.'))
         return
       }
 
@@ -2716,6 +2793,11 @@ function App() {
     setIsAdminPage(false)
     setAdminOrders([])
     setAdminOrdersError('')
+    setAdminCustomers([])
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+    setCustomerActionCustomerId(null)
+    setCustomerActionType(null)
   }
 
   const syncCatalogState = (payload: CatalogPayload) => {
@@ -2746,6 +2828,28 @@ function App() {
     }
   }
 
+  const loadAdminCustomers = async () => {
+    setAdminCustomersLoading(true)
+    setAdminCustomersError('')
+    try {
+      const response = await adminFetch('/api/admin/customers')
+      const payload = (await response.json()) as { customers?: AdminCustomer[]; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminCustomersError(payload.message ?? (lang === 'fi' ? 'Käyttäjien haku epäonnistui.' : 'Failed to load customers.'))
+        return
+      }
+      setAdminCustomers(Array.isArray(payload.customers) ? payload.customers : [])
+    } catch {
+      setAdminCustomersError(lang === 'fi' ? 'Käyttäjien haku epäonnistui.' : 'Failed to load customers.')
+    } finally {
+      setAdminCustomersLoading(false)
+    }
+  }
+
   const markOrderShipped = async (orderId: string) => {
     setShipActionOrderId(orderId)
     setAdminOrdersError('')
@@ -2769,6 +2873,96 @@ function App() {
       setAdminOrdersError(lang === 'fi' ? 'Lähetysviestin lähetys epäonnistui.' : 'Failed to send shipped email.')
     } finally {
       setShipActionOrderId(null)
+    }
+  }
+
+  const approveAdminCustomer = async (customerId: string) => {
+    setCustomerActionCustomerId(customerId)
+    setCustomerActionType('approve')
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+    try {
+      const response = await adminFetch(`/api/admin/customers/${customerId}/approve`, {
+        method: 'POST',
+      })
+      const payload = (await response.json()) as { customer?: AdminCustomer; message?: string; mailWarning?: boolean }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.customer) {
+        setAdminCustomersError(localizeAdminMessage(payload.message, lang) ?? (lang === 'fi' ? 'Käyttäjän hyväksyntä epäonnistui.' : 'Failed to approve customer.'))
+        return
+      }
+
+      setAdminCustomers((prev) =>
+        prev
+          .map((item) => (item.id === customerId ? payload.customer! : item))
+          .sort((left, right) => {
+            if (left.approvalStatus !== right.approvalStatus) {
+              return left.approvalStatus === 'pending' ? -1 : 1
+            }
+            return right.createdAt.localeCompare(left.createdAt)
+          }),
+      )
+      setAdminCustomersNotice(
+        payload.mailWarning
+          ? (lang === 'fi'
+              ? 'Käyttäjä hyväksyttiin, mutta hyväksyntäsähköpostia ei saatu lähetettyä juuri nyt.'
+              : 'Customer approved, but the approval email could not be sent right now.')
+          : (lang === 'fi'
+              ? 'Käyttäjä hyväksyttiin ja sähköposti lähetettiin.'
+              : 'Customer approved and approval email sent.'),
+      )
+    } catch {
+      setAdminCustomersError(lang === 'fi' ? 'Käyttäjän hyväksyntä epäonnistui.' : 'Failed to approve customer.')
+    } finally {
+      setCustomerActionCustomerId(null)
+      setCustomerActionType(null)
+    }
+  }
+
+  const deleteAdminCustomer = async (customerId: string) => {
+    const customer = adminCustomers.find((item) => item.id === customerId)
+    if (!customer) {
+      return
+    }
+
+    const confirmed = window.confirm(
+      lang === 'fi'
+        ? `Poistetaanko käyttäjä ${customer.companyName} (${customer.email})?`
+        : `Delete customer ${customer.companyName} (${customer.email})?`,
+    )
+
+    if (!confirmed) {
+      return
+    }
+
+    setCustomerActionCustomerId(customerId)
+    setCustomerActionType('delete')
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+    try {
+      const response = await adminFetch(`/api/admin/customers/${customerId}`, {
+        method: 'DELETE',
+      })
+      const payload = (await response.json()) as { message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminCustomersError(localizeAdminMessage(payload.message, lang) ?? (lang === 'fi' ? 'Käyttäjän poisto epäonnistui.' : 'Failed to delete customer.'))
+        return
+      }
+
+      setAdminCustomers((prev) => prev.filter((item) => item.id !== customerId))
+      setAdminCustomersNotice(lang === 'fi' ? 'Käyttäjä poistettiin.' : 'Customer deleted.')
+    } catch {
+      setAdminCustomersError(lang === 'fi' ? 'Käyttäjän poisto epäonnistui.' : 'Failed to delete customer.')
+    } finally {
+      setCustomerActionCustomerId(null)
+      setCustomerActionType(null)
     }
   }
 
@@ -3201,6 +3395,7 @@ function App() {
   const adminPages = Math.max(1, Math.ceil(adminFilteredProducts.length / pageSize))
   const safeAdminPage = Math.min(adminPage, adminPages)
   const adminPageItems = adminFilteredProducts.slice((safeAdminPage - 1) * pageSize, safeAdminPage * pageSize)
+  const pendingAdminCustomersCount = adminCustomers.filter((customer) => customer.approvalStatus === 'pending').length
   const customerDisplayName = getDisplayName(customerProfile)
   const renderOrderSuccessCard = () => (
     <div className="order-success-shell">
@@ -3223,7 +3418,7 @@ function App() {
         <p>
           {paymentReturnMessage
             || (checkoutSuccess?.paymentStatus === 'paid'
-              ? (lang === 'fi' ? 'Paytrail-maksu onnistui ja tilausvahvistus on lÃ¤hetetty sÃ¤hkÃ¶postiin.' : 'Your Paytrail payment succeeded and the confirmation email has been sent.')
+              ? (lang === 'fi' ? 'Korttimaksu onnistui ja tilausvahvistus on lähetetty sähköpostiin.' : 'Your card payment succeeded and the confirmation email has been sent.')
               : t.checkoutSuccess)}
         </p>
         {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
@@ -3285,9 +3480,14 @@ function App() {
       </div>
     </section>
   )
+  const useStickyFooterLayout =
+    routeState.type === 'auth'
+    || routeState.type === 'cart'
+    || routeState.type === 'checkout'
+    || routeState.type === 'paytrail-return'
 
   return (
-    <div className="page">
+    <div className={`page ${useStickyFooterLayout ? 'page-sticky-footer' : ''}`}>
       <header className="top">
         <a
           className="brand"
@@ -3408,10 +3608,37 @@ function App() {
                     </>
                   )}
                 </div>
-                <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} type="button" onClick={goToCart}>
-                  <span>{t.cartTitle}: {totalItems}</span>
-                  {totalItems > 0 && <strong>{formatPrice(total, lang)} €</strong>}
-                </button>
+                <div className="quick-actions">
+                  <div className="mobile-utility-actions" aria-label="Pikatoiminnot">
+                    <button
+                      className="ghost mobile-icon-button"
+                      type="button"
+                      aria-label={customerProfile ? 'Avaa yritystili' : 'Kirjaudu'}
+                      onClick={() => {
+                        if (customerProfile) {
+                          navigateTo('/tili')
+                          return
+                        }
+                        goToAuth('login', headerAuthNextPath)
+                      }}
+                    >
+                      <img className="mobile-icon-image" src={accountCircleIcon} alt="" aria-hidden="true" />
+                    </button>
+                    <button
+                      className="ghost mobile-icon-button mobile-cart-button"
+                      type="button"
+                      aria-label={`Avaa ostoskori, ${totalItems} tuotetta`}
+                      onClick={goToCart}
+                    >
+                      <img className="mobile-icon-image" src={cartCircleIcon} alt="" aria-hidden="true" />
+                      {totalItems > 0 && <span className="mobile-cart-badge">{totalItems}</span>}
+                    </button>
+                  </div>
+                  <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} type="button" onClick={goToCart}>
+                    <span>{t.cartTitle}: {totalItems}</span>
+                    {totalItems > 0 && <strong>{formatPrice(subtotal, lang)} €</strong>}
+                  </button>
+                </div>
               </>
             )}
             {isAdminPage && (
@@ -3953,6 +4180,82 @@ function App() {
                       </div>
                     )}
                   </div>
+
+                  <div className="admin-customers">
+                    <div className="admin-orders-head">
+                      <div className="admin-section-title">
+                        <h3>{lang === 'fi' ? 'K\u00E4ytt\u00E4j\u00E4t' : 'Customers'}</h3>
+                        <span className="muted small">
+                          {lang === 'fi'
+                            ? `${pendingAdminCustomersCount} odottaa hyv\u00E4ksynt\u00E4\u00E4`
+                            : `${pendingAdminCustomersCount} waiting for approval`}
+                        </span>
+                      </div>
+                      <button className="ghost tiny" type="button" onClick={() => void loadAdminCustomers()} disabled={adminCustomersLoading}>
+                        {lang === 'fi' ? 'P\u00E4ivit\u00E4' : 'Refresh'}
+                      </button>
+                    </div>
+                    {adminCustomersNotice && <div className="success">{adminCustomersNotice}</div>}
+                    {adminCustomersError && <div className="error">{adminCustomersError}</div>}
+                    {adminCustomersLoading ? (
+                      <p className="muted">{lang === 'fi' ? 'Haetaan k\u00E4ytt\u00E4ji\u00E4...' : 'Loading customers...'}</p>
+                    ) : adminCustomers.length === 0 ? (
+                      <p className="muted">{lang === 'fi' ? 'Ei k\u00E4ytt\u00E4ji\u00E4 viel\u00E4.' : 'No customers yet.'}</p>
+                    ) : (
+                      <div className="admin-customers-list">
+                        {adminCustomers.map((customer) => (
+                          <div key={customer.id} className="admin-customer-card">
+                            <div className="admin-order-top">
+                              <div>
+                                <strong>{customer.companyName}</strong>
+                                <p className="muted small">
+                                  {[customer.firstName, customer.lastName].filter(Boolean).join(' ') || customer.email}
+                                </p>
+                              </div>
+                              <span className={`status-badge ${customer.approvalStatus === 'approved' ? 'is-approved' : 'is-pending'}`}>
+                                {customer.approvalStatus === 'approved'
+                                  ? (lang === 'fi' ? 'Hyv\u00E4ksytty' : 'Approved')
+                                  : (lang === 'fi' ? 'Odottaa hyv\u00E4ksynt\u00E4\u00E4' : 'Pending approval')}
+                              </span>
+                            </div>
+                            <div className="admin-customer-grid">
+                              <p><strong>{lang === 'fi' ? 'S\u00E4hk\u00F6posti' : 'Email'}:</strong> {customer.email}</p>
+                              <p><strong>{lang === 'fi' ? 'Puhelin' : 'Phone'}:</strong> {customer.phone || '-'}</p>
+                              <p><strong>{lang === 'fi' ? 'Y-tunnus' : 'Business ID'}:</strong> {customer.businessId || '-'}</p>
+                              <p><strong>{lang === 'fi' ? 'Luotu' : 'Created'}:</strong> {formatDateTime(customer.createdAt, lang)}</p>
+                              <p>
+                                <strong>{lang === 'fi' ? 'Hyv\u00E4ksytty' : 'Approved'}:</strong> {customer.approvedAt ? formatDateTime(customer.approvedAt, lang) : '-'}
+                              </p>
+                            </div>
+                            <div className="admin-customer-actions">
+                              <button
+                                className="ghost tiny"
+                                type="button"
+                                disabled={customer.approvalStatus === 'approved' || customerActionCustomerId === customer.id}
+                                onClick={() => void approveAdminCustomer(customer.id)}
+                              >
+                                {customer.approvalStatus === 'approved'
+                                  ? (lang === 'fi' ? 'Jo hyv\u00E4ksytty' : 'Already approved')
+                                  : customerActionCustomerId === customer.id && customerActionType === 'approve'
+                                    ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
+                                    : (lang === 'fi' ? 'Hyv\u00E4ksy + email' : 'Approve + email')}
+                              </button>
+                              <button
+                                className="ghost tiny danger"
+                                type="button"
+                                disabled={customerActionCustomerId === customer.id}
+                                onClick={() => void deleteAdminCustomer(customer.id)}
+                              >
+                                {customerActionCustomerId === customer.id && customerActionType === 'delete'
+                                  ? (lang === 'fi' ? 'Poistetaan...' : 'Deleting...')
+                                  : (lang === 'fi' ? 'Poista' : 'Delete')}
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             )}
@@ -4020,7 +4323,7 @@ function App() {
                       type="button"
                       onClick={() => goToAuth('register', routeState.nextPath, true)}
                     >
-                      {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                      {lang === 'fi' ? 'Rekister\u00F6idy' : 'Register'}
                     </button>
                   </div>
 
@@ -4036,7 +4339,7 @@ function App() {
                       }}
                     >
                       <div className="field">
-                        <label>{lang === 'fi' ? 'Sähköposti' : 'Email'}</label>
+                        <label>{lang === 'fi' ? 'S\u00E4hk\u00F6posti' : 'Email'}</label>
                         <input
                           type="email"
                           value={loginForm.email}
@@ -4052,7 +4355,7 @@ function App() {
                         />
                       </div>
                       <button className="primary" type="submit" disabled={authLoading}>
-                        {authLoading ? (lang === 'fi' ? 'Kirjaudutaan...' : 'Signing in...') : (lang === 'fi' ? 'Kirjaudu sisään' : 'Sign in')}
+                        {authLoading ? (lang === 'fi' ? 'Kirjaudutaan...' : 'Signing in...') : (lang === 'fi' ? 'Kirjaudu sis\u00E4\u00E4n' : 'Sign in')}
                       </button>
                     </form>
                   ) : (
@@ -4097,12 +4400,15 @@ function App() {
                       <div className="field">
                         <label>{lang === 'fi' ? 'Puhelinnumero' : 'Phone number'}</label>
                         <input
+                          type="tel"
+                          inputMode="tel"
+                          placeholder="+358 40 123 4567"
                           value={registerForm.phone}
                           onChange={(event) => setRegisterForm((prev) => ({ ...prev, phone: normalizePhoneInput(event.target.value) }))}
                         />
                       </div>
                       <div className="field">
-                        <label>{lang === 'fi' ? 'Sähköposti' : 'Email'}</label>
+                        <label>{lang === 'fi' ? 'S\u00E4hk\u00F6posti' : 'Email'}</label>
                         <input
                           type="email"
                           value={registerForm.email}
@@ -4118,7 +4424,7 @@ function App() {
                         />
                       </div>
                       <button className="primary" type="submit" disabled={authLoading}>
-                        {authLoading ? (lang === 'fi' ? 'Luodaan tiliä...' : 'Creating account...') : (lang === 'fi' ? 'Luo tili' : 'Create account')}
+                        {authLoading ? (lang === 'fi' ? 'Luodaan tili\u00E4...' : 'Creating account...') : (lang === 'fi' ? 'Luo tili' : 'Create account')}
                       </button>
                     </form>
                   )}
@@ -4126,11 +4432,11 @@ function App() {
 
                 <div className="card auth-side-card">
                   <span className="auth-kicker">{lang === 'fi' ? 'Tilaa yrityksellesi' : 'Order for your company'}</span>
-                  <h2>{lang === 'fi' ? 'Miten uusi tilausvirta toimii?' : 'How the new ordering flow works'}</h2>
+                  <h2>{lang === 'fi' ? 'Näin tilaaminen toimii' : 'How ordering works'}</h2>
                   <p className="muted">
                     {lang === 'fi'
-                      ? 'Voit luoda yritystilin lasku- ja Paytrail-maksuja varten tai jatkaa ilman tiliä suoraan Paytrail-korttimaksuun.'
-                      : 'Create a company account for invoice and Paytrail payments, or continue without an account directly to Paytrail card payment.'}
+                      ? 'Voit luoda yritystilin lasku- ja korttimaksuja varten tai jatkaa ilman tili\u00E4 suoraan korttimaksuun.'
+                      : 'Create a company account for invoice and card payments, or continue without an account directly to card payment.'}
                   </p>
                   <div className="account-grid">
                     <div>
@@ -4138,7 +4444,7 @@ function App() {
                       <strong>{totalItems} {lang === 'fi' ? 'tuotetta' : 'items'}</strong>
                     </div>
                     <div>
-                      <span className="muted small">{lang === 'fi' ? 'Välisummaa' : 'Subtotal'}</span>
+                      <span className="muted small">{lang === 'fi' ? 'V\u00E4lisumma' : 'Subtotal'}</span>
                       <strong>{formatPrice(subtotal, lang)} €</strong>
                     </div>
                   </div>
@@ -4257,16 +4563,16 @@ function App() {
                     <strong>{formatPrice(subtotal, lang)} €</strong>
                   </div>
                   <div>
-                    <span>{lang === 'fi' ? 'Toimitus alv 0%' : 'Delivery excl. VAT'}</span>
-                    <strong>{totalItems === 0 ? '-' : formatDelivery(shipping, lang)}</strong>
+                    <span>{lang === 'fi' ? 'Toimitus' : 'Delivery'}</span>
+                    <strong>{deliverySummaryValue}</strong>
                   </div>
                   <div>
                     <span>{lang === 'fi' ? 'ALV 25,5 %' : 'VAT 25.5%'}</span>
-                    <strong>{totalItems === 0 ? '-' : `${formatPrice(vatAmount, lang)} €`}</strong>
+                    <strong>{vatSummaryValue}</strong>
                   </div>
                   <div className="cart-total">
-                    <span>{lang === 'fi' ? 'Verollinen yhteensä' : 'Total incl. VAT'}</span>
-                    <strong>{formatPrice(grossTotal, lang)} €</strong>
+                    <span>{lang === 'fi' ? 'Verollinen yhteens\u00E4' : 'Total incl. VAT'}</span>
+                    <strong>{grossTotalSummaryValue}</strong>
                   </div>
                 </div>
 
@@ -4274,24 +4580,24 @@ function App() {
                   <div className="account-note">
                     <p className="muted">
                       {lang === 'fi'
-                        ? 'Voit kirjautua yritystilille tai jatkaa rekisteröitymättä suoraan Paytrail-korttimaksuun.'
-                        : 'Sign in with your company account or continue directly to Paytrail card payment without registering.'}
+                        ? 'Voit kirjautua yritystilille tai jatkaa rekister\u00F6itym\u00E4tt\u00E4 suoraan korttimaksuun.'
+                        : 'Sign in with your company account or continue directly to card payment without registering.'}
                     </p>
                     <div className="auth-actions">
                       <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
                         {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
                       </button>
                       <button className="ghost" type="button" onClick={() => goToAuth('register', '/kassa')}>
-                        {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                        {lang === 'fi' ? 'Rekister\u00F6idy' : 'Register'}
                       </button>
                       <button className="ghost" type="button" onClick={goToGuestCheckout}>
-                        {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
+                        {lang === 'fi' ? 'Jatka rekister\u00F6im\u00E4tt\u00E4' : 'Continue without registering'}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="account-note">
-                    <span className="muted small">{lang === 'fi' ? 'Kirjautunut käyttäjä' : 'Signed in as'}</span>
+                    <span className="muted small">{lang === 'fi' ? 'Kirjautunut k\u00E4ytt\u00E4j\u00E4' : 'Signed in as'}</span>
                     <strong>{customerProfile.companyName}</strong>
                     <span className="muted small">{customerDisplayName}</span>
                   </div>
@@ -4301,16 +4607,7 @@ function App() {
                   <button className="primary full" type="button" onClick={goToCheckout} disabled={cartItems.length === 0 || customerSessionLoading}>
                     {lang === 'fi' ? 'Jatka kassalle' : 'Continue to checkout'}
                   </button>
-                ) : (
-                  <div className="cart-summary-actions">
-                    <button className="primary full" type="button" onClick={() => goToAuth('login', '/kassa')} disabled={cartItems.length === 0 || customerSessionLoading}>
-                      {lang === 'fi' ? 'Kirjaudu kassalle' : 'Sign in to checkout'}
-                    </button>
-                    <button className="ghost full" type="button" onClick={goToGuestCheckout} disabled={cartItems.length === 0}>
-                      {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
-                    </button>
-                  </div>
-                )}
+                ) : null}
               </aside>
             </div>
           </section>
@@ -4321,68 +4618,35 @@ function App() {
                 <h1>{lang === 'fi' ? 'Kassa' : 'Checkout'}</h1>
                 <p className="muted">
                   {lang === 'fi'
-                    ? (isGuestCheckout ? 'Täytä yhteystiedot ja toimitusosoite. Maksu jatkuu suoraan turvalliseen Paytrail-korttimaksuun.' : 'Täytä osoitetiedot ja valitse maksatko laskulla vai Paytrailin korttimaksulla.')
-                    : (isGuestCheckout ? 'Fill in your contact details and delivery address. Payment continues directly to secure Paytrail card payment.' : 'Fill in your addresses and choose invoice or Paytrail card payment.')}
+                    ? (isGuestCheckout ? 'T\u00E4yt\u00E4 yhteystiedot ja toimitusosoite. Maksu jatkuu suoraan Paytrail-maksuun.' : 'T\u00E4yt\u00E4 osoitetiedot ja valitse maksatko laskulla vai korttimaksulla.')
+                    : (isGuestCheckout ? 'Fill in your contact details and delivery address. Payment continues directly to Paytrail payment.' : 'Fill in your addresses and choose invoice or card payment.')}
                 </p>
               </div>
             </div>
 
             {orderSent ? (
-              <div className="order-success-shell">
-                <div className="order-confetti" aria-hidden="true">
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                  <span />
-                </div>
-                <div className="success order-success">
-                  <div className="order-success-check" aria-hidden="true">✓</div>
-                  <span className={`payment-status-pill ${checkoutSuccess?.paymentStatus === 'paid' ? 'success' : 'warning'}`}>
-                    {checkoutSuccess?.paymentStatus === 'paid'
-                      ? (lang === 'fi' ? 'Maksettu' : 'Paid')
-                      : (lang === 'fi' ? 'Lasku' : 'Invoice')}
-                  </span>
-                  <h3>{checkoutSuccess?.paymentStatus === 'paid' ? (lang === 'fi' ? 'Maksu vastaanotettu' : 'Payment received') : (lang === 'fi' ? 'Tilaus vastaanotettu' : 'Order received')}</h3>
-                  <p>
-                    {paymentReturnMessage
-                      || (checkoutSuccess?.paymentStatus === 'paid'
-                        ? (lang === 'fi' ? 'Paytrail-maksu onnistui ja tilausvahvistus on lähetetty sähköpostiin.' : 'Your Paytrail payment succeeded and the confirmation email has been sent.')
-                        : t.checkoutSuccess)}
-                  </p>
-                  {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
-                  <div className="order-success-actions">
-                    <button className="primary" type="button" onClick={goHome}>
-                      {lang === 'fi' ? 'Takaisin etusivulle' : 'Back to home'}
-                    </button>
-                    <button className="ghost" type="button" onClick={() => goToSection('products')}>
-                      {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'}
-                    </button>
-                  </div>
-                </div>
-              </div>
+              renderOrderSuccessCard()
             ) : customerSessionLoading && !isGuestCheckout ? (
               <div className="card auth-card">
-                <p className="muted">{lang === 'fi' ? 'Tarkistetaan asiakastiliä...' : 'Checking your customer account...'}</p>
+                <p className="muted">{lang === 'fi' ? 'Tarkistetaan asiakastili\u00E4...' : 'Checking your customer account...'}</p>
               </div>
             ) : !customerProfile && !isGuestCheckout ? (
               <div className="card auth-required-card">
                 <h2>{lang === 'fi' ? 'Kirjaudu jatkaaksesi kassalle' : 'Sign in to continue to checkout'}</h2>
                 <p className="muted">
                   {lang === 'fi'
-                    ? 'Voit kirjautua yritystilille tai jatkaa rekisteröitymättä suoraan Paytrail-korttimaksuun.'
-                    : 'Sign in with your company account or continue directly to Paytrail card payment without registering.'}
+                    ? 'Voit kirjautua yritystilille tai jatkaa rekister\u00F6itym\u00E4tt\u00E4 suoraan korttimaksuun.'
+                    : 'Sign in with your company account or continue directly to card payment without registering.'}
                 </p>
                 <div className="auth-actions">
                   <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
                     {lang === 'fi' ? 'Kirjaudu' : 'Sign in'}
                   </button>
                   <button className="ghost" type="button" onClick={() => goToAuth('register', '/kassa')}>
-                    {lang === 'fi' ? 'Rekisteröidy' : 'Register'}
+                    {lang === 'fi' ? 'Rekister\u00F6idy' : 'Register'}
                   </button>
                   <button className="ghost" type="button" onClick={goToGuestCheckout}>
-                    {lang === 'fi' ? 'Jatka rekisteröimättä' : 'Continue without registering'}
+                    {lang === 'fi' ? 'Jatka rekister\u00F6im\u00E4tt\u00E4' : 'Continue without registering'}
                   </button>
                 </div>
               </div>
@@ -4390,18 +4654,18 @@ function App() {
               <div className="checkout checkout-page-layout">
                 <div className="checkout-main">
                   <div className="card account-summary-card">
-                    <span className="auth-kicker">{isGuestCheckout ? (lang === 'fi' ? 'Korttimaksu ilman tiliä' : 'Card payment without account') : (lang === 'fi' ? 'Kirjautunut asiakas' : 'Signed-in customer')}</span>
+                    <span className="auth-kicker">{isGuestCheckout ? (lang === 'fi' ? 'Korttimaksu ilman tili\u00E4' : 'Card payment without account') : (lang === 'fi' ? 'Kirjautunut asiakas' : 'Signed-in customer')}</span>
                     <h2>{isGuestCheckout ? (checkoutForm.company || (lang === 'fi' ? 'Vieraskassa' : 'Guest checkout')) : customerProfile?.companyName}</h2>
                     <p className="muted">
                       {isGuestCheckout
-                        ? [checkoutForm.contact, checkoutForm.email, checkoutForm.phone].filter(Boolean).join(' · ') || (lang === 'fi' ? 'Täytä tiedot jatkaaksesi Paytrailiin.' : 'Fill in your details to continue to Paytrail.')
-                        : `${customerDisplayName} · ${customerProfile?.email ?? ''} · ${customerProfile?.phone ?? ''}`}
+                        ? [checkoutForm.contact, checkoutForm.email, checkoutForm.phone].filter(Boolean).join(' \u00B7 ') || (lang === 'fi' ? 'T\u00E4yt\u00E4 tiedot jatkaaksesi korttimaksuun.' : 'Fill in your details to continue to card payment.')
+                        : `${customerDisplayName} \u00B7 ${customerProfile?.email ?? ''} \u00B7 ${customerProfile?.phone ?? ''}`}
                     </p>
                   </div>
 
                   {orderSent ? null : (
                     <>
-                      {formError && <div className="error">{formError}</div>}
+                      {formError && <div ref={checkoutErrorRef} className="error" tabIndex={-1}>{formError}</div>}
                       <form
                         className="checkout-form checkout-form-wide"
                         onSubmit={(event) => {
@@ -4419,7 +4683,7 @@ function App() {
                                 onChange={(event) => {
                                   const nextValue = event.target.value
                                   updateForm('company', nextValue)
-                                  if (!checkoutForm.billingCompany) {
+                                  if (!checkoutForm.billingCompany || checkoutForm.billingCompany === checkoutForm.company) {
                                     updateForm('billingCompany', nextValue)
                                   }
                                 }}
@@ -4436,7 +4700,13 @@ function App() {
                               </div>
                               <div className="field">
                                 <label>{t.form.phone}</label>
-                                <input value={checkoutForm.phone} onChange={(event) => updateForm('phone', normalizePhoneInput(event.target.value))} />
+                                <input
+                                  type="tel"
+                                  inputMode="tel"
+                                  placeholder="+358 40 123 4567"
+                                  value={checkoutForm.phone}
+                                  onChange={(event) => updateForm('phone', normalizePhoneInput(event.target.value))}
+                                />
                               </div>
                             </div>
                           </div>
@@ -4446,50 +4716,29 @@ function App() {
                           <h2>{lang === 'fi' ? 'Toimitusosoite' : 'Delivery address'}</h2>
                           <div className="field">
                             <label>{t.form.address}</label>
-                            <input
-                              value={checkoutForm.deliveryAddress}
-                              onChange={(event) => {
-                                const nextValue = event.target.value
-                                updateForm('deliveryAddress', nextValue)
-                                if (isGuestCheckout && !checkoutForm.billingAddress) {
-                                  updateForm('billingAddress', nextValue)
-                                }
-                              }}
-                            />
+                            <input value={checkoutForm.deliveryAddress} onChange={(event) => updateForm('deliveryAddress', event.target.value)} />
                           </div>
                           <div className="form-row">
                             <div className="field">
                               <label>{t.form.zip}</label>
-                              <input
-                                value={checkoutForm.deliveryZip}
-                                inputMode="numeric"
-                                onChange={(event) => {
-                                  const nextValue = formatPostalCodeInput(event.target.value)
-                                  updateForm('deliveryZip', nextValue)
-                                  if (isGuestCheckout && !checkoutForm.billingZip) {
-                                    updateForm('billingZip', nextValue)
-                                  }
-                                }}
-                              />
+                              <input value={checkoutForm.deliveryZip} inputMode="numeric" onChange={(event) => updateForm('deliveryZip', formatPostalCodeInput(event.target.value))} />
                             </div>
                             <div className="field">
                               <label>{t.form.city}</label>
-                              <input
-                                value={checkoutForm.deliveryCity}
-                                onChange={(event) => {
-                                  const nextValue = event.target.value
-                                  updateForm('deliveryCity', nextValue)
-                                  if (isGuestCheckout && !checkoutForm.billingCity) {
-                                    updateForm('billingCity', nextValue)
-                                  }
-                                }}
-                              />
+                              <input value={checkoutForm.deliveryCity} onChange={(event) => updateForm('deliveryCity', event.target.value)} />
                             </div>
                           </div>
                         </div>
 
                         <div className="checkout-form-block">
-                          <h2>{lang === 'fi' ? 'Laskutustiedot' : 'Billing details'}</h2>
+                          <div className="checkout-form-block-head">
+                            <h2>{lang === 'fi' ? 'Laskutustiedot' : 'Billing details'}</h2>
+                            <span className="checkout-form-hint">
+                              {lang === 'fi'
+                                ? 'T\u00E4yt\u00E4 n\u00E4m\u00E4 tiedot, jos maksat laskulla.'
+                                : 'Fill these in if you order by invoice or if the billing details differ from delivery.'}
+                            </span>
+                          </div>
                           <div className="field">
                             <label>{t.form.billingCompany}</label>
                             <input value={checkoutForm.billingCompany} onChange={(event) => updateForm('billingCompany', event.target.value)} />
@@ -4527,9 +4776,11 @@ function App() {
                                   onChange={() => updateForm('paymentMethod', 'invoice')}
                                 />
                                 <div className="payment-method-body">
-                                  <span className="payment-method-icon invoice" aria-hidden="true">
-                                    <span />
-                                  </span>
+                                  <div className="payment-method-media">
+                                    <span className="payment-method-icon invoice" aria-hidden="true">
+                                      <span />
+                                    </span>
+                                  </div>
                                   <div className="payment-method-copy">
                                     <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
                                     <span className="muted small">{lang === 'fi' ? 'Yrityslasku hyväksytyille asiakkaille' : 'Company invoice for approved customers'}</span>
@@ -4546,11 +4797,26 @@ function App() {
                                 disabled={isGuestCheckout}
                               />
                               <div className="payment-method-body">
-                                <img className="payment-method-logo" src={paytrailBadge} alt="Paytrail" />
+                                <div className="payment-method-media">
+                                  <img className="payment-method-logo" src={paytrailBadge} alt="Paytrail" />
+                                </div>
                                 <div className="payment-method-copy">
-                                  <strong>Paytrail</strong>
-                                  <span className="muted small">{lang === 'fi' ? 'Ohjaus turvalliseen Paytrail-maksuun' : 'Redirect to secure Paytrail payment'}</span>
-                                  <img className="payment-trust-strip" src={paytrailCards} alt={lang === 'fi' ? 'Korttimaksut Paytrailin kautta' : 'Card payments via Paytrail'} />
+                                  <strong>{lang === 'fi' ? 'Korttimaksu' : 'Card payment'}</strong>
+                                  <span className="muted small">{lang === 'fi' ? 'Ohjaus Paytrail-maksuun' : 'Redirect to Paytrail payment'}</span>
+                                  <div
+                                    className="payment-brand-row"
+                                    aria-label={lang === 'fi' ? 'Hyväksytyt kortit: Visa, Mastercard ja American Express' : 'Accepted cards: Visa, Mastercard and American Express'}
+                                  >
+                                    <span className="payment-brand-pill">
+                                      <img className="payment-brand-logo visa" src={visaLogo} alt="" aria-hidden="true" />
+                                    </span>
+                                    <span className="payment-brand-pill">
+                                      <img className="payment-brand-logo mastercard" src={mastercardLogo} alt="" aria-hidden="true" />
+                                    </span>
+                                    <span className="payment-brand-pill">
+                                      <img className="payment-brand-logo amex" src={americanExpressLogo} alt="" aria-hidden="true" />
+                                    </span>
+                                  </div>
                                 </div>
                               </div>
                             </label>
@@ -4565,7 +4831,7 @@ function App() {
                             {placingOrder
                               ? (lang === 'fi' ? 'Käsitellään...' : 'Processing...')
                               : selectedPaymentMethod === 'card'
-                                ? (lang === 'fi' ? 'Siirry Paytrailiin' : 'Continue to Paytrail')
+                                ? (lang === 'fi' ? 'Siirry korttimaksuun' : 'Continue to card payment')
                                 : (lang === 'fi' ? 'Lähetä tilaus' : 'Place order')}
                           </button>
                         </div>
@@ -4601,33 +4867,37 @@ function App() {
                       <span>{lang === 'fi' ? 'Välisummaa alv 0%' : 'Subtotal excl. VAT'}</span>
                       <strong>{formatPrice(subtotal, lang)} €</strong>
                     </div>
-                    <div>
-                      <span>{lang === 'fi' ? 'Toimitus alv 0%' : 'Delivery excl. VAT'}</span>
-                      <strong>{totalItems === 0 ? '-' : `${formatPrice(shipping, lang)} €`}</strong>
-                    </div>
-                    <div>
-                      <span>{lang === 'fi' ? 'ALV 25,5 %' : 'VAT 25.5%'}</span>
-                      <strong>{formatPrice(vatAmount, lang)} €</strong>
-                    </div>
-                    <div className="cart-total">
-                      <span>{lang === 'fi' ? 'Verollinen yhteensä' : 'Total incl. VAT'}</span>
-                      <strong>{formatPrice(grossTotal, lang)} €</strong>
-                    </div>
+                  <div>
+                      <span>{lang === 'fi' ? 'Toimitus' : 'Delivery'}</span>
+                      <strong>{deliverySummaryValue}</strong>
                   </div>
+                  <div>
+                    <span>{lang === 'fi' ? 'ALV 25,5 %' : 'VAT 25.5%'}</span>
+                      <strong>{vatSummaryValue}</strong>
+                  </div>
+                  <div className="cart-total">
+                    <span>{lang === 'fi' ? 'Verollinen yhteensä' : 'Total incl. VAT'}</span>
+                      <strong>{grossTotalSummaryValue}</strong>
+                  </div>
+                </div>
                   <div className="account-note payment-options-note">
                     <span className="muted small">{lang === 'fi' ? 'Maksutavat' : 'Payment options'}</span>
                     <div className="payment-option-list">
                       {!isGuestCheckout && (
                         <div className="payment-option-chip">
-                          <span className="payment-method-icon invoice small" aria-hidden="true">
-                            <span />
-                          </span>
+                          <div className="payment-option-chip-media">
+                            <span className="payment-method-icon invoice small" aria-hidden="true">
+                              <span />
+                            </span>
+                          </div>
                           <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
                         </div>
                       )}
                       <div className="payment-option-chip">
-                        <img className="payment-option-chip-logo" src={paytrailBadge} alt="Paytrail" />
-                        <strong>Paytrail</strong>
+                        <div className="payment-option-chip-media">
+                          <img className="payment-option-chip-logo" src={paytrailBadge} alt="Paytrail" />
+                        </div>
+                        <strong>{lang === 'fi' ? 'Korttimaksu' : 'Card payment'}</strong>
                       </div>
                     </div>
                   </div>
@@ -4642,8 +4912,8 @@ function App() {
                 <h1>{lang === 'fi' ? 'Maksun vahvistus' : 'Payment confirmation'}</h1>
                 <p className="muted">
                   {lang === 'fi'
-                    ? 'Vahvistamme Paytrail-maksun lopputuloksen ennen tilauksen viimeistelyä.'
-                    : 'We are confirming the Paytrail payment result before finalizing your order.'}
+                    ? 'Vahvistamme korttimaksun lopputuloksen ennen tilauksen viimeistelyä.'
+                    : 'We are confirming the card payment result before finalizing your order.'}
                 </p>
               </div>
             </div>
@@ -4850,6 +5120,21 @@ function App() {
 
         {utilityHighlights}
 
+        <section className="section mobile-store-tools" aria-label={lang === 'fi' ? 'Mobiilin kauppatyökalut' : 'Mobile store tools'}>
+          <div className="mobile-store-tools-shell">
+            <div className="mobile-store-tools-copy">
+              <strong>{lang === 'fi' ? 'Etsi tuotteita nopeasti' : 'Search products quickly'}</strong>
+              <span className="muted small">
+                {lang === 'fi' ? 'Mobiilihaun löydät tästä headerin sijaan.' : 'On mobile, product search lives here instead of the header.'}
+              </span>
+            </div>
+            <label className="mobile-store-search">
+              <span className="search-icon">{lang === 'fi' ? 'Haku' : 'Search'}</span>
+              <input value={productQuery} onChange={(event) => handleTopSearch(event.target.value)} placeholder={t.search} />
+            </label>
+          </div>
+        </section>
+
         <section className="section" id="categories">
           <h2 className="sr-only">{t.categoriesTitle}</h2>
           <div className="category-grid">
@@ -4916,7 +5201,6 @@ function App() {
             <div>
               <h2>{t.productsTitle}</h2>
               <p className="products-info-line">{t.productsBillingNote}</p>
-              <p className="products-info-line shipping-note">{t.productsFreeShippingNote}</p>
             </div>
           </div>
           <div className="sort sort-floating">
@@ -5081,7 +5365,7 @@ function App() {
       {/* Legacy checkout overlay disabled.
 
       
-                      <div className="order-success-check" aria-hidden="true">✓</div>
+        <div className="order-success-check" aria-hidden="true">{'\u2713'}</div>
                       <h3>{lang === 'fi' ? 'Tilaus valmis' : 'Order complete'}</h3>
                       <p>{t.checkoutSuccess}</p>
                       {lastOrderId && <p className="order-id">{lang === 'fi' ? 'Tilausnumero' : 'Order ID'}: <strong>{lastOrderId}</strong></p>}
@@ -5122,7 +5406,7 @@ function App() {
                         </div>
                         <div className="field">
                           <label>{t.form.phone}</label>
-                          <input value={checkoutForm.phone} onChange={(e) => updateForm('phone', e.target.value)} />
+                          <input value={checkoutForm.phone} onChange={(e) => updateForm('phone', normalizePhoneInput(e.target.value))} />
                         </div>
                         <div className="field">
                           <label>{t.form.address}</label>

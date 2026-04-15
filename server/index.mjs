@@ -27,13 +27,18 @@ import {
   renderSpaPage,
 } from './site-render.mjs'
 import {
+  approveCustomer,
   businessIdToVatId,
   createCustomer,
+  deleteCustomer,
   ensureCustomerStore,
   getCustomerByEmail,
   getCustomerById,
+  isCustomerApproved,
   isValidBusinessId,
   normalizeBusinessId,
+  readCustomers,
+  toAdminCustomer,
   toPublicCustomer,
   updateCustomerAddresses,
   verifyPassword,
@@ -51,36 +56,49 @@ import {
   getRequestPublicSiteUrl,
   getRequestSiteUrl,
   isPublicHttpsUrl,
+  readFirstEnvValue,
 } from './env-utils.mjs'
 
-dotenv.config()
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const projectRoot = path.resolve(__dirname, '..')
+const envFiles = [
+  '.env.local',
+  `.env.${process.env.NODE_ENV || 'development'}`,
+  '.env',
+]
+
+for (const envFile of envFiles) {
+  const envPath = path.join(projectRoot, envFile)
+  if (fs.existsSync(envPath)) {
+    dotenv.config({ path: envPath, override: false })
+  }
+}
 
 const app = express()
 app.set('trust proxy', true)
 
 const port = Number(process.env.PORT ?? process.env.API_PORT ?? 8787)
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const projectRoot = path.resolve(__dirname, '..')
 const dataDir = path.resolve(projectRoot, 'data')
 const ordersFile = path.join(dataDir, 'orders.json')
 const publicDir = path.join(projectRoot, 'public')
 const distDir = path.join(projectRoot, 'dist')
 
-const smtpUser = process.env.SMTP_USER ?? ''
-const smtpPass = process.env.SMTP_PASS ?? ''
-const smtpHost = String(process.env.SMTP_HOST ?? '').trim()
-const smtpName = String(process.env.SMTP_NAME ?? '').trim()
-const smtpPort = Number.parseInt(String(process.env.SMTP_PORT ?? ''), 10)
-const smtpSecureEnv = String(process.env.SMTP_SECURE ?? '').trim().toLowerCase()
-const mailFrom = process.env.MAIL_FROM ?? smtpUser
-const ownerNotificationEmail = process.env.MAIL_TO ?? 'umut.uygur30@gmail.com'
+const smtpUser = readFirstEnvValue(process.env, ['SMTP_USER', 'SMTP_USERNAME', 'MAIL_USER', 'MAIL_USERNAME', 'GMAIL_USER'])
+const smtpPass = readFirstEnvValue(process.env, ['SMTP_PASS', 'SMTP_PASSWORD', 'MAIL_PASS', 'MAIL_PASSWORD', 'GMAIL_APP_PASSWORD', 'GMAIL_PASS'])
+const smtpHost = readFirstEnvValue(process.env, ['SMTP_HOST', 'MAIL_HOST'])
+const smtpName = readFirstEnvValue(process.env, ['SMTP_NAME', 'MAIL_NAME'])
+const smtpPort = Number.parseInt(readFirstEnvValue(process.env, ['SMTP_PORT', 'MAIL_PORT']), 10)
+const smtpSecureEnv = readFirstEnvValue(process.env, ['SMTP_SECURE', 'MAIL_SECURE']).toLowerCase()
+const mailFrom = readFirstEnvValue(process.env, ['MAIL_FROM', 'SMTP_FROM']) || smtpUser
+const ownerNotificationEmail = readFirstEnvValue(process.env, ['MAIL_TO', 'OWNER_EMAIL', 'ORDER_NOTIFICATION_EMAIL']) || 'umut.uygur30@gmail.com'
 const fallbackOwnerEmail = 'umut.uygur30@gmail.com'
 const ownerNotificationRecipients = Array.from(new Set([ownerNotificationEmail.trim(), fallbackOwnerEmail].filter(Boolean)))
-const adminUser = String(process.env.ADMIN_USER ?? '').trim()
-const adminPass = String(process.env.ADMIN_PASS ?? '').trim()
+const adminUser = readFirstEnvValue(process.env, ['ADMIN_USER', 'ADMIN_USERNAME', 'ADMIN_EMAIL'])
+const adminPass = readFirstEnvValue(process.env, ['ADMIN_PASS', 'ADMIN_PASSWORD'])
 const siteUrlEnv = getConfiguredSiteUrl(process.env)
 const publicSiteUrlEnv = getPublicSiteUrlFromEnv(process.env)
 const paytrailSiteUrlEnv = getConfiguredPaytrailSiteUrl(process.env) || publicSiteUrlEnv
+const customerPortalUrl = siteUrlEnv || publicSiteUrlEnv || 'https://suomenpaperitukku.fi'
 const preferredHost = siteUrlEnv ? new URL(siteUrlEnv).host.toLowerCase() : ''
 const adminSessionCookieName = 'spt_admin_session'
 const adminSessionMaxAgeMs = 1000 * 60 * 60 * 12
@@ -98,7 +116,7 @@ const freeShippingThreshold = 300
 const vatMultiplier = 1.255
 
 if (!smtpUser || !smtpPass) {
-  console.warn('[mail] SMTP credentials are missing, so welcome and order emails are disabled.')
+  console.warn('[mail] SMTP credentials are missing, so welcome and order emails are disabled. Set SMTP_USER/SMTP_PASS or aliases such as SMTP_USERNAME/SMTP_PASSWORD.')
 }
 
 const setStaticAssetHeaders = (res, filePath) => {
@@ -577,6 +595,14 @@ const createCustomerSession = (customerId) => {
   return sessionId
 }
 
+const clearCustomerSessionsForCustomer = (customerId) => {
+  for (const [sessionId, session] of customerSessions.entries()) {
+    if (session.customerId === customerId) {
+      customerSessions.delete(sessionId)
+    }
+  }
+}
+
 const getAdminSession = (req) => {
   cleanupExpiredAdminSessions()
   const cookies = parseCookies(req.headers.cookie)
@@ -618,7 +644,7 @@ const getCustomerSession = (req) => {
   }
 
   const customer = getCustomerById(session.customerId)
-  if (!customer) {
+  if (!customer || !isCustomerApproved(customer)) {
     customerSessions.delete(sessionId)
     return null
   }
@@ -695,11 +721,39 @@ const resolveStoredImageValue = (value, existingProduct) => {
   return String(existingImages[index] ?? nextValue)
 }
 
-const getOrderLang = (order) => (order.lang === 'en' ? 'en' : 'fi')
+const getOrderLang = () => 'fi'
+
+const fixMailMojibake = (value) => {
+  const replacements = [
+    ['Ã¤', 'ä'],
+    ['Ã¶', 'ö'],
+    ['Ã¥', 'å'],
+    ['Ã„', 'Ä'],
+    ['Ã–', 'Ö'],
+    ['Ã…', 'Å'],
+    ['â‚¬', '€'],
+    ['â€“', '–'],
+    ['â€”', '—'],
+  ]
+
+  if (typeof value === 'string') {
+    return replacements.reduce((current, [from, to]) => current.split(from).join(to), value)
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => fixMailMojibake(item))
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([key, entry]) => [key, fixMailMojibake(entry)]))
+  }
+
+  return value
+}
 
 const getMailText = (lang) => {
   if (lang === 'en') {
-    return {
+    return fixMailMojibake({
       thanks: 'Thank you for your order!',
       orderNumber: 'Your order number is',
       product: 'Product',
@@ -729,50 +783,62 @@ const getMailText = (lang) => {
       subjectConfirm: 'Order confirmation',
       subjectNew: 'New order',
       subjectShipped: 'Your order is on the way',
-      subjectWelcome: 'Welcome to Suomen Paperitukku',
+      subjectWelcome: 'Your account request was received',
+      subjectApproved: 'Your account is now approved',
       subjectNewAccount: 'New customer account',
-      welcomeTitle: 'Welcome to Suomen Paperitukku!',
-      welcomeBody: 'Your company account has been created successfully.',
+      welcomeTitle: 'Your account request was received',
+      welcomeBody: 'Your company account is waiting for admin approval before you can sign in.',
+      approvedTitle: 'Your account is now approved',
+      approvedBody: 'Your company account is active and ready for ordering.',
       newAccount: 'New customer account',
-    }
+      accountStatus: 'Account status',
+      pending: 'Pending approval',
+      approved: 'Approved',
+    })
   }
 
-  return {
+  return fixMailMojibake({
     thanks: 'Kiitos tilauksesta!',
     orderNumber: 'Tilausnumerosi on',
     product: 'Tuote',
-    quantity: 'Maara',
+    quantity: 'Määrä',
     price: 'Hinta',
-    subtotal: 'Valisummaa',
+    subtotal: 'Välisummaa',
     shipping: 'Toimitus',
-    total: 'Yhteensa',
+    total: 'Yhteensä',
     deliveryAddress: 'Toimitusosoite',
     newOrder: 'Uusi tilaus',
     company: 'Yritys',
-    contact: 'Yhteyshenkilo',
-    email: 'Sahkoposti',
+    contact: 'Yhteyshenkilö',
+    email: 'Sähköposti',
     phone: 'Puhelin',
     businessId: 'Y-tunnus',
     paymentMethod: 'Maksutapa',
     vat: 'ALV',
-    grossTotal: 'Verollinen yhteensa',
+    grossTotal: 'Verollinen yhteensä',
     billingAddress: 'Laskutusosoite',
     invoice: 'Lasku',
     card: 'Korttimaksu (Paytrail)',
     shippedTitle: 'Tilauksesi on matkalla',
-    shippedBody: 'Tilaus on nyt lahetetty',
+    shippedBody: 'Tilaus on nyt lähetetty',
     shippedThanks: 'Kiitos tilauksesta Suomen Paperitukulta.',
-    questions: 'Jos sinulla on kysyttavaa tilauksesta, vastaathan tahan viestiin.',
-    regards: 'Ystavallisin terveisin',
+    questions: 'Jos sinulla on kysyttävää tilauksesta, vastaathan tähän viestiin.',
+    regards: 'Ystävällisin terveisin',
     subjectConfirm: 'Tilausvahvistus',
     subjectNew: 'Uusi tilaus',
     subjectShipped: 'Tilauksesi on matkalla',
-    subjectWelcome: 'Tervetuloa Suomen Paperitukkuun',
+    subjectWelcome: 'Tilitietosi vastaanotettiin',
+    subjectApproved: 'Tilisi on nyt hyväksytty',
     subjectNewAccount: 'Uusi asiakastili',
-    welcomeTitle: 'Tervetuloa Suomen Paperitukkuun!',
-    welcomeBody: 'Yritystilisi on nyt luotu onnistuneesti.',
+    welcomeTitle: 'Tilitietosi vastaanotettiin',
+    welcomeBody: 'Yritystilisi odottaa ylläpidon hyväksyntää ennen kuin voit kirjautua sisään.',
+    approvedTitle: 'Tilisi on nyt hyväksytty',
+    approvedBody: 'Yritystilisi on aktivoitu ja voit kirjautua sisään sekä tehdä tilauksia.',
     newAccount: 'Uusi asiakastili',
-  }
+    accountStatus: 'Tilin tila',
+    pending: 'Odottaa hyväksyntää',
+    approved: 'Hyväksytty',
+  })
 }
 
 const emailFooter = (lang) => {
@@ -911,7 +977,8 @@ const customerWelcomeHtml = (customer) => {
     ${escapeHtml(getOrderContactName(customer))}<br />
     ${escapeHtml(customer.email)}
   </p>
-  <p style="margin:0 0 10px;">Voit nyt kirjautua sisaan ja tehda tilauksia osoitteessa suomenpaperitukku.fi.</p>
+  <p style="margin:0 0 10px;"><strong>${t.accountStatus}:</strong> ${t.pending}</p>
+  <p style="margin:0 0 10px;">Lähetämme uuden viestin heti kun tili on hyväksytty. Kirjautuminen avautuu hyväksynnän jälkeen osoitteessa ${escapeHtml(customerPortalUrl)}.</p>
   ${emailFooter(lang)}
 </div>
 `
@@ -927,6 +994,26 @@ const merchantNewCustomerHtml = (customer) => {
   <p style="margin:0 0 8px;"><strong>${t.businessId}:</strong> ${escapeHtml(customer.businessId)}</p>
   <p style="margin:0 0 8px;"><strong>${t.phone}:</strong> ${escapeHtml(customer.phone)}</p>
   <p style="margin:0 0 8px;"><strong>${t.email}:</strong> ${escapeHtml(customer.email)}</p>
+  <p style="margin:0 0 8px;"><strong>${t.accountStatus}:</strong> ${t.pending}</p>
+  <p style="margin:0;">Hyväksy tai poista tili admin-paneelin käyttäjät-osiosta.</p>
+  ${emailFooter('fi')}
+</div>
+`
+}
+
+const customerApprovedHtml = (customer) => {
+  const t = getMailText('fi')
+  return `
+<div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+  <h2 style="margin:0 0 8px;">${t.approvedTitle}</h2>
+  <p style="margin:0 0 10px;">${t.approvedBody}</p>
+  <p style="margin:0 0 10px;">
+    ${escapeHtml(customer.companyName)}<br />
+    ${escapeHtml(getOrderContactName(customer))}<br />
+    ${escapeHtml(customer.email)}
+  </p>
+  <p style="margin:0 0 10px;"><strong>${t.accountStatus}:</strong> ${t.approved}</p>
+  <p style="margin:0 0 10px;">Voit nyt kirjautua sisään osoitteessa <a href="${escapeHtml(customerPortalUrl)}">${escapeHtml(customerPortalUrl)}</a> ja tehdä tilauksia yritystililläsi.</p>
   ${emailFooter('fi')}
 </div>
 `
@@ -948,9 +1035,24 @@ const shippedHtml = (order) => {
 const sendMailBatch = async (messages, context = 'mail') => {
   try {
     const transporter = createTransporter()
+    const failures = []
+
     for (const message of messages) {
-      await transporter.sendMail(message)
+      try {
+        await transporter.sendMail(message)
+      } catch (error) {
+        failures.push(error instanceof Error ? error.message : 'Failed to send email')
+        console.error(`[mail] ${context} failed for ${message?.to ?? 'unknown recipient'}`, error)
+      }
     }
+
+    if (failures.length > 0) {
+      return {
+        ok: false,
+        message: failures.join(' | '),
+      }
+    }
+
     return { ok: true, message: '' }
   } catch (error) {
     console.error(`[mail] ${context} failed`, error)
@@ -978,6 +1080,19 @@ const sendRegistrationEmails = async (customer) =>
       },
     ],
     `registration:${customer.email}`,
+  )
+
+const sendCustomerApprovedEmail = async (customer) =>
+  sendMailBatch(
+    [
+      {
+        from: mailFrom,
+        to: customer.email,
+        subject: getMailText('fi').subjectApproved,
+        html: customerApprovedHtml(customer),
+      },
+    ],
+    `customer-approved:${customer.email}`,
   )
 
 const sendOrderEmails = async (order) => {
@@ -1077,7 +1192,7 @@ const validateProductPayload = (payload) => {
   return null
 }
 
-const buildPaytrailItems = (items, shipping, lang) => {
+const buildPaytrailItems = (items, shipping) => {
   const paytrailItems = items.map((item) => ({
     unitPrice: toMinorUnits(item.unitPrice),
     units: item.quantity,
@@ -1093,7 +1208,7 @@ const buildPaytrailItems = (items, shipping, lang) => {
       units: 1,
       vatPercentage: 25.5,
       productCode: 'shipping',
-      description: lang === 'en' ? 'Shipping' : 'Toimitus',
+      description: 'Toimitus',
       category: 'shipping',
     })
   }
@@ -1287,6 +1402,7 @@ app.post('/api/customer/register', async (req, res) => {
       phone,
       email,
       password,
+      approvalStatus: 'pending',
     })
 
     const mailResult = await sendRegistrationEmails(customer)
@@ -1307,6 +1423,11 @@ app.post('/api/customer/login', (req, res) => {
 
   if (!customer || !verifyPassword(password, customer)) {
     res.status(401).json({ message: 'Invalid email or password.' })
+    return
+  }
+
+  if (!isCustomerApproved(customer)) {
+    res.status(403).json({ message: 'Account pending approval.' })
     return
   }
 
@@ -1345,7 +1466,9 @@ app.post('/api/admin/login', (req, res) => {
   const pass = String(req.body?.pass ?? '').trim()
 
   if (!adminUser || !adminPass) {
-    res.status(503).json({ message: 'Admin login is not configured on the server.' })
+    res.status(503).json({
+      message: 'Admin login is not configured on the server. Set ADMIN_USER (or ADMIN_USERNAME) and ADMIN_PASS (or ADMIN_PASSWORD).',
+    })
     return
   }
 
@@ -1368,6 +1491,56 @@ app.post('/api/admin/logout', (req, res) => {
 
   res.setHeader('Set-Cookie', clearSessionCookie(req, adminSessionCookieName))
   res.json({ ok: true })
+})
+
+app.get('/api/admin/customers', requireAdmin, (req, res) => {
+  const customers = readCustomers()
+    .slice()
+    .sort((left, right) => {
+      if (left.approvalStatus !== right.approvalStatus) {
+        return left.approvalStatus === 'pending' ? -1 : 1
+      }
+      return right.createdAt.localeCompare(left.createdAt)
+    })
+    .map((customer) => toAdminCustomer(customer))
+    .filter(Boolean)
+
+  res.json({ customers })
+})
+
+app.post('/api/admin/customers/:customerId/approve', requireAdmin, async (req, res) => {
+  const existingCustomer = getCustomerById(req.params.customerId)
+  if (!existingCustomer) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  const customer = isCustomerApproved(existingCustomer) ? existingCustomer : approveCustomer(existingCustomer.id)
+  if (!customer) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  const mailResult = isCustomerApproved(existingCustomer) ? { ok: true } : await sendCustomerApprovedEmail(customer)
+  res.json({
+    ok: true,
+    mailWarning: !mailResult.ok,
+    customer: toAdminCustomer(customer),
+  })
+})
+
+app.delete('/api/admin/customers/:customerId', requireAdmin, (req, res) => {
+  const customer = deleteCustomer(req.params.customerId)
+  if (!customer) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  clearCustomerSessionsForCustomer(customer.id)
+  res.json({
+    ok: true,
+    customer: toAdminCustomer(customer),
+  })
 })
 
 app.get('/api/catalog', (_req, res) => {
@@ -1454,7 +1627,7 @@ app.post('/api/checkout/invoice', requireCustomer, async (req, res) => {
     const customer = req.customer
     const items = getCatalogOrderItems(req.body?.items)
     const checkout = normalizeCheckoutInput(req.body)
-    const lang = req.body?.lang === 'en' ? 'en' : 'fi'
+    const lang = 'fi'
 
     if (items.length === 0) {
       res.status(400).json({ message: 'Cart is empty.' })
@@ -1519,7 +1692,7 @@ app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
     const customer = req.customer
     const items = getCatalogOrderItems(req.body?.items)
     const checkout = normalizeCheckoutInput(req.body)
-    const lang = req.body?.lang === 'en' ? 'en' : 'fi'
+    const lang = 'fi'
 
     if (items.length === 0) {
       res.status(400).json({ message: 'Cart is empty.' })
@@ -1545,7 +1718,7 @@ app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
       },
     })
 
-    const paytrailItems = buildPaytrailItems(items, order.shipping, lang)
+    const paytrailItems = buildPaytrailItems(items, order.shipping)
 
     const paytrailResponse = await requestPaytrail({
       config: paytrailConfig,
@@ -1556,7 +1729,7 @@ app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
         reference: order.id,
         amount: toMinorUnits(order.total),
         currency: 'EUR',
-        language: lang === 'en' ? 'EN' : 'FI',
+        language: 'FI',
         orderId: order.id,
         items: paytrailItems,
         customer: {
@@ -1639,7 +1812,7 @@ app.post('/api/checkout/paytrail/guest/start', async (req, res) => {
     const guestCustomer = normalizeGuestCustomerInput(req.body)
     const items = getCatalogOrderItems(req.body?.items)
     const checkout = normalizeCheckoutInput(req.body)
-    const lang = req.body?.lang === 'en' ? 'en' : 'fi'
+    const lang = 'fi'
 
     if (items.length === 0) {
       res.status(400).json({ message: 'Cart is empty.' })
@@ -1670,7 +1843,7 @@ app.post('/api/checkout/paytrail/guest/start', async (req, res) => {
         stamp: `spt-${Date.now()}-${crypto.randomBytes(6).toString('hex')}`,
       },
     })
-    const paytrailItems = buildPaytrailItems(items, order.shipping, lang)
+    const paytrailItems = buildPaytrailItems(items, order.shipping)
 
     const paytrailResponse = await requestPaytrail({
       config: paytrailConfig,
@@ -1681,7 +1854,7 @@ app.post('/api/checkout/paytrail/guest/start', async (req, res) => {
         reference: order.id,
         amount: toMinorUnits(order.total),
         currency: 'EUR',
-        language: lang === 'en' ? 'EN' : 'FI',
+        language: 'FI',
         orderId: order.id,
         items: paytrailItems,
         customer: {
@@ -1775,7 +1948,7 @@ app.post('/api/orders', async (req, res) => {
     const payload = req.body ?? {}
     const customer = payload.customer ?? {}
     const items = Array.isArray(payload.items) ? payload.items : []
-    const lang = payload.lang === 'en' ? 'en' : 'fi'
+    const lang = 'fi'
     if (!customer.email || !customer.company || items.length === 0) {
       res.status(400).json({ message: 'Missing order payload fields' })
       return

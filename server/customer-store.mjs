@@ -41,27 +41,9 @@ export const normalizeBusinessId = (value) => {
   return cleaned
 }
 
-const businessIdChecksumWeights = [7, 9, 10, 5, 8, 4, 2]
-
 export const isValidBusinessId = (value) => {
   const normalized = normalizeBusinessId(value)
-  if (!/^\d{7}-\d$/.test(normalized)) {
-    return false
-  }
-
-  const digits = normalized.replace('-', '')
-  const checksumSource = digits
-    .slice(0, 7)
-    .split('')
-    .reduce((sum, digit, index) => sum + Number(digit) * businessIdChecksumWeights[index], 0)
-  const remainder = checksumSource % 11
-
-  if (remainder === 1) {
-    return false
-  }
-
-  const expectedCheckDigit = remainder === 0 ? 0 : 11 - remainder
-  return Number(digits[7]) === expectedCheckDigit
+  return /^\d{7}-\d$/.test(normalized)
 }
 
 export const businessIdToVatId = (value) => {
@@ -94,11 +76,18 @@ const normalizeAddress = (input) => {
 const normalizeCustomer = (customer) => {
   const createdAt = String(customer?.createdAt ?? new Date().toISOString())
   const updatedAt = String(customer?.updatedAt ?? createdAt)
+  const approvalStatus = String(customer?.approvalStatus ?? 'approved').trim() === 'pending' ? 'pending' : 'approved'
+  const approvedAt =
+    approvalStatus === 'approved'
+      ? String(customer?.approvedAt ?? createdAt).trim() || createdAt
+      : null
 
   return {
     id: String(customer?.id ?? `cus_${Date.now()}`),
     createdAt,
     updatedAt,
+    approvalStatus,
+    approvedAt,
     firstName: String(customer?.firstName ?? '').trim(),
     lastName: String(customer?.lastName ?? '').trim(),
     companyName: String(customer?.companyName ?? '').trim(),
@@ -164,6 +153,8 @@ export const getCustomerByEmail = (email) => {
   return readCustomers().find((customer) => customer.email === normalizedEmail) ?? null
 }
 
+export const isCustomerApproved = (customer) => customer?.approvalStatus === 'approved'
+
 export const createPasswordDigest = (password, salt = crypto.randomBytes(16).toString('hex')) => {
   const digest = crypto.scryptSync(String(password ?? ''), salt, 64)
   return {
@@ -207,6 +198,8 @@ export const createCustomer = (input) => {
     id: `cus_${Date.now()}`,
     createdAt: now,
     updatedAt: now,
+    approvalStatus: input?.approvalStatus,
+    approvedAt: input?.approvedAt,
     firstName: input?.firstName,
     lastName: input?.lastName,
     companyName: input?.companyName,
@@ -218,6 +211,66 @@ export const createCustomer = (input) => {
   })
 
   writeCustomers([customer, ...customers])
+  return customer
+}
+
+const replaceCustomer = (customerId, updater) => {
+  const normalizedCustomerId = String(customerId ?? '').trim()
+  if (!normalizedCustomerId) {
+    return null
+  }
+
+  const customers = readCustomers()
+  let updatedCustomer = null
+
+  const nextCustomers = customers.map((customer) => {
+    if (customer.id !== normalizedCustomerId) {
+      return customer
+    }
+
+    const draft = updater(customer)
+    if (!draft) {
+      return customer
+    }
+
+    updatedCustomer = normalizeCustomer({
+      ...customer,
+      ...draft,
+      id: customer.id,
+      updatedAt: String(draft?.updatedAt ?? new Date().toISOString()),
+    })
+
+    return updatedCustomer
+  })
+
+  if (!updatedCustomer) {
+    return null
+  }
+
+  writeCustomers(nextCustomers)
+  return updatedCustomer
+}
+
+export const approveCustomer = (customerId) =>
+  replaceCustomer(customerId, (customer) => ({
+    ...customer,
+    approvalStatus: 'approved',
+    approvedAt: new Date().toISOString(),
+  }))
+
+export const deleteCustomer = (customerId) => {
+  const normalizedCustomerId = String(customerId ?? '').trim()
+  if (!normalizedCustomerId) {
+    return null
+  }
+
+  const customers = readCustomers()
+  const customer = customers.find((item) => item.id === normalizedCustomerId) ?? null
+  if (!customer) {
+    return null
+  }
+
+  writeCustomers(customers.filter((item) => item.id !== normalizedCustomerId))
   return customer
 }
 
@@ -259,6 +312,8 @@ export const toPublicCustomer = (customer) => {
 
   return {
     id: customer.id,
+    approvalStatus: customer.approvalStatus,
+    approvedAt: customer.approvedAt ?? null,
     firstName: customer.firstName,
     lastName: customer.lastName,
     companyName: customer.companyName,
@@ -268,5 +323,25 @@ export const toPublicCustomer = (customer) => {
     defaultShippingAddress: customer.defaultShippingAddress ?? null,
     defaultBillingCompany: customer.defaultBillingCompany ?? customer.companyName,
     defaultBillingAddress: customer.defaultBillingAddress ?? null,
+  }
+}
+
+export const toAdminCustomer = (customer) => {
+  if (!customer) {
+    return null
+  }
+
+  return {
+    id: customer.id,
+    createdAt: customer.createdAt,
+    updatedAt: customer.updatedAt,
+    approvalStatus: customer.approvalStatus,
+    approvedAt: customer.approvedAt ?? null,
+    firstName: customer.firstName,
+    lastName: customer.lastName,
+    companyName: customer.companyName,
+    businessId: customer.businessId,
+    phone: customer.phone,
+    email: customer.email,
   }
 }

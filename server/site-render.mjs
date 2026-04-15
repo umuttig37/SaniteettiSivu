@@ -734,7 +734,7 @@ const getUtilityPageMeta = (siteUrl, route) => {
     case 'paytrail-return':
       return {
         title: 'Maksun vahvistus | Suomen Paperitukku',
-        description: 'Paytrail-maksun vahvistus.',
+        description: 'Korttimaksun vahvistus.',
         canonical: absoluteUrl(siteUrl, route?.paytrailResult === 'cancel' ? '/kassa/paytrail/cancel' : '/kassa/paytrail/success'),
       }
     default:
@@ -761,7 +761,7 @@ const renderUtilityMarkup = (route) => {
     description = 'Ladataan asiakastilia...'
   } else if (route.type === 'paytrail-return') {
     title = 'Maksun vahvistus'
-    description = 'Vahvistetaan Paytrail-maksun tila...'
+    description = 'Vahvistetaan korttimaksun tila...'
   }
 
   return `
