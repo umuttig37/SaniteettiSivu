@@ -476,7 +476,7 @@ const normalizeCheckoutInput = (payload = {}) => {
 
   return {
     deliveryAddress,
-    billingCompany: String(payload?.billingCompany ?? payload?.company ?? '').trim(),
+    billingCompany: String(payload?.billingCompany || payload?.company || '').trim(),
     billingAddress,
     notes: String(payload?.notes ?? '').trim(),
     paymentMethod: payload?.paymentMethod === 'card' ? 'card' : 'invoice',
@@ -507,6 +507,10 @@ const validateCheckoutInput = (checkout) => {
 
   if (!isValidPostalCode(checkout.deliveryAddress.postalCode)) {
     return 'Delivery postal code must contain 5 digits.'
+  }
+
+  if (checkout.paymentMethod === 'card') {
+    return ''
   }
 
   if (!checkout.billingCompany) {

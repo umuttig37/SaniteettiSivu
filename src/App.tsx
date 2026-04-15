@@ -2488,12 +2488,12 @@ function App() {
     if (!isValidPostalCode(checkoutForm.deliveryZip)) {
       return lang === 'fi' ? 'Toimituksen postinumerossa tulee olla 5 numeroa.' : 'Delivery postal code must contain 5 digits.'
     }
-    if (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity) {
+    if (selectedPaymentMethod === 'invoice' && (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity)) {
       return lang === 'fi'
         ? 'Täytä laskutusyritys, laskutusosoite, postinumero ja kaupunki.'
         : 'Fill in billing company, billing address, postal code and city.'
     }
-    if (!isValidPostalCode(checkoutForm.billingZip)) {
+    if (selectedPaymentMethod === 'invoice' && !isValidPostalCode(checkoutForm.billingZip)) {
       return lang === 'fi' ? 'Laskutuksen postinumerossa tulee olla 5 numeroa.' : 'Billing postal code must contain 5 digits.'
     }
     return ''
