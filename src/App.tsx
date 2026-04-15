@@ -3408,7 +3408,7 @@ function App() {
         <span />
       </div>
       <div className="success order-success">
-        <div className="order-success-check" aria-hidden="true">âœ“</div>
+        <div className="order-success-check" aria-hidden="true">{'\u2713'}</div>
         <span className={`payment-status-pill ${checkoutSuccess?.paymentStatus === 'paid' ? 'success' : 'warning'}`}>
           {checkoutSuccess?.paymentStatus === 'paid'
             ? (lang === 'fi' ? 'Maksettu' : 'Paid')
