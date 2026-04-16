@@ -167,7 +167,7 @@ type CatalogPayload = {
 }
 
 type RouteState = {
-  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'paytrail-return'
+  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'paytrail-return' | 'terms'
   slug: string | null
   categorySlug: string | null
   searchQuery: string | null
@@ -431,6 +431,7 @@ const rawText = {
       service: 'Asiakaspalvelu',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
+      terms: 'Tilaus- ja toimitusehdot',
       hours: '',
       legal: '3590057-8',
       copyright: '© 2026 Suomen Paperitukku - Kastamonu Tmi',
@@ -526,6 +527,7 @@ const rawText = {
       service: 'Customer service',
       phone: '+358 44 978 2446',
       email: 'suomenpaperitukku@gmail.com',
+      terms: 'Terms of sale and delivery',
       hours: '',
       legal: '3590057-8',
       copyright: '© 2026 Suomen Paperitukku - Kastamonu Tmi',
@@ -534,6 +536,241 @@ const rawText = {
 } as const
 
 const text = deepFixText(rawText)
+
+const termsSections = [
+  {
+    title: 'Yleistä',
+    paragraphs: [
+      'Naita Suomen Paperitukun myynti- ja toimitusehtoja sovelletaan kaikkiin verkkokaupan tilauksiin, ellei asiakkaan ja myyjan valilla ole kirjallisesti sovittu toisin. Ehdot ovat voimassa toistaiseksi.',
+      'Kaikki verkkokaupassa ilmoitetut hinnat ja mahdolliset lisamaksut ovat arvonlisaverottomia, ellei toisin ilmoiteta. Hintoihin lisataan kulloinkin voimassa oleva arvonlisavero.',
+      'Pidatamme oikeuden muutoksiin tuotteissa, hinnoissa, toimitustavoissa ja naissa ehdoissa.',
+    ],
+  },
+  {
+    title: 'Tilaaminen',
+    paragraphs: [
+      'Tilaajan tulee antaa tilauksen kasittelya ja toimitusta varten oikeat ja riittavat tiedot.',
+      'Verkkokaupasta tilaaminen edellyttaa, etta asiakas hyvaksyy verkkokaupan ehdot ja antaa omat tietonsa tasmallisesti ja totuudenmukaisesti. Jos tiedoissa on virhe, asiakkaan tulee korjata ne ilman aiheetonta viivytysta.',
+      'Suomen Paperitukku ei vastaa siita, jos tilaus, saapumisilmoitus, tilausvahvistus, toimitusvahvistus tai muu viesti ei saavu asiakkaalle puutteellisten tai virheellisten tietojen vuoksi.',
+    ],
+  },
+  {
+    title: 'Hinnat ja selvät hintavirheet',
+    paragraphs: [
+      'Verkkokaupassa nakyvat hinnat ovat voimassa toistaiseksi. Pidatamme oikeuden hintojen paivittamiseen ilman ennakkoilmoitusta.',
+      'Suomen Paperitukulla on oikeus perua tilaus, jos kyseessa on ilmeinen ja olennainen hintavirhe. Selvana hintavirheena voidaan pita esimerkiksi tilannetta, jossa tuotteen hinnaksi on merkitty 0,00 euroa, hinta puuttuu kokonaan tai ilmoitettu hinta poikkeaa selvasti tuotteen tavanomaisesta hintatasosta siten, etta virheen olisi pitanyt olla ostajalle ilmeinen.',
+    ],
+  },
+  {
+    title: 'Tuotteiden saatavuus ja mahdolliset muutokset',
+    paragraphs: [
+      'Jos tilattu tuote on loppunut varastosta tai sita ei voida toimittaa tilauksen mukaisesti, voimme ehdottaa asiakkaalle vastaavaa korvaavaa tuotetta.',
+      'Jos kyse on kayttotarkoitukseltaan ja hinnaltaan vastaavasta tuotteesta, voimme korvata tuotteen tilaukselle myos suoraan. Mikali korvaava tuote ei sovi asiakkaalle, puuttuva tuote hyvitetaan kaytetyn maksutavan mukaisesti.',
+      'Myyjalla on tarvittaessa oikeus perua kauppa. Jos jonkin tuotteen kysynta ylittaa saatavilla olevan maaran, voimme rajoittaa tilausmaaria, jotta tuotetta voidaan toimittaa mahdollisimman monelle asiakkaalle.',
+    ],
+  },
+  {
+    title: 'Ylivoimainen este',
+    paragraphs: [
+      'Suomen Paperitukku ei vastaa viivastyksista tai vahingoista, jotka johtuvat vaikutusmahdollisuuksiemme ulkopuolella olevasta esteesta, jota ei ole kohtuudella voitu ennakoida tai jonka seurauksia ei ole voitu valttaa.',
+      'Ylivoimaiseksi esteeksi voidaan katsoa esimerkiksi tyotaistelutoimet, henkiloston laaja sairastuminen, epidemiat, viranomaisrajoitukset, tuonti- ja vientikiellot, hairiot tietoliikenneyhteyksissa, sahkokatkot seka kuljetus- ja jakeluhaoriot.',
+      'Jos ylivoimainen este jatkuu yli kuukauden, seka asiakkaalla etta myyjalla on oikeus purkaa kauppa ilman vahingonkorvaus- tai viivastysseuraamuksia.',
+    ],
+  },
+  {
+    title: 'Kuluttaja-asiakkaiden palautukset',
+    paragraphs: [
+      'Kuluttaja-asiakkailla on kuluttajansuojalain mukainen 14 paivan palautus- ja vaihto-oikeus, ellei tuotteelle sovelleta lain mukaista poikkeusta.',
+      'Palautuksen edellytyksena on, etta tuote on kayttamaton, alkuperaisessa kunnossa ja mahdollisuuksien mukaan alkuperaispakkauksessa. Palautuksen toimituskulut jaavat asiakkaan maksettavaksi, ellei palautuksen syyna ole toimitusvirhe tai tuotteen virheellisyys.',
+      'Hyvitamme palautetun tuotteen maksetun hinnan ilman alkuperaisia toimituskuluja viimeistaan 14 paivan kuluessa siita, kun palautus on saapunut meille ja sen kunto on tarkastettu. Hyvitys tehdaan samalla maksutavalla, jota tilauksessa kaytettiin.',
+      'Personoiduilla tai asiakkaalle erikseen valmistetuilla tuotteilla ei ole vaihto- eika palautusoikeutta.',
+    ],
+  },
+  {
+    title: 'Yritysasiakkaiden palautukset ja tarkastusvelvollisuus',
+    paragraphs: [
+      'Vastaanottajan tulee tarkistaa toimituksen sisalto, kunto ja kollien maara vastaanoton yhteydessa. Havaitut puutteet tai vauriot on merkittava rahtikirjaan ennen vastaanottokuittausta.',
+      'Allekirjoitettu rahtikirja ilman puute- tai vauriomerkintoja katsotaan toimituksen hyvaksytyksi.',
+      'Mahdollisesta toimitusvirheesta tulee ilmoittaa Suomen Paperitukun asiakaspalveluun viimeistaan 7 arkipaivan kuluessa. Jos tuotteessa on valmistusvirhe tai muu vika, jota ei ole voitu havaita heti vastaanoton yhteydessa, voimme hyvaksy ilmoituksen myos myohemmin.',
+      'Jos toimitus ei vastaa tilausta tai tuote on virheellinen, palautus jarjestetaan asiakkaalle ilman palautuskuluja. Muista palautuksista voidaan peria 20 euron kasittelykulu seka toteutuneet rahtikustannukset.',
+      'Palautettavien tuotteiden tulee olla kayttamattomia, alkuperaispakkauksissa ja jälleenmyyntikelpoisessa kunnossa. Palautuksesta tulee aina sopia etukateen asiakaspalvelumme kanssa.',
+    ],
+  },
+  {
+    title: 'Reklamaatiot',
+    paragraphs: [
+      'Tarkista lahetys mahdollisimman pian vastaanoton jalkeen ja varmista, etta toimitus vastaa tilausta.',
+      'Jos havaitset virheen, puutteen, vaurion tai liikatoimituksen, ilmoita siita asiakaspalveluumme mahdollisimman nopeasti ja viimeistaan 7 arkipaivan kuluessa. Varaa yhteydenottoa varten esille tilausnumero, asiakasnumero, tuotteen nimi, mahdollinen tuotekoodi seka toimitettu maara.',
+      'Jos reklamaatio koskee viallista tuotetta, pida reklamoitava tuote erillaan ja kayttamattomana, kunnes jatkotoimista on sovittu asiakaspalvelumme kanssa.',
+    ],
+  },
+  {
+    title: 'Lavapalautukset',
+    paragraphs: [
+      'Mahdollisista lavapalautuksista sovitaan aina etukateen Suomen Paperitukun myynnin tai asiakaspalvelun kanssa.',
+      'Palautukseen hyvaksytaan vain ehjat ja palautukseen erikseen sovitut lavat. Mahdolliset hyvitykset, kuljetuskustannukset ja kasittelykulut maaraytyvat tapauskohtaisesti.',
+    ],
+  },
+  {
+    title: 'Toimituksen estyminen',
+    paragraphs: [
+      'Jos toimitusta ei voida toimittaa asiakkaan kanssa sovittuna ajankohtana eika esteesta ole ilmoitettu meille riittavan ajoissa, asiakkaalta voidaan veloittaa toimituksen estymisesta tai uudelleenjakelusta aiheutuneet lisakulut.',
+    ],
+  },
+  {
+    title: 'Omistuksen pidätys',
+    paragraphs: [
+      'Tuotteet sailyvat Suomen Paperitukun omaisuutena siihen saakka, kunnes niiden kauppahinta on kokonaisuudessaan maksettu.',
+    ],
+  },
+  {
+    title: 'Toimitusehdot',
+    paragraphs: [
+      'Toimitamme tuotteita valtakunnallisesti Suomessa.',
+      'Tilauksille, joiden arvo on alle 300 euroa (alv 0 %), lisataan toimitusmaksu 15 euroa (alv 0 %). Yli 300 euron (alv 0 %) tilauksille toimitus on maksuton, ellei tilaukselle synny erillisia lisakuluja.',
+      'Pidatamme oikeuden veloittaa normaalin toimitusmaksun ylittavat lisakustannukset, jos toimitus edellyttaa poikkeavia jarjestelyja, aikataulutettuja toimituksia, erilliskasittelya tai muita asiakkaasta tai toimituspaikasta johtuvia lisatoimenpiteita.',
+    ],
+  },
+  {
+    title: 'Laskutus',
+    paragraphs: [
+      'Yritysasiakkaille tarjoamme mahdollisuuden laskulla maksamiseen hyvaksytyille yritystileille. Mahdollisista asiakaskohtaisista maksuehdoista sovitaan erikseen.',
+      'Mahdollisista laskutuslisista tai muista tilauskohtaisista lisakuluista ilmoitetaan asiakkaalle tilauksen yhteydessa ennen tilauksen vahvistamista.',
+    ],
+  },
+] as const
+
+const paytrailTerms = {
+  title: 'Maksupalvelutarjoaja',
+  paragraphs: [
+    'Maksunvälityspalvelun toteuttajana ja maksupalveluntarjoajana toimii Paytrail Oyj (2122839-7) yhteistyössä suomalaisten pankkien ja luottolaitosten kanssa. Paytrail Oyj näkyy maksun saajana tiliotteella tai korttilaskulla ja välittää maksun kauppiaalle. Paytrail Oyj:llä on maksulaitoksen toimilupa. Reklamaatiotapauksissa pyydämme ottamaan ensisijaisesti yhteyttä tuotteen toimittajaan.',
+    'Paytrail Oyj, y-tunnus: 2122839-7',
+    'Innova 2',
+    'Lutakonaukio 7',
+    '40100 Jyväskylä',
+    'Puhelin: 0207 181830',
+    'paytrail.com/kuluttaja/tietoa-maksamisesta',
+  ],
+} as const
+
+void termsSections
+void paytrailTerms
+
+const renderedTermsSections = [
+  {
+    title: 'Yleist\u00E4',
+    paragraphs: [
+      'N\u00E4it\u00E4 Suomen Paperitukun myynti- ja toimitusehtoja sovelletaan kaikkiin verkkokaupan tilauksiin, ellei asiakkaan ja myyj\u00E4n v\u00E4lill\u00E4 ole kirjallisesti sovittu toisin. Ehdot ovat voimassa toistaiseksi.',
+      'Kaikki verkkokaupassa ilmoitetut hinnat ja mahdolliset lis\u00E4maksut ovat arvonlis\u00E4verottomia, ellei toisin ilmoiteta. Hintoihin lis\u00E4t\u00E4\u00E4n kulloinkin voimassa oleva arvonlis\u00E4vero.',
+      'Pid\u00E4t\u00E4mme oikeuden muutoksiin tuotteissa, hinnoissa, toimitustavoissa ja n\u00E4iss\u00E4 ehdoissa.',
+    ],
+  },
+  {
+    title: 'Tilaaminen',
+    paragraphs: [
+      'Tilaajan tulee antaa tilauksen k\u00E4sittely\u00E4 ja toimitusta varten oikeat ja riitt\u00E4v\u00E4t tiedot.',
+      'Verkkokaupasta tilaaminen edellytt\u00E4\u00E4, ett\u00E4 asiakas hyv\u00E4ksyy verkkokaupan ehdot ja antaa omat tietonsa t\u00E4sm\u00E4llisesti ja totuudenmukaisesti. Jos tiedoissa on virhe, asiakkaan tulee korjata ne ilman aiheetonta viivytyst\u00E4.',
+      'Suomen Paperitukku ei vastaa siit\u00E4, jos tilaus, saapumisilmoitus, tilausvahvistus, toimitusvahvistus tai muu viesti ei saavu asiakkaalle puutteellisten tai virheellisten tietojen vuoksi.',
+    ],
+  },
+  {
+    title: 'Hinnat ja selv\u00E4t hintavirheet',
+    paragraphs: [
+      'Verkkokaupassa n\u00E4kyv\u00E4t hinnat ovat voimassa toistaiseksi. Pid\u00E4t\u00E4mme oikeuden hintojen p\u00E4ivitt\u00E4miseen ilman ennakkoilmoitusta.',
+      'Suomen Paperitukulla on oikeus perua tilaus, jos kyseess\u00E4 on ilmeinen ja olennainen hintavirhe. Selv\u00E4n\u00E4 hintavirheen\u00E4 voidaan pit\u00E4\u00E4 esimerkiksi tilannetta, jossa tuotteen hinnaksi on merkitty 0,00 euroa, hinta puuttuu kokonaan tai ilmoitettu hinta poikkeaa selv\u00E4sti tuotteen tavanomaisesta hintatasosta siten, ett\u00E4 virheen olisi pit\u00E4nyt olla ostajalle ilmeinen.',
+    ],
+  },
+  {
+    title: 'Tuotteiden saatavuus ja mahdolliset muutokset',
+    paragraphs: [
+      'Jos tilattu tuote on loppunut varastosta tai sit\u00E4 ei voida toimittaa tilauksen mukaisesti, voimme ehdottaa asiakkaalle vastaavaa korvaavaa tuotetta.',
+      'Jos kyse on k\u00E4ytt\u00F6tarkoitukseltaan ja hinnaltaan vastaavasta tuotteesta, voimme korvata tuotteen tilaukselle my\u00F6s suoraan. Mik\u00E4li korvaava tuote ei sovi asiakkaalle, puuttuva tuote hyvitet\u00E4\u00E4n k\u00E4ytetyn maksutavan mukaisesti.',
+      'Myyj\u00E4ll\u00E4 on tarvittaessa oikeus perua kauppa. Jos jonkin tuotteen kysynt\u00E4 ylitt\u00E4\u00E4 saatavilla olevan m\u00E4\u00E4r\u00E4n, voimme rajoittaa tilausm\u00E4\u00E4ri\u00E4, jotta tuotetta voidaan toimittaa mahdollisimman monelle asiakkaalle.',
+    ],
+  },
+  {
+    title: 'Ylivoimainen este',
+    paragraphs: [
+      'Suomen Paperitukku ei vastaa viiv\u00E4styksist\u00E4 tai vahingoista, jotka johtuvat vaikutusmahdollisuuksiemme ulkopuolella olevasta esteest\u00E4, jota ei ole kohtuudella voitu ennakoida tai jonka seurauksia ei ole voitu v\u00E4ltt\u00E4\u00E4.',
+      'Ylivoimaiseksi esteeksi voidaan katsoa esimerkiksi ty\u00F6taistelutoimet, henkil\u00F6st\u00F6n laaja sairastuminen, epidemiat, viranomaisrajoitukset, tuonti- ja vientikiellot, h\u00E4iri\u00F6t tietoliikenneyhteyksiss\u00E4, s\u00E4hk\u00F6katkot sek\u00E4 kuljetus- ja jakeluh\u00E4iri\u00F6t.',
+      'Jos ylivoimainen este jatkuu yli kuukauden, sek\u00E4 asiakkaalla ett\u00E4 myyj\u00E4ll\u00E4 on oikeus purkaa kauppa ilman vahingonkorvaus- tai viiv\u00E4stysseuraamuksia.',
+    ],
+  },
+  {
+    title: 'Kuluttaja-asiakkaiden palautukset',
+    paragraphs: [
+      'Kuluttaja-asiakkailla on kuluttajansuojalain mukainen 14 p\u00E4iv\u00E4n palautus- ja vaihto-oikeus, ellei tuotteelle sovelleta lain mukaista poikkeusta.',
+      'Palautuksen edellytyksen\u00E4 on, ett\u00E4 tuote on k\u00E4ytt\u00E4m\u00E4t\u00F6n, alkuper\u00E4isess\u00E4 kunnossa ja mahdollisuuksien mukaan alkuper\u00E4ispakkauksessa. Palautuksen toimituskulut j\u00E4\u00E4v\u00E4t asiakkaan maksettavaksi, ellei palautuksen syyn\u00E4 ole toimitusvirhe tai tuotteen virheellisyys.',
+      'Hyvit\u00E4mme palautetun tuotteen maksetun hinnan ilman alkuper\u00E4isi\u00E4 toimituskuluja viimeist\u00E4\u00E4n 14 p\u00E4iv\u00E4n kuluessa siit\u00E4, kun palautus on saapunut meille ja sen kunto on tarkastettu. Hyvitys tehd\u00E4\u00E4n samalla maksutavalla, jota tilauksessa k\u00E4ytettiin.',
+      'Personoiduilla tai asiakkaalle erikseen valmistetuilla tuotteilla ei ole vaihto- eik\u00E4 palautusoikeutta.',
+    ],
+  },
+  {
+    title: 'Yritysasiakkaiden palautukset ja tarkastusvelvollisuus',
+    paragraphs: [
+      'Vastaanottajan tulee tarkistaa toimituksen sis\u00E4lt\u00F6, kunto ja kollien m\u00E4\u00E4r\u00E4 vastaanoton yhteydess\u00E4. Havaitut puutteet tai vauriot on merkitt\u00E4v\u00E4 rahtikirjaan ennen vastaanottokuittausta.',
+      'Allekirjoitettu rahtikirja ilman puute- tai vauriomerkint\u00F6j\u00E4 katsotaan toimituksen hyv\u00E4ksytyksi.',
+      'Mahdollisesta toimitusvirheest\u00E4 tulee ilmoittaa Suomen Paperitukun asiakaspalveluun viimeist\u00E4\u00E4n 7 arkip\u00E4iv\u00E4n kuluessa. Jos tuotteessa on valmistusvirhe tai muu vika, jota ei ole voitu havaita heti vastaanoton yhteydess\u00E4, voimme hyv\u00E4ksy\u00E4 ilmoituksen my\u00F6s my\u00F6hemmin.',
+      'Jos toimitus ei vastaa tilausta tai tuote on virheellinen, palautus j\u00E4rjestet\u00E4\u00E4n asiakkaalle ilman palautuskuluja. Muista palautuksista voidaan peri\u00E4 20 euron k\u00E4sittelykulu sek\u00E4 toteutuneet rahtikustannukset.',
+      'Palautettavien tuotteiden tulee olla k\u00E4ytt\u00E4m\u00E4tt\u00F6mi\u00E4, alkuper\u00E4ispakkauksissa ja j\u00E4lleenmyyntikelpoisessa kunnossa. Palautuksesta tulee aina sopia etuk\u00E4teen asiakaspalvelumme kanssa.',
+    ],
+  },
+  {
+    title: 'Reklamaatiot',
+    paragraphs: [
+      'Tarkista l\u00E4hetys mahdollisimman pian vastaanoton j\u00E4lkeen ja varmista, ett\u00E4 toimitus vastaa tilausta.',
+      'Jos havaitset virheen, puutteen, vaurion tai liikatoimituksen, ilmoita siit\u00E4 asiakaspalveluumme mahdollisimman nopeasti ja viimeist\u00E4\u00E4n 7 arkip\u00E4iv\u00E4n kuluessa. Varaa yhteydenottoa varten esille tilausnumero, asiakasnumero, tuotteen nimi, mahdollinen tuotekoodi sek\u00E4 toimitettu m\u00E4\u00E4r\u00E4.',
+      'Jos reklamaatio koskee viallista tuotetta, pid\u00E4 reklamoitava tuote erill\u00E4\u00E4n ja k\u00E4ytt\u00E4m\u00E4tt\u00F6m\u00E4n\u00E4, kunnes jatkotoimista on sovittu asiakaspalvelumme kanssa.',
+    ],
+  },
+  {
+    title: 'Lavapalautukset',
+    paragraphs: [
+      'Mahdollisista lavapalautuksista sovitaan aina etuk\u00E4teen Suomen Paperitukun myynnin tai asiakaspalvelun kanssa.',
+      'Palautukseen hyv\u00E4ksyt\u00E4\u00E4n vain ehj\u00E4t ja palautukseen erikseen sovitut lavat. Mahdolliset hyvitykset, kuljetuskustannukset ja k\u00E4sittelykulut m\u00E4\u00E4r\u00E4ytyv\u00E4t tapauskohtaisesti.',
+    ],
+  },
+  {
+    title: 'Toimituksen estyminen',
+    paragraphs: [
+      'Jos toimitusta ei voida toimittaa asiakkaan kanssa sovittuna ajankohtana eik\u00E4 esteest\u00E4 ole ilmoitettu meille riitt\u00E4v\u00E4n ajoissa, asiakkaalta voidaan veloittaa toimituksen estymisest\u00E4 tai uudelleenjakelusta aiheutuneet lis\u00E4kulut.',
+    ],
+  },
+  {
+    title: 'Omistuksen pid\u00E4tys',
+    paragraphs: [
+      'Tuotteet s\u00E4ilyv\u00E4t Suomen Paperitukun omaisuutena siihen saakka, kunnes niiden kauppahinta on kokonaisuudessaan maksettu.',
+    ],
+  },
+  {
+    title: 'Toimitusehdot',
+    paragraphs: [
+      'Toimitamme tuotteita valtakunnallisesti Suomessa.',
+      'Tilauksille, joiden arvo on alle 300 euroa (alv 0 %), lis\u00E4t\u00E4\u00E4n toimitusmaksu 15 euroa (alv 0 %). Yli 300 euron (alv 0 %) tilauksille toimitus on maksuton, ellei tilaukselle synny erillisi\u00E4 lis\u00E4kuluja.',
+      'Pid\u00E4t\u00E4mme oikeuden veloittaa normaalin toimitusmaksun ylitt\u00E4v\u00E4t lis\u00E4kustannukset, jos toimitus edellytt\u00E4\u00E4 poikkeavia j\u00E4rjestelyj\u00E4, aikataulutettuja toimituksia, erillisk\u00E4sittely\u00E4 tai muita asiakkaasta tai toimituspaikasta johtuvia lis\u00E4toimenpiteit\u00E4.',
+    ],
+  },
+  {
+    title: 'Laskutus',
+    paragraphs: [
+      'Yritysasiakkaille tarjoamme mahdollisuuden laskulla maksamiseen hyv\u00E4ksytyille yritystileille. Mahdollisista asiakaskohtaisista maksuehdoista sovitaan erikseen.',
+      'Mahdollisista laskutuslisist\u00E4 tai muista tilauskohtaisista lis\u00E4kuluista ilmoitetaan asiakkaalle tilauksen yhteydess\u00E4 ennen tilauksen vahvistamista.',
+    ],
+  },
+] as const
+
+const renderedPaytrailTerms = {
+  title: 'Maksupalvelutarjoaja',
+  paragraphs: [
+    'Maksunv\u00E4lityspalvelun toteuttajana ja maksupalveluntarjoajana toimii Paytrail Oyj (2122839-7) yhteisty\u00F6ss\u00E4 suomalaisten pankkien ja luottolaitosten kanssa. Paytrail Oyj n\u00E4kyy maksun saajana tiliotteella tai korttilaskulla ja v\u00E4litt\u00E4\u00E4 maksun kauppiaalle. Paytrail Oyj:ll\u00E4 on maksulaitoksen toimilupa. Reklamaatiotapauksissa pyyd\u00E4mme ottamaan ensisijaisesti yhteytt\u00E4 tuotteen toimittajaan.',
+    'Paytrail Oyj, y-tunnus: 2122839-7',
+    'Innova 2',
+    'Lutakonaukio 7',
+    '40100 Jyv\u00E4skyl\u00E4',
+    'Puhelin: 0207 181830',
+    'paytrail.com/kuluttaja/tietoa-maksamisesta',
+  ],
+} as const
 
 const products: Record<Lang, Product[]> = {
   fi: [
@@ -1049,6 +1286,8 @@ const getRouteFromUrl = (): RouteState => {
     type = 'checkout'
   } else if (pathname === '/tili') {
     type = 'auth'
+  } else if (pathname === '/ehdot') {
+    type = 'terms'
   } else if (paytrailMatch) {
     type = 'paytrail-return'
   }
@@ -2075,7 +2314,7 @@ function App() {
     if (routeState.type === 'cart') {
       applyUtilitySeo(
         lang === 'fi' ? 'Ostoskori | Suomen Paperitukku' : 'Cart | Suomen Paperitukku',
-        lang === 'fi' ? 'Tarkista ostoskorin sisalto ja siirry kassalle.' : 'Review your cart and proceed to checkout.',
+        lang === 'fi' ? 'Tarkista ostoskorin sisältö ja siirry kassalle.' : 'Review your cart and proceed to checkout.',
         '/ostoskori',
       )
       return
@@ -2083,7 +2322,7 @@ function App() {
     if (routeState.type === 'checkout') {
       applyUtilitySeo(
         lang === 'fi' ? 'Kassa | Suomen Paperitukku' : 'Checkout | Suomen Paperitukku',
-        lang === 'fi' ? 'Viimeistele tilaus yritystililla.' : 'Complete your order with your company account.',
+        lang === 'fi' ? 'Viimeistele tilaus yritystilillä.' : 'Complete your order with your company account.',
         '/kassa',
       )
       return
@@ -2091,10 +2330,18 @@ function App() {
     if (routeState.type === 'auth') {
       applyUtilitySeo(
         routeState.authMode === 'register'
-          ? (lang === 'fi' ? 'Rekisteroidy | Suomen Paperitukku' : 'Register | Suomen Paperitukku')
+          ? (lang === 'fi' ? 'Rekisteröidy | Suomen Paperitukku' : 'Register | Suomen Paperitukku')
           : (lang === 'fi' ? 'Kirjaudu | Suomen Paperitukku' : 'Sign in | Suomen Paperitukku'),
-        lang === 'fi' ? 'Luo yritystili tai kirjaudu sisaan tilausta varten.' : 'Create a company account or sign in to order.',
+        lang === 'fi' ? 'Luo yritystili tai kirjaudu sisään tilausta varten.' : 'Create a company account or sign in to order.',
         '/tili',
+      )
+      return
+    }
+    if (routeState.type === 'terms') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Tilaus- ja toimitusehdot | Suomen Paperitukku' : 'Terms of sale and delivery | Suomen Paperitukku',
+        lang === 'fi' ? 'Suomen Paperitukun verkkokaupan myynti-, toimitus- ja maksuehdot.' : 'Terms of sale, delivery and payment for Suomen Paperitukku.',
+        '/ehdot',
       )
       return
     }
@@ -4905,6 +5152,46 @@ function App() {
               </div>
             )}
           </section>
+        ) : routeState.type === 'terms' ? (
+          <section className="section utility-page terms-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{lang === 'fi' ? 'Tilaus- ja toimitusehdot' : 'Terms of sale and delivery'}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Tältä sivulta löydät Suomen Paperitukun verkkokaupan myynti-, toimitus- ja maksuehdot.'
+                    : 'This page contains the sales, delivery and payment terms of Suomen Paperitukku.'}
+                </p>
+              </div>
+            </div>
+
+            <div className="terms-layout">
+              {renderedTermsSections.slice(0, 2).map((section) => (
+                <article className="card terms-card" key={section.title}>
+                  <h2>{section.title}</h2>
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </article>
+              ))}
+
+              <article className="card terms-card terms-card-verbatim">
+                <h2>{renderedPaytrailTerms.title}</h2>
+                {renderedPaytrailTerms.paragraphs.map((paragraph) => (
+                  <p key={paragraph}>{paragraph}</p>
+                ))}
+              </article>
+
+              {renderedTermsSections.slice(2).map((section) => (
+                <article className="card terms-card" key={section.title}>
+                  <h2>{section.title}</h2>
+                  {section.paragraphs.map((paragraph) => (
+                    <p key={paragraph}>{paragraph}</p>
+                  ))}
+                </article>
+              ))}
+            </div>
+          </section>
         ) : routeState.type === 'paytrail-return' ? (
           <section className="section utility-page payment-return-page">
             <div className="utility-page-head">
@@ -5359,6 +5646,17 @@ function App() {
         <div className="footer-meta">
           {t.footer.hours ? <p>{t.footer.hours}</p> : null}
           <p>{t.footer.legal}</p>
+          <a
+            className="footer-text-link"
+            href="/ehdot"
+            onClick={(event) => {
+              event.preventDefault()
+              navigateTo('/ehdot')
+              window.scrollTo({ top: 0, behavior: 'smooth' })
+            }}
+          >
+            {t.footer.terms}
+          </a>
         </div>
       </footer>}
 

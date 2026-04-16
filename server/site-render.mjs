@@ -566,6 +566,7 @@ const renderHomeMarkup = ({ catalog }) => {
         </div>
         <div class="footer-meta">
           <p>3590057-8</p>
+          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
         </div>
       </footer>
     </div>
@@ -703,6 +704,7 @@ const renderProductMarkup = ({ product, category, related }) => {
         </div>
         <div class="footer-meta">
           <p>3590057-8</p>
+          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
         </div>
       </footer>
     </div>
@@ -714,22 +716,28 @@ const getUtilityPageMeta = (siteUrl, route) => {
     case 'cart':
       return {
         title: 'Ostoskori | Suomen Paperitukku',
-        description: 'Tarkista ostoskorin sisalto ja siirry kassalle.',
+        description: 'Tarkista ostoskorin sisältö ja siirry kassalle.',
         canonical: absoluteUrl(siteUrl, '/ostoskori'),
       }
     case 'checkout':
       return {
         title: 'Kassa | Suomen Paperitukku',
         description: route?.guestCheckout
-          ? 'Viimeistele korttimaksu ilman rekisteroitymista.'
-          : 'Viimeistele tilaus yritystililla.',
+          ? 'Viimeistele korttimaksu ilman rekisteröitymistä.'
+          : 'Viimeistele tilaus yritystilillä.',
         canonical: absoluteUrl(siteUrl, route?.guestCheckout ? '/kassa?guest=1' : '/kassa'),
       }
     case 'auth':
       return {
-        title: route?.authMode === 'register' ? 'Rekisteroidy | Suomen Paperitukku' : 'Kirjaudu | Suomen Paperitukku',
-        description: 'Luo yritystili tai kirjaudu sisaan tilausta varten.',
+        title: route?.authMode === 'register' ? 'Rekisteröidy | Suomen Paperitukku' : 'Kirjaudu | Suomen Paperitukku',
+        description: 'Luo yritystili tai kirjaudu sisään tilausta varten.',
         canonical: absoluteUrl(siteUrl, '/tili'),
+      }
+    case 'terms':
+      return {
+        title: 'Tilaus- ja toimitusehdot | Suomen Paperitukku',
+        description: 'Suomen Paperitukun verkkokaupan myynti-, toimitus- ja maksuehdot.',
+        canonical: absoluteUrl(siteUrl, '/ehdot'),
       }
     case 'paytrail-return':
       return {
@@ -757,8 +765,11 @@ const renderUtilityMarkup = (route) => {
     title = 'Kassa'
     description = route.guestCheckout ? 'Valmistellaan korttimaksua...' : 'Valmistellaan kassaa...'
   } else if (route.type === 'auth') {
-    title = route.authMode === 'register' ? 'Rekisteroidy' : 'Kirjaudu'
-    description = 'Ladataan asiakastilia...'
+    title = route.authMode === 'register' ? 'Rekisteröidy' : 'Kirjaudu'
+    description = 'Ladataan asiakastiliä...'
+  } else if (route.type === 'terms') {
+    title = 'Tilaus- ja toimitusehdot'
+    description = 'Ladataan ehtoja...'
   } else if (route.type === 'paytrail-return') {
     title = 'Maksun vahvistus'
     description = 'Vahvistetaan korttimaksun tila...'

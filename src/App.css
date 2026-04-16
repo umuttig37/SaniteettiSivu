@@ -1037,6 +1037,7 @@ html {
 }
 
 .footer-admin-link {
+  display: block;
   margin-top: 0.6rem;
   border: none;
   background: transparent;
@@ -1049,6 +1050,40 @@ html {
 .footer-admin-link:hover {
   color: #d7e1ff;
   text-decoration: underline;
+}
+
+.footer-text-link {
+  display: inline-block;
+  margin-top: 0.55rem;
+  color: #9fb4e8;
+  font-size: 0.9rem;
+  text-decoration: none;
+}
+
+.footer-text-link:hover {
+  color: #d7e1ff;
+  text-decoration: underline;
+}
+
+.terms-layout {
+  display: grid;
+  gap: 1rem;
+}
+
+.terms-card {
+  padding: 1.4rem 1.45rem;
+}
+
+.terms-card h2 {
+  margin-bottom: 0.7rem;
+}
+
+.terms-card p + p {
+  margin-top: 0.85rem;
+}
+
+.terms-card-verbatim {
+  background: #f9fbff;
 }
 
 .primary,

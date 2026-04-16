@@ -209,6 +209,16 @@ const getSpaRouteFromRequest = (req) => {
     }
   }
 
+  if (pathname === '/ehdot') {
+    return {
+      type: 'terms',
+      guestCheckout: false,
+      authMode: 'login',
+      nextPath: null,
+      paytrailResult: null,
+    }
+  }
+
   if (paytrailMatch) {
     return {
       type: 'paytrail-return',
