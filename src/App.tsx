@@ -2141,12 +2141,10 @@ function App() {
       const next = {
         ...prev,
         paymentMethod: 'card' as const,
-        billingCompany: prev.billingCompany || prev.company,
       }
 
       const changed =
         next.paymentMethod !== prev.paymentMethod
-        || next.billingCompany !== prev.billingCompany
 
       return changed ? next : prev
     })
@@ -2591,7 +2589,6 @@ function App() {
     setCheckoutForm((prev) => ({
       ...prev,
       paymentMethod: 'card',
-      billingCompany: prev.billingCompany || prev.company,
     }))
     setFormError('')
     navigateTo('/kassa?guest=1')
@@ -4930,7 +4927,7 @@ function App() {
                                 onChange={(event) => {
                                   const nextValue = event.target.value
                                   updateForm('company', nextValue)
-                                  if (!checkoutForm.billingCompany || checkoutForm.billingCompany === checkoutForm.company) {
+                                  if (!isGuestCheckout && (!checkoutForm.billingCompany || checkoutForm.billingCompany === checkoutForm.company)) {
                                     updateForm('billingCompany', nextValue)
                                   }
                                 }}
