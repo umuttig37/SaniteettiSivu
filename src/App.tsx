@@ -5484,7 +5484,6 @@ function App() {
           <div className="products-header">
             <div>
               <h2>{t.productsTitle}</h2>
-              <p className="products-info-line">{t.productsBillingNote}</p>
             </div>
           </div>
           <div className="sort sort-floating">
