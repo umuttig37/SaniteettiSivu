@@ -928,7 +928,7 @@ const products: Record<Lang, Product[]> = {
   ],
 }
 
-const pageSize = 16
+const pageSize = 36
 const defaultCategories: CategoryDef[] = [
   { id: 'wc-paperit', slug: 'wc-paperit', nameFi: 'WC-paperit', nameEn: 'Toilet paper' },
   { id: 'kasipyyhkeet', slug: 'kasipyyhkeet', nameFi: 'Käsipyyhkeet', nameEn: 'Hand towels' },

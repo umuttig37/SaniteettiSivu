@@ -1168,6 +1168,7 @@ html {
 
 .products-section {
   position: relative;
+  max-width: 1720px;
 }
 
 .featured-section {
@@ -1321,9 +1322,9 @@ html {
 }
 
 .products-grid {
-  grid-template-columns: repeat(auto-fill, minmax(250px, 250px));
-  justify-content: start;
-  gap: 2.35rem 1.95rem;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 250px));
+  justify-content: space-between;
+  gap: 2.35rem 0;
 }
 
 .product-card {
