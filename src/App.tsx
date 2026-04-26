@@ -1490,8 +1490,10 @@ const getCategoryHref = (category: CategoryDef) => `/?category=${encodeURICompon
 const getProductImage = (product: Product) => (product.images && product.images.length > 0 ? product.images[0] : product.image)
 const getProductAlt = (product: Product) => `${product.name} yrityksille`
 
-const getRelated = (items: Product[], currentId: string) => {
-  return items.filter((item) => item.id !== currentId).slice(0, 3)
+const getRelated = (items: Product[], currentProduct: Product, maxItems = 4) => {
+  return items
+    .filter((item) => item.id !== currentProduct.id && item.category === currentProduct.category)
+    .slice(0, maxItems)
 }
 
 const getSiteUrl = () => {
@@ -1984,7 +1986,7 @@ function App() {
     [lang, selectedOptionSelections, selectedProduct],
   )
   const selectedProductUnitPrice = selectedProduct ? getResolvedUnitPrice(selectedProduct, selectedProductOptions) : 0
-  const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct.id) : [] 
+  const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct, 4) : []
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 8), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
 
@@ -3524,8 +3526,12 @@ function App() {
   }
 
   const deleteCategory = async (categoryId: string) => {
+    if (categoryId === 'muut') {
+      setAdminError(lang === 'fi' ? 'Muut-kategoriaa ei voi poistaa.' : 'The fallback category cannot be deleted.')
+      return
+    }
     try {
-      const response = await adminFetch(`/api/admin/categories/${categoryId}`, {
+      const response = await adminFetch(`/api/admin/categories/${encodeURIComponent(categoryId)}`, {
         method: 'DELETE',
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
@@ -4307,7 +4313,7 @@ function App() {
                           <button className="ghost tiny" type="button" disabled={index === categories.length - 1} onClick={() => moveCategory(category.id, 1)}>
                             {lang === 'fi' ? 'Alas' : 'Down'}
                           </button>
-                          <button className="ghost tiny danger" type="button" onClick={() => deleteCategory(category.id)}>
+                          <button className="ghost tiny danger" type="button" disabled={category.id === 'muut'} onClick={() => deleteCategory(category.id)}>
                             {lang === 'fi' ? 'Poista' : 'Delete'}
                           </button>
                         </div>
@@ -5370,21 +5376,37 @@ function App() {
               <h3>{t.related}</h3>
               <div className="grid related-grid">
                 {relatedProducts.map((item) => (
-                  <div key={item.id} className="card related-card">
+                  <div key={item.id} className="card product-card related-card">
                     <a
-                      className="related-link"
+                      className="product-card-button related-link"
                       href={getProductHref(item)}
                       onClick={(event) => {
                         event.preventDefault()
                         openProduct(item)
                       }}
                     >
-                      <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
-                      <strong className="product-name">{item.name}</strong>
+                      <div className="product-link">
+                        <img className="product-image" src={getProductImage(item)} alt={getProductAlt(item)} loading="lazy" />
+                        <strong className="product-name">{item.name}</strong>
+                      </div>
+                      <div className="product-body">
+                        <div className="availability">
+                          <span className={`status status-${getStockTone(item.stock)}`}>
+                            <span className="dot" /> {getStockLabel(item.stock, lang)}
+                          </span>
+                        </div>
+                        <div className="price-block">
+                          <span className="muted">
+                            {formatPrice(grossPrice(item.price), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                          </span>
+                          <span className="price-top">
+                            <span className="price-main">{formatPrice(item.price, lang)} €</span>
+                            <span className="price-suffix">{getPriceUnitSuffix(item.priceUnit, t.product.vatNote)}</span>
+                          </span>
+                          {item.unitNote && <span className="muted">{item.unitNote}</span>}
+                        </div>
+                      </div>
                     </a>
-                    <button className="ghost" onClick={() => openProduct(item)}>
-                      {t.view}
-                    </button>
                   </div>
                 ))}
               </div>

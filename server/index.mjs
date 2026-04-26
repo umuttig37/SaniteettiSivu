@@ -1614,6 +1614,10 @@ app.post('/api/admin/categories', requireAdmin, (req, res) => {
 })
 
 app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
+  if (req.params.categoryId === 'muut') {
+    res.status(400).json({ message: 'Fallback category cannot be deleted.' })
+    return
+  }
   deleteCategory(req.params.categoryId)
   res.json(getPublicCatalogResponse())
 })
