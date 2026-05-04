@@ -5430,9 +5430,6 @@ function App() {
           <div className="mobile-store-tools-shell">
             <div className="mobile-store-tools-copy">
               <strong>{lang === 'fi' ? 'Etsi tuotteita nopeasti' : 'Search products quickly'}</strong>
-              <span className="muted small">
-                {lang === 'fi' ? 'Mobiilihaun löydät tästä headerin sijaan.' : 'On mobile, product search lives here instead of the header.'}
-              </span>
             </div>
             <label className="mobile-store-search">
               <span className="search-icon">{lang === 'fi' ? 'Haku' : 'Search'}</span>
