@@ -1986,6 +1986,7 @@ function App() {
     [lang, selectedOptionSelections, selectedProduct],
   )
   const selectedProductUnitPrice = selectedProduct ? getResolvedUnitPrice(selectedProduct, selectedProductOptions) : 0
+  const selectedProductOutOfStock = selectedProduct ? selectedProduct.stock <= 0 : false
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct, 4) : []
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 8), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
@@ -2459,6 +2460,10 @@ function App() {
   ])
 
   const addToCart = (product: Product, quantity = 1, selectedOptions: SelectedProductOption[] = []) => {
+    if (product.stock <= 0) {
+      return
+    }
+
     clearOrderState()
     const qty = Math.max(1, quantity)
     const lineId = buildCartLineId(product.id, selectedOptions)
@@ -5353,21 +5358,21 @@ function App() {
                     ))}
                   </div>
                 )}
-                <p className="stock-note">
-                  {lang === 'fi' ? 'Varastossa' : 'In stock'}
+                <p className={`stock-note stock-note-${getStockTone(selectedProduct.stock)}`}>
+                  {getStockLabel(selectedProduct.stock, lang)}
                 </p>
                 <div className="detail-actions">
                   <div className="qty-selector">
-                    <button className="ghost tiny" onClick={() => setSelectedQuantity((prev) => Math.max(1, prev - 1))}>
+                    <button className="ghost tiny" disabled={selectedProductOutOfStock} onClick={() => setSelectedQuantity((prev) => Math.max(1, prev - 1))}>
                       -
                     </button>
                     <span>{selectedQuantity}</span>
-                    <button className="ghost tiny" onClick={() => setSelectedQuantity((prev) => prev + 1)}>
+                    <button className="ghost tiny" disabled={selectedProductOutOfStock} onClick={() => setSelectedQuantity((prev) => prev + 1)}>
                       +
                     </button>
                   </div>
-                  <button className="primary" onClick={() => addToCart(selectedProduct, selectedQuantity, selectedProductOptions)}>
-                    {t.add}
+                  <button className="primary" disabled={selectedProductOutOfStock} onClick={() => addToCart(selectedProduct, selectedQuantity, selectedProductOptions)}>
+                    {selectedProductOutOfStock ? getStockLabel(selectedProduct.stock, lang) : t.add}
                   </button>
                 </div>
               </div>

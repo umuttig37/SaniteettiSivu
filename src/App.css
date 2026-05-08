@@ -3015,8 +3015,19 @@ html {
 }
 
 .stock-note {
-  color: #16803b;
   font-weight: 700;
+}
+
+.stock-note-ok {
+  color: #16803b;
+}
+
+.stock-note-warn {
+  color: #b45309;
+}
+
+.stock-note-low {
+  color: #b91c1c;
 }
 
 .detail-seo-meta {
