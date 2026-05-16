@@ -1479,7 +1479,7 @@ const compareFeaturedPriority = (a: Product, b: Product) => {
   return a.name.localeCompare(b.name, 'fi')
 }
 
-const getFeaturedProducts = (items: Product[], limit = 4) =>
+const getFeaturedProducts = (items: Product[], limit = 12) =>
   [...items]
     .filter((item) => item.featured)
     .sort(compareFeaturedPriority)
@@ -1988,7 +1988,7 @@ function App() {
   const selectedProductUnitPrice = selectedProduct ? getResolvedUnitPrice(selectedProduct, selectedProductOptions) : 0
   const selectedProductOutOfStock = selectedProduct ? selectedProduct.stock <= 0 : false
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct, 4) : []
-  const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 8), [productCatalog])
+  const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 12), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
 
   useEffect(() => {
@@ -5465,7 +5465,7 @@ function App() {
                 <p className="muted">{t.featuredText}</p>
               </div>
             </div>
-            <div className="grid featured-grid">
+            <div className="grid featured-grid home-featured-grid">
               {featuredHomeProducts.map((item) => (
                 <div key={`featured-${item.id}`} className="card product-card featured-card">
                   <a

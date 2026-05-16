@@ -156,7 +156,7 @@ const compareFeaturedPriority = (a, b) => {
   return repairText(a?.name ?? '').localeCompare(repairText(b?.name ?? ''), 'fi')
 }
 
-const getFeaturedProducts = (products, limit = 4) =>
+const getFeaturedProducts = (products, limit = 12) =>
   [...products]
     .filter((item) => item?.featured)
     .sort(compareFeaturedPriority)
@@ -337,9 +337,9 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     },
   }
 
-  const homeProducts = getFeaturedProducts(catalog.products, 8)
+  const homeProducts = getFeaturedProducts(catalog.products, 12)
   const itemListProducts =
-    homeProducts.length > 0 ? homeProducts : [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
+    homeProducts.length > 0 ? homeProducts : [...catalog.products].sort(compareFeaturedPriority).slice(0, 12)
 
   const featuredProducts = itemListProducts.map((product, index) => ({
     '@type': 'ListItem',
@@ -416,7 +416,7 @@ const renderOptionGroupsMarkup = (product) => {
 }
 
 const renderHomeMarkup = ({ catalog }) => {
-  const featuredCards = getFeaturedProducts(catalog.products, 8)
+  const featuredCards = getFeaturedProducts(catalog.products, 12)
   const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
   const categories = catalog.categories.filter((item) => item.id !== 'muut')
   const categoryCounts = catalog.products.reduce((acc, product) => {
@@ -468,7 +468,7 @@ const renderHomeMarkup = ({ catalog }) => {
                     <p class="muted">Tutustu ajankohtaisiin suosikkeihimme ja löydä parhaat tuotteet helposti.</p>
                   </div>
                 </div>
-                <div class="grid featured-grid">
+                <div class="grid featured-grid home-featured-grid">
                   ${featuredCards
                     .map(
                       (product) => `
