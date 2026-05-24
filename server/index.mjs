@@ -114,6 +114,7 @@ const paytrailSiteUrlErrorMessage =
 const shippingFee = 15
 const freeShippingThreshold = 300
 const vatMultiplier = 1.255
+const siteTimeZone = 'Europe/Helsinki'
 
 if (!smtpUser || !smtpPass) {
   console.warn('[mail] SMTP credentials are missing, so welcome and order emails are disabled. Set SMTP_USER/SMTP_PASS or aliases such as SMTP_USERNAME/SMTP_PASSWORD.')
@@ -434,6 +435,79 @@ const normalizePostalCode = (value) => String(value ?? '').replace(/\D/g, '').sl
 
 const isValidPostalCode = (value) => /^\d{5}$/.test(normalizePostalCode(value))
 
+const padDatePart = (value) => String(value).padStart(2, '0')
+
+const parseIsoDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? '').trim())
+  if (!match) {
+    return null
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  }
+}
+
+const formatIsoDateParts = (year, month, day) => `${year}-${padDatePart(month)}-${padDatePart(day)}`
+
+const getCurrentDateInTimeZone = (timeZone = siteTimeZone) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? 0)
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? 0)
+  const day = Number(parts.find((part) => part.type === 'day')?.value ?? 0)
+
+  return formatIsoDateParts(year, month, day)
+}
+
+const addDaysToIsoDate = (value, days) => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return ''
+  }
+
+  const next = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day))
+  next.setUTCDate(next.getUTCDate() + days)
+  return formatIsoDateParts(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate())
+}
+
+const getEarliestDeliveryDate = () => addDaysToIsoDate(getCurrentDateInTimeZone(), 1)
+
+const normalizeDeliveryDate = (value) => {
+  const trimmed = String(value ?? '').trim()
+  return parseIsoDate(trimmed) ? trimmed : ''
+}
+
+const isValidDeliveryDate = (value) => {
+  const normalized = normalizeDeliveryDate(value)
+  if (!normalized) {
+    return false
+  }
+
+  return normalized >= getEarliestDeliveryDate()
+}
+
+const formatDeliveryDate = (value, lang = 'fi') => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return String(value ?? '').trim()
+  }
+
+  return new Intl.DateTimeFormat(lang === 'en' ? 'en-GB' : 'fi-FI', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: siteTimeZone,
+  }).format(new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12)))
+}
+
 const normalizePhone = (value) => {
   const trimmed = String(value ?? '').trim()
   const hasLeadingPlus = trimmed.startsWith('+')
@@ -486,6 +560,7 @@ const normalizeCheckoutInput = (payload = {}) => {
 
   return {
     deliveryAddress,
+    deliveryDate: normalizeDeliveryDate(payload?.deliveryDate) || getEarliestDeliveryDate(),
     billingCompany: String(payload?.billingCompany || payload?.company || '').trim(),
     billingAddress,
     notes: String(payload?.notes ?? '').trim(),
@@ -517,6 +592,10 @@ const validateCheckoutInput = (checkout) => {
 
   if (!isValidPostalCode(checkout.deliveryAddress.postalCode)) {
     return 'Delivery postal code must contain 5 digits.'
+  }
+
+  if (!isValidDeliveryDate(checkout.deliveryDate)) {
+    return 'Delivery date must be at least the next day.'
   }
 
   if (checkout.paymentMethod === 'card') {
@@ -777,6 +856,7 @@ const getMailText = (lang) => {
       shipping: 'Shipping',
       total: 'Total',
       deliveryAddress: 'Delivery address',
+      deliveryDate: 'Delivery date',
       newOrder: 'New order',
       company: 'Company',
       contact: 'Contact person',
@@ -821,6 +901,7 @@ const getMailText = (lang) => {
     shipping: 'Toimitus',
     total: 'Yhteensä',
     deliveryAddress: 'Toimitusosoite',
+    deliveryDate: 'Toimituspäivä',
     newOrder: 'Uusi tilaus',
     company: 'Yritys',
     contact: 'Yhteyshenkilö',
@@ -918,6 +999,7 @@ const customerOrderHtml = (order) => {
   <h2 style="margin:0 0 8px;">${t.thanks}</h2>
   <p style="margin:0 0 10px;">${t.orderNumber} <strong>${order.id}</strong>.</p>
   <p style="margin:0 0 6px;"><strong>${t.paymentMethod}:</strong> ${getPaymentMethodLabel(order, lang)}</p>
+  ${order.customer.deliveryDate ? `<p style="margin:0 0 6px;"><strong>${t.deliveryDate}:</strong> ${escapeHtml(formatDeliveryDate(order.customer.deliveryDate, lang))}</p>` : ''}
   <table style="border-collapse:collapse;width:100%;max-width:680px;">
     <thead>
       <tr>
@@ -955,6 +1037,7 @@ const merchantOrderHtml = (order) => {
   <p style="margin:0 0 8px;"><strong>${t.phone}:</strong> ${order.customer.phone || '-'}</p>
   <p style="margin:0 0 8px;"><strong>${t.businessId}:</strong> ${order.customer.businessId || '-'}</p>
   <p style="margin:0 0 14px;"><strong>${t.paymentMethod}:</strong> ${getPaymentMethodLabel(order, lang)}</p>
+  ${order.customer.deliveryDate ? `<p style="margin:0 0 8px;"><strong>${t.deliveryDate}:</strong> ${escapeHtml(formatDeliveryDate(order.customer.deliveryDate, lang))}</p>` : ''}
   <table style="border-collapse:collapse;width:100%;max-width:680px;">
     <thead>
       <tr>
@@ -1040,6 +1123,7 @@ const shippedHtml = (order) => {
 <div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.45;">
   <h2 style="margin:0 0 8px;">${t.shippedTitle}</h2>
   <p style="margin:0 0 12px;">${t.shippedBody} <strong>${order.id}</strong>.</p>
+  ${order.customer.deliveryDate ? `<p style="margin:0 0 10px;"><strong>${t.deliveryDate}:</strong> ${escapeHtml(formatDeliveryDate(order.customer.deliveryDate, lang))}</p>` : ''}
   <p style="margin:0;">${t.shippedThanks}</p>
   ${emailFooter(lang)}
 </div>
@@ -1253,6 +1337,7 @@ const createOrderRecord = ({ orders, customer, checkout, items, lang, paymentMet
       address: checkout.deliveryAddress.streetAddress,
       zip: checkout.deliveryAddress.postalCode,
       city: checkout.deliveryAddress.city,
+      deliveryDate: checkout.deliveryDate,
       billingCompany: checkout.billingCompany,
       billingAddress: checkout.billingAddress.streetAddress,
       billingZip: checkout.billingAddress.postalCode,
@@ -1993,6 +2078,7 @@ app.post('/api/orders', async (req, res) => {
         address: customer.address ?? '',
         zip: customer.zip ?? '',
         city: customer.city ?? '',
+        deliveryDate: customer.deliveryDate ?? '',
         billingCompany: customer.billingCompany ?? '',
         billingAddress: customer.billingAddress ?? '',
         billingZip: customer.billingZip ?? '',

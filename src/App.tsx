@@ -146,6 +146,7 @@ type CheckoutForm = {
   deliveryAddress: string
   deliveryZip: string
   deliveryCity: string
+  deliveryDate: string
   billingCompany: string
   billingAddress: string
   billingZip: string
@@ -235,6 +236,7 @@ type AdminOrder = {
     address: string
     zip: string
     city: string
+    deliveryDate?: string
     billingCompany: string
     billingAddress: string
     billingZip?: string
@@ -339,6 +341,7 @@ const deepFixText = <T,>(input: T): T => {
 
 const freeShippingThreshold = 300
 const shippingFee = 15
+const siteTimeZone = 'Europe/Helsinki'
 
 const rawText = {
   fi: {
@@ -395,6 +398,8 @@ const rawText = {
       address: 'Toimitusosoite',
       zip: 'Postinumero',
       city: 'Kaupunki',
+      deliveryDate: 'Toimituspäivä',
+      deliveryDateHint: 'Valitse aikaisintaan huominen.',
       billingCompany: 'Laskutusyritys',
       billingAddress: 'Laskutusosoite',
       notes: 'Lisätiedot',
@@ -491,6 +496,8 @@ const rawText = {
       address: 'Delivery address',
       zip: 'Postal code',
       city: 'City',
+      deliveryDate: 'Delivery date',
+      deliveryDateHint: 'Choose tomorrow or a later date.',
       billingCompany: 'Billing company',
       billingAddress: 'Billing address',
       notes: 'Notes',
@@ -1363,6 +1370,74 @@ const getOptionMetaHeader = (groupName: string, lang: Lang) =>
     ? (lang === 'fi' ? 'Määrä' : 'Qty')
     : (lang === 'fi' ? 'Lisätieto' : 'Detail')
 
+const padDatePart = (value: number) => String(value).padStart(2, '0')
+
+const parseIsoDate = (value: string) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value)
+  if (!match) {
+    return null
+  }
+
+  return {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+  }
+}
+
+const formatIsoDateParts = (year: number, month: number, day: number) =>
+  `${year}-${padDatePart(month)}-${padDatePart(day)}`
+
+const getCurrentDateInTimeZone = (timeZone = siteTimeZone) => {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date())
+
+  const year = Number(parts.find((part) => part.type === 'year')?.value ?? 0)
+  const month = Number(parts.find((part) => part.type === 'month')?.value ?? 0)
+  const day = Number(parts.find((part) => part.type === 'day')?.value ?? 0)
+
+  return formatIsoDateParts(year, month, day)
+}
+
+const addDaysToIsoDate = (value: string, days: number) => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return value
+  }
+
+  const next = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day))
+  next.setUTCDate(next.getUTCDate() + days)
+  return formatIsoDateParts(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate())
+}
+
+const getEarliestDeliveryDate = () => addDaysToIsoDate(getCurrentDateInTimeZone(), 1)
+
+const isValidDeliveryDateInput = (value: string) => {
+  if (!parseIsoDate(value)) {
+    return false
+  }
+
+  return value >= getEarliestDeliveryDate()
+}
+
+const formatCalendarDate = (value: string, lang: Lang) => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat(lang === 'fi' ? 'fi-FI' : 'en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    timeZone: siteTimeZone,
+  }).format(new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12)))
+}
+
 const formatDateTime = (value: string, lang: Lang) => {
   const locale = lang === 'fi' ? 'fi-FI' : 'en-GB'
   return new Intl.DateTimeFormat(locale, {
@@ -1878,6 +1953,7 @@ function App() {
     deliveryAddress: '',
     deliveryZip: '',
     deliveryCity: '',
+    deliveryDate: getEarliestDeliveryDate(),
     billingCompany: '',
     billingAddress: '',
     billingZip: '',
@@ -1990,6 +2066,7 @@ function App() {
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct, 4) : []
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 12), [productCatalog])
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
+  const minDeliveryDate = getEarliestDeliveryDate()
 
   useEffect(() => {
     if (hasInitialCatalog) {
@@ -2739,6 +2816,11 @@ function App() {
     if (!isValidPostalCode(checkoutForm.deliveryZip)) {
       return lang === 'fi' ? 'Toimituksen postinumerossa tulee olla 5 numeroa.' : 'Delivery postal code must contain 5 digits.'
     }
+    if (!isValidDeliveryDateInput(checkoutForm.deliveryDate)) {
+      return lang === 'fi'
+        ? 'Valitse toimituspäivä aikaisintaan huomiselle.'
+        : 'Choose a delivery date starting from tomorrow.'
+    }
     if (selectedPaymentMethod === 'invoice' && (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity)) {
       return lang === 'fi'
         ? 'Täytä laskutusyritys, laskutusosoite, postinumero ja kaupunki.'
@@ -2963,6 +3045,7 @@ function App() {
       deliveryAddress: '',
       deliveryZip: '',
       deliveryCity: '',
+      deliveryDate: getEarliestDeliveryDate(),
       billingCompany: '',
       billingAddress: '',
       billingZip: '',
@@ -4402,6 +4485,11 @@ function App() {
                               <strong>{order.customer.company}</strong> {'\u00B7'} {order.customer.contact} {'\u00B7'} {order.customer.email}
                             </p>
                             <p className="muted small">{order.customer.address}, {order.customer.zip} {order.customer.city}</p>
+                            {order.customer.deliveryDate && (
+                              <p className="muted small">
+                                <strong>{lang === 'fi' ? 'Toimituspäivä' : 'Delivery date'}:</strong> {formatCalendarDate(order.customer.deliveryDate, lang)}
+                              </p>
+                            )}
                             <div className="admin-order-items">
                               {order.items.map((item, index) => (
                                 <div key={`${order.id}-${item.productId}-${index}`} className="admin-order-item">
@@ -4982,6 +5070,15 @@ function App() {
                               <label>{t.form.city}</label>
                               <input value={checkoutForm.deliveryCity} onChange={(event) => updateForm('deliveryCity', event.target.value)} />
                             </div>
+                          </div>
+                          <div className="field">
+                            <label>{t.form.deliveryDate}</label>
+                            <input
+                              type="date"
+                              min={minDeliveryDate}
+                              value={checkoutForm.deliveryDate}
+                              onChange={(event) => updateForm('deliveryDate', event.target.value)}
+                            />
                           </div>
                         </div>
 
