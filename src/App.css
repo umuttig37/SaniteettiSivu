@@ -1334,6 +1334,13 @@ html {
   gap: 2.35rem 1.95rem;
 }
 
+@media (max-width: 1380px) {
+  .products-grid,
+  .home-featured-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
+}
+
 .product-card {
   width: min(100%, 250px);
   padding: 1rem;
@@ -3059,6 +3066,12 @@ html {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   justify-content: start;
   gap: 1.95rem;
+}
+
+@media (max-width: 1180px) {
+  .related-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  }
 }
 
 .related-card {
