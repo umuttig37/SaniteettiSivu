@@ -1196,6 +1196,84 @@ const isValidPhone = (value: string) => {
   return digitCount >= 7 && digitCount <= 15
 }
 
+const normalizeSearchText = (value: string) =>
+  value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLocaleLowerCase('fi')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+
+const getEditDistance = (left: string, right: string) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex]
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      const substitutionCost = left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1
+      current[rightIndex] = Math.min(
+        current[rightIndex - 1] + 1,
+        previous[rightIndex] + 1,
+        previous[rightIndex - 1] + substitutionCost,
+      )
+    }
+    previous.splice(0, previous.length, ...current)
+  }
+
+  return previous[right.length]
+}
+
+const isAdjacentTransposition = (left: string, right: string) => {
+  if (left.length !== right.length) {
+    return false
+  }
+
+  const differingIndexes = Array.from(left)
+    .map((character, index) => (character === right[index] ? -1 : index))
+    .filter((index) => index >= 0)
+
+  return differingIndexes.length === 2 &&
+    differingIndexes[1] === differingIndexes[0] + 1 &&
+    left[differingIndexes[0]] === right[differingIndexes[1]] &&
+    left[differingIndexes[1]] === right[differingIndexes[0]]
+}
+
+const searchTokenMatches = (queryToken: string, candidateToken: string) => {
+  if (
+    candidateToken === queryToken ||
+    candidateToken.startsWith(queryToken) ||
+    (queryToken.length >= 3 && candidateToken.includes(queryToken))
+  ) {
+    return true
+  }
+
+  if (queryToken.length < 4 || Math.abs(queryToken.length - candidateToken.length) > 2) {
+    return false
+  }
+
+  const allowedDistance = queryToken.length >= 7 ? 2 : 1
+  return isAdjacentTransposition(queryToken, candidateToken) ||
+    getEditDistance(queryToken, candidateToken) <= allowedDistance
+}
+
+const matchesProductSearch = (query: string, values: Array<string | undefined>) => {
+  const normalizedQuery = normalizeSearchText(query)
+  if (!normalizedQuery) {
+    return true
+  }
+
+  const normalizedContent = normalizeSearchText(values.filter(Boolean).join(' '))
+  if (normalizedContent.includes(normalizedQuery)) {
+    return true
+  }
+
+  const queryTokens = normalizedQuery.split(' ')
+  const candidateTokens = Array.from(new Set(normalizedContent.split(' ')))
+  return queryTokens.every((queryToken) =>
+    candidateTokens.some((candidateToken) => searchTokenMatches(queryToken, candidateToken)),
+  )
+}
+
 const localizeAuthMessage = (message: string | undefined, lang: Lang) => {
   if (!message || lang !== 'fi') {
     return message
@@ -2026,13 +2104,19 @@ function App() {
   }
 
   const filteredProducts = useMemo(() => {
-    const query = productQuery.trim().toLowerCase()
+    const query = productQuery.trim()
     let next = productCatalog.filter((item) => {
       const categoryTerms = categoryMap[item.category]
         ? `${categoryMap[item.category].nameFi} ${categoryMap[item.category].nameEn}`
         : item.category
-      const haystack = `${item.name} ${item.sku} ${item.description} ${item.category} ${categoryTerms}`.toLowerCase()
-      const matchesQuery = query === '' || haystack.includes(query)
+      const matchesQuery = matchesProductSearch(query, [
+        item.name,
+        item.sku,
+        item.description,
+        item.category,
+        categoryTerms,
+        ...(item.searchKeywords ?? []),
+      ])
       const matchesCategory = query !== '' || activeCategory === 'all' || item.category === activeCategory
       return matchesQuery && matchesCategory
     })
