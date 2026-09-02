@@ -1492,14 +1492,32 @@ const addDaysToIsoDate = (value: string, days: number) => {
   return formatIsoDateParts(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate())
 }
 
-const getEarliestDeliveryDate = () => addDaysToIsoDate(getCurrentDateInTimeZone(), 1)
+const isWeekendDate = (value: string) => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return false
+  }
+
+  const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay()
+  return weekday === 0 || weekday === 6
+}
+
+const getNextWeekday = (value: string) => {
+  let next = value
+  while (isWeekendDate(next)) {
+    next = addDaysToIsoDate(next, 1)
+  }
+  return next
+}
+
+const getEarliestDeliveryDate = () => getNextWeekday(addDaysToIsoDate(getCurrentDateInTimeZone(), 2))
 
 const isValidDeliveryDateInput = (value: string) => {
   if (!parseIsoDate(value)) {
     return false
   }
 
-  return value >= getEarliestDeliveryDate()
+  return value >= getEarliestDeliveryDate() && !isWeekendDate(value)
 }
 
 const formatCalendarDate = (value: string, lang: Lang) => {
@@ -1514,6 +1532,104 @@ const formatCalendarDate = (value: string, lang: Lang) => {
     year: 'numeric',
     timeZone: siteTimeZone,
   }).format(new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day, 12)))
+}
+
+type DeliveryCalendarProps = {
+  value: string
+  min: string
+  lang: Lang
+  onChange: (value: string) => void
+}
+
+const DeliveryCalendar = ({ value, min, lang, onChange }: DeliveryCalendarProps) => {
+  const initialMonth = `${(value || min).slice(0, 7)}-01`
+  const [visibleMonth, setVisibleMonth] = useState(initialMonth)
+  const visibleMonthParts = parseIsoDate(visibleMonth) ?? parseIsoDate(min)
+  const minMonth = min.slice(0, 7)
+
+  useEffect(() => {
+    const selectedMonth = (value || min).slice(0, 7)
+    if (selectedMonth) {
+      setVisibleMonth(`${selectedMonth}-01`)
+    }
+  }, [min, value])
+
+  if (!visibleMonthParts) {
+    return null
+  }
+
+  const monthStart = new Date(Date.UTC(visibleMonthParts.year, visibleMonthParts.month - 1, 1))
+  const daysInMonth = new Date(Date.UTC(visibleMonthParts.year, visibleMonthParts.month, 0)).getUTCDate()
+  const leadingEmptyDays = (monthStart.getUTCDay() + 6) % 7
+  const calendarDays = Array.from({ length: leadingEmptyDays + daysInMonth }, (_, index) => {
+    const day = index - leadingEmptyDays + 1
+    return day > 0
+      ? formatIsoDateParts(visibleMonthParts.year, visibleMonthParts.month, day)
+      : null
+  })
+  const monthLabel = new Intl.DateTimeFormat(lang === 'fi' ? 'fi-FI' : 'en-GB', {
+    month: 'long',
+    year: 'numeric',
+    timeZone: siteTimeZone,
+  }).format(monthStart)
+  const weekdayLabels = lang === 'fi'
+    ? ['Ma', 'Ti', 'Ke', 'To', 'Pe', 'La', 'Su']
+    : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+
+  const changeMonth = (offset: number) => {
+    const nextMonth = new Date(Date.UTC(visibleMonthParts.year, visibleMonthParts.month - 1 + offset, 1))
+    setVisibleMonth(formatIsoDateParts(nextMonth.getUTCFullYear(), nextMonth.getUTCMonth() + 1, 1))
+  }
+
+  return (
+    <div className="delivery-calendar" aria-label={lang === 'fi' ? 'Valitse toimituspäivä' : 'Choose delivery date'}>
+      <div className="delivery-calendar-head">
+        <button
+          className="delivery-calendar-nav"
+          type="button"
+          aria-label={lang === 'fi' ? 'Edellinen kuukausi' : 'Previous month'}
+          disabled={visibleMonth.slice(0, 7) <= minMonth}
+          onClick={() => changeMonth(-1)}
+        >
+          &#8249;
+        </button>
+        <strong>{monthLabel}</strong>
+        <button
+          className="delivery-calendar-nav"
+          type="button"
+          aria-label={lang === 'fi' ? 'Seuraava kuukausi' : 'Next month'}
+          onClick={() => changeMonth(1)}
+        >
+          &#8250;
+        </button>
+      </div>
+      <div className="delivery-calendar-grid">
+        {weekdayLabels.map((label) => (
+          <span className="delivery-calendar-weekday" key={label}>{label}</span>
+        ))}
+        {calendarDays.map((date, index) => {
+          if (!date) {
+            return <span aria-hidden="true" key={`empty-${index}`} />
+          }
+
+          const disabled = date < min || isWeekendDate(date)
+          return (
+            <button
+              className={`delivery-calendar-day ${date === value ? 'selected' : ''}`}
+              type="button"
+              key={date}
+              disabled={disabled}
+              aria-label={formatCalendarDate(date, lang)}
+              aria-pressed={date === value}
+              onClick={() => onChange(date)}
+            >
+              {Number(date.slice(-2))}
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 const formatDateTime = (value: string, lang: Lang) => {
@@ -2902,8 +3018,8 @@ function App() {
     }
     if (!isValidDeliveryDateInput(checkoutForm.deliveryDate)) {
       return lang === 'fi'
-        ? 'Valitse toimituspäivä aikaisintaan huomiselle.'
-        : 'Choose a delivery date starting from tomorrow.'
+        ? 'Valitse toimituspäivä vähintään kahden päivän päähän ja arkipäivälle.'
+        : 'Choose a weekday at least two days from today.'
     }
     if (selectedPaymentMethod === 'invoice' && (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity)) {
       return lang === 'fi'
@@ -5157,11 +5273,11 @@ function App() {
                           </div>
                           <div className="field">
                             <label>{t.form.deliveryDate}</label>
-                            <input
-                              type="date"
+                            <DeliveryCalendar
+                              lang={lang}
                               min={minDeliveryDate}
                               value={checkoutForm.deliveryDate}
-                              onChange={(event) => updateForm('deliveryDate', event.target.value)}
+                              onChange={(value) => updateForm('deliveryDate', value)}
                             />
                           </div>
                         </div>

@@ -478,7 +478,25 @@ const addDaysToIsoDate = (value, days) => {
   return formatIsoDateParts(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate())
 }
 
-const getEarliestDeliveryDate = () => addDaysToIsoDate(getCurrentDateInTimeZone(), 1)
+const isWeekendDate = (value) => {
+  const parsed = parseIsoDate(value)
+  if (!parsed) {
+    return false
+  }
+
+  const weekday = new Date(Date.UTC(parsed.year, parsed.month - 1, parsed.day)).getUTCDay()
+  return weekday === 0 || weekday === 6
+}
+
+const getNextWeekday = (value) => {
+  let next = value
+  while (isWeekendDate(next)) {
+    next = addDaysToIsoDate(next, 1)
+  }
+  return next
+}
+
+const getEarliestDeliveryDate = () => getNextWeekday(addDaysToIsoDate(getCurrentDateInTimeZone(), 2))
 
 const normalizeDeliveryDate = (value) => {
   const trimmed = String(value ?? '').trim()
@@ -491,7 +509,7 @@ const isValidDeliveryDate = (value) => {
     return false
   }
 
-  return normalized >= getEarliestDeliveryDate()
+  return normalized >= getEarliestDeliveryDate() && !isWeekendDate(normalized)
 }
 
 const formatDeliveryDate = (value, lang = 'fi') => {
@@ -595,7 +613,7 @@ const validateCheckoutInput = (checkout) => {
   }
 
   if (!isValidDeliveryDate(checkout.deliveryDate)) {
-    return 'Delivery date must be at least the next day.'
+    return 'Delivery date must be a weekday at least two days from today.'
   }
 
   if (checkout.paymentMethod === 'card') {
