@@ -343,18 +343,33 @@ export const deleteProduct = (productId) => {
 export const addCategory = (input) => {
   const catalog = readCatalog()
   const normalized = normalizeCategory(input)
+  const normalizedNameFi = normalized.nameFi.toLocaleLowerCase('fi')
+  const normalizedNameEn = normalized.nameEn.toLocaleLowerCase('en')
 
-  if (catalog.categories.some((item) => item.id === normalized.id || item.slug === normalized.slug)) {
+  if (
+    catalog.categories.some(
+      (item) =>
+        item.nameFi.toLocaleLowerCase('fi') === normalizedNameFi ||
+        item.nameEn.toLocaleLowerCase('en') === normalizedNameEn,
+    )
+  ) {
     return catalog
+  }
+
+  const uniqueSlug = ensureUniqueSlug(normalized.slug, catalog.categories)
+  const category = {
+    ...normalized,
+    id: uniqueSlug,
+    slug: uniqueSlug,
   }
 
   const nextCategories = [...catalog.categories]
   const fallbackIndex = nextCategories.findIndex((item) => item.id === 'muut')
 
   if (fallbackIndex >= 0) {
-    nextCategories.splice(fallbackIndex, 0, normalized)
+    nextCategories.splice(fallbackIndex, 0, category)
   } else {
-    nextCategories.push(normalized)
+    nextCategories.push(category)
   }
 
   return writeCatalog({
