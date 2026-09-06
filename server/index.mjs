@@ -1706,14 +1706,22 @@ app.delete('/api/admin/products/:productId', requireAdmin, (req, res) => {
 
 app.post('/api/admin/categories', requireAdmin, (req, res) => {
   const nameFi = String(req.body?.nameFi ?? '').trim()
-  const nameEn = String(req.body?.nameEn ?? nameFi).trim()
+  const nameEn = String(req.body?.nameEn ?? '').trim() || nameFi
   if (!nameFi) {
     res.status(400).json({ message: 'Missing category name' })
     return
   }
 
-  addCategory({ nameFi, nameEn, id: nameFi })
-  res.status(201).json(getPublicCatalogResponse())
+  const previousCategoryIds = new Set(readCatalog().categories.map((category) => category.id))
+  const updatedCatalog = addCategory({ nameFi, nameEn, id: nameFi })
+  const category = updatedCatalog.categories.find((item) => !previousCategoryIds.has(item.id))
+
+  if (!category) {
+    res.status(409).json({ message: 'Category already exists.' })
+    return
+  }
+
+  res.status(201).json({ ...getPublicCatalogResponse(), category })
 })
 
 app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {

@@ -2881,6 +2881,7 @@ function App() {
 
   const handleTopSearch = (value: string) => {
     setProductQuery(value)
+    const shouldScrollToProducts = !window.matchMedia('(max-width: 1100px)').matches
     if (routeState.type !== 'home' && routeState.type !== 'product') {
       const url = new URL(window.location.href)
       url.pathname = '/'
@@ -2897,7 +2898,9 @@ function App() {
         url.searchParams.delete('q')
       }
       navigateTo(`${url.pathname}${url.search}`)
-      scrollToSectionId('products')
+      if (shouldScrollToProducts) {
+        scrollToSectionId('products')
+      }
       return
     }
 
@@ -2912,7 +2915,20 @@ function App() {
       }
       navigateTo(`${url.pathname}${url.search}${url.hash}`, true)
     }
-    scrollToSectionId('products')
+    if (shouldScrollToProducts) {
+      scrollToSectionId('products')
+    }
+  }
+
+  const selectCategory = (categoryId: string) => {
+    setProductQuery('')
+    setActiveCategory(categoryId)
+
+    const url = new URL(window.location.href)
+    if (url.searchParams.has('q')) {
+      url.searchParams.delete('q')
+      navigateTo(`${url.pathname}${url.search}${url.hash}`, true)
+    }
   }
 
   const openProduct = (product: Product) => {
@@ -3779,11 +3795,14 @@ function App() {
 
   const addCategory = async () => {
     const nameFi = adminCategoryName.trim()
-    const nameEn = adminCategoryNameEn.trim()
+    const nameEn = adminCategoryNameEn.trim() || nameFi
     if (!nameFi) {
+      setAdminError(lang === 'fi' ? 'Anna kategorian nimi.' : 'Enter a category name.')
       return
     }
-    if (categories.some((item) => item.nameFi === nameFi || item.nameEn === nameEn)) {
+    const normalizedNameFi = nameFi.toLocaleLowerCase('fi')
+    const normalizedNameEn = nameEn.toLocaleLowerCase('en')
+    if (categories.some((item) => item.nameFi.toLocaleLowerCase('fi') === normalizedNameFi || item.nameEn.toLocaleLowerCase('en') === normalizedNameEn)) {
       setAdminError(lang === 'fi' ? 'Kategoria on jo olemassa.' : 'Category already exists.')
       return
     }
@@ -3795,7 +3814,7 @@ function App() {
         },
         body: JSON.stringify({ nameFi, nameEn }),
       })
-      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      const result = (await response.json()) as { catalog?: CatalogPayload; category?: CategoryDef; message?: string }
       if (response.status === 401) {
         handleAdminUnauthorized()
         return
@@ -3805,6 +3824,9 @@ function App() {
         return
       }
       syncCatalogState(result.catalog)
+      if (result.category) {
+        setAdminProductForm((prev) => ({ ...prev, category: result.category?.id ?? prev.category }))
+      }
       setAdminCategoryName('')
       setAdminCategoryNameEn('')
       setAdminError('')
@@ -5743,11 +5765,11 @@ function App() {
         <section className="section" id="categories">
           <h2 className="sr-only">{t.categoriesTitle}</h2>
           <div className="category-grid">
-            <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => setActiveCategory('all')}>
+            <button className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} onClick={() => selectCategory('all')}>
               <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
             </button>
             {categoriesForFilters.map((item) => (
-              <button key={item.id} className={`category-card ${activeCategory === item.id ? 'active' : ''}`} onClick={() => setActiveCategory(item.id)}>
+              <button key={item.id} className={`category-card ${activeCategory === item.id ? 'active' : ''}`} onClick={() => selectCategory(item.id)}>
                 <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
               </button>
             ))}
@@ -5838,14 +5860,14 @@ function App() {
                 <div className="filter-block">
                   <span className="filter-title">{t.categoriesTitle}</span>
                   <div className="filter-inline">
-                    <button className={`ghost tiny ${activeCategory === 'all' ? 'active-filter' : ''}`} onClick={() => setActiveCategory('all')}>
+                    <button className={`ghost tiny ${activeCategory === 'all' ? 'active-filter' : ''}`} onClick={() => selectCategory('all')}>
                       {lang === 'fi' ? 'Kaikki' : 'All'}
                     </button>
                     {categoriesForFilters.map((item) => (
                       <button
                         key={item.id}
                         className={`ghost tiny ${activeCategory === item.id ? 'active-filter' : ''}`}
-                        onClick={() => setActiveCategory(item.id)}
+                        onClick={() => selectCategory(item.id)}
                       >
                         {lang === 'fi' ? item.nameFi : item.nameEn}
                       </button>
