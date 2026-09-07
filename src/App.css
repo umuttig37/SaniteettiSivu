@@ -1838,6 +1838,7 @@ html {
 
 .admin-category-row {
   display: grid;
+  grid-column: 1 / -1;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) minmax(150px, 0.8fr) auto;
   gap: 0.5rem;
   align-items: center;
