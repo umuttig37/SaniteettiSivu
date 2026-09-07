@@ -12,6 +12,7 @@ let catalogCache = null
 let catalogCacheMtimeMs = null
 let publicCatalogCache = null
 let publicCatalogCacheMtimeMs = null
+let atomicWriteCounter = 0
 
 const fallbackCatalog = {
   categories: [
@@ -35,8 +36,31 @@ const repairText = (value) =>
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'))
 
-const writeJson = (filePath, value) => {
-  fs.writeFileSync(filePath, JSON.stringify(value, null, 2), 'utf8')
+const writeJsonAtomic = (filePath, value) => {
+  const tempFile = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.${atomicWriteCounter += 1}.tmp`,
+  )
+  let fileDescriptor = null
+
+  try {
+    fileDescriptor = fs.openSync(tempFile, 'wx')
+    fs.writeFileSync(fileDescriptor, JSON.stringify(value, null, 2), 'utf8')
+    fs.fsyncSync(fileDescriptor)
+    fs.closeSync(fileDescriptor)
+    fileDescriptor = null
+    fs.renameSync(tempFile, filePath)
+  } catch (error) {
+    if (fileDescriptor !== null) {
+      fs.closeSync(fileDescriptor)
+    }
+    try {
+      fs.unlinkSync(tempFile)
+    } catch {
+      // The temporary file may not have been created or may already have been renamed.
+    }
+    throw error
+  }
 }
 
 const ensureDataDir = () => {
@@ -45,7 +69,16 @@ const ensureDataDir = () => {
   }
 }
 
-const readCatalogFromDisk = () => normalizeCatalog(readJson(catalogFile))
+const readCatalogFromDisk = () => normalizeCatalog(readCatalogJsonFromDisk())
+
+const readCatalogJsonFromDisk = () => {
+  try {
+    return readJson(catalogFile)
+  } catch (error) {
+    console.error(`[catalog] Failed to read ${catalogFile}. Existing catalog was not modified.`, error)
+    throw error
+  }
+}
 
 const rememberCatalog = (catalog) => {
   try {
@@ -157,12 +190,14 @@ const normalizeCategory = (category) => {
   const nameFi = repairText(category?.nameFi ?? category?.id ?? 'Muut').trim() || 'Muut'
   const nameEn = repairText(category?.nameEn ?? nameFi).trim() || nameFi
   const slug = slugify(category?.slug ?? category?.id ?? nameFi) || 'muut'
+  const parentId = slugify(category?.parentId ?? '') || undefined
 
   return {
     id: slug,
     slug,
     nameFi,
     nameEn,
+    parentId,
   }
 }
 
@@ -243,14 +278,24 @@ const normalizeProduct = (product, categories, products) => {
 }
 
 const normalizeCatalog = (catalog) => {
-  const categories =
+  const normalizedCategories =
     Array.isArray(catalog?.categories) && catalog.categories.length > 0
       ? catalog.categories.map(normalizeCategory)
       : fallbackCatalog.categories.map(normalizeCategory)
 
-  if (!categories.some((item) => item.id === 'muut')) {
-    categories.push(normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' }))
+  if (!normalizedCategories.some((item) => item.id === 'muut')) {
+    normalizedCategories.push(normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' }))
   }
+
+  const categoryMap = new Map(normalizedCategories.map((item) => [item.id, item]))
+  const categories = normalizedCategories.map((category) => {
+    const parent = category.parentId ? categoryMap.get(category.parentId) : null
+    const validParent = category.id !== 'muut' && parent && parent.id !== category.id && !parent.parentId
+    return {
+      ...category,
+      parentId: validParent ? parent.id : undefined,
+    }
+  })
 
   const products = []
   for (const rawProduct of Array.isArray(catalog?.products) ? catalog.products : []) {
@@ -265,26 +310,18 @@ const normalizeCatalog = (catalog) => {
 
 export const ensureCatalogStore = () => {
   ensureDataDir()
-  const seed = fs.existsSync(seedFile) ? normalizeCatalog(readJson(seedFile)) : normalizeCatalog(fallbackCatalog)
 
   if (!fs.existsSync(catalogFile)) {
-    writeJson(catalogFile, seed)
+    const seed = fs.existsSync(seedFile) ? normalizeCatalog(readJson(seedFile)) : normalizeCatalog(fallbackCatalog)
+    writeJsonAtomic(catalogFile, seed)
     rememberCatalog(seed)
     return
   }
 
   try {
-    const current = normalizeCatalog(readJson(catalogFile))
-    const hasOnlyFallbackCategory = current.categories.length === 1 && current.categories[0]?.id === 'muut'
-    const shouldBootstrapFromSeed = current.products.length === 0 && hasOnlyFallbackCategory && seed.products.length > 0
-
-    if (shouldBootstrapFromSeed) {
-      writeJson(catalogFile, seed)
-      rememberCatalog(seed)
-    }
-  } catch {
-    writeJson(catalogFile, seed)
-    rememberCatalog(seed)
+    normalizeCatalog(readCatalogJsonFromDisk())
+  } catch (error) {
+    throw new Error('Catalog could not be read. No catalog data was written.', { cause: error })
   }
 }
 
@@ -301,8 +338,53 @@ export const readCatalog = () => {
 export const writeCatalog = (catalog) => {
   ensureCatalogStore()
   const normalized = normalizeCatalog(catalog)
-  writeJson(catalogFile, normalized)
+  writeJsonAtomic(catalogFile, normalized)
   return rememberCatalog(normalized)
+}
+
+export const updateProductCategory = (productId, categoryId) => {
+  const catalog = readCatalog()
+  const normalizedProductId = String(productId ?? '').trim()
+  const normalizedCategoryId = String(categoryId ?? '').trim()
+
+  if (!catalog.categories.some((category) => category.id === normalizedCategoryId)) {
+    throw new Error('Category not found')
+  }
+  if (!catalog.products.some((product) => product.id === normalizedProductId)) {
+    return null
+  }
+
+  const rawCatalog = readCatalogJsonFromDisk()
+  if (!Array.isArray(rawCatalog?.products)) {
+    throw new Error('Catalog products are invalid. No catalog data was written.')
+  }
+
+  const rawProductIndex = rawCatalog.products.findIndex((product) => String(product?.id ?? '') === normalizedProductId)
+  if (rawProductIndex < 0) {
+    throw new Error('Product was not found in the stored catalog. No catalog data was written.')
+  }
+
+  const updatedAt = new Date().toISOString()
+  const nextProducts = rawCatalog.products.map((product, index) =>
+    index === rawProductIndex
+      ? {
+          ...product,
+          category: normalizedCategoryId,
+          updatedAt,
+        }
+      : product,
+  )
+  const nextRawCatalog = {
+    ...rawCatalog,
+    products: nextProducts,
+  }
+
+  writeJsonAtomic(catalogFile, nextRawCatalog)
+  const nextCatalog = rememberCatalog(normalizeCatalog(nextRawCatalog))
+  return {
+    catalog: nextCatalog,
+    product: nextCatalog.products.find((product) => product.id === normalizedProductId) ?? null,
+  }
 }
 
 export const upsertProduct = (input) => {
@@ -357,10 +439,12 @@ export const addCategory = (input) => {
   }
 
   const uniqueSlug = ensureUniqueSlug(normalized.slug, catalog.categories)
+  const parent = normalized.parentId ? catalog.categories.find((item) => item.id === normalized.parentId && !item.parentId) : null
   const category = {
     ...normalized,
     id: uniqueSlug,
     slug: uniqueSlug,
+    parentId: parent?.id,
   }
 
   const nextCategories = [...catalog.categories]
@@ -380,6 +464,10 @@ export const addCategory = (input) => {
 
 export const deleteCategory = (categoryId) => {
   const catalog = readCatalog()
+  if (catalog.categories.some((item) => item.parentId === categoryId)) {
+    return catalog
+  }
+
   const nextCategories = catalog.categories.filter((item) => item.id !== categoryId)
   const safeCategories = nextCategories.some((item) => item.id === 'muut')
     ? nextCategories
@@ -397,12 +485,21 @@ export const deleteCategory = (categoryId) => {
 
 export const updateCategory = (categoryId, input) => {
   const catalog = readCatalog()
+  const currentCategory = catalog.categories.find((item) => item.id === categoryId)
   const nameFi = repairText(input?.nameFi).trim()
   const nameEn = repairText(input?.nameEn ?? nameFi).trim()
 
-  if (!nameFi || !nameEn) {
+  if (!currentCategory || !nameFi || !nameEn) {
     return catalog
   }
+
+  const hasParentId = Object.prototype.hasOwnProperty.call(input ?? {}, 'parentId')
+  const requestedParentId = hasParentId ? slugify(input?.parentId ?? '') || undefined : currentCategory.parentId
+  const hasChildren = catalog.categories.some((item) => item.parentId === categoryId)
+  const parent = requestedParentId && !hasChildren
+    ? catalog.categories.find((item) => item.id === requestedParentId && item.id !== categoryId && !item.parentId)
+    : null
+  const parentId = categoryId === 'muut' ? undefined : parent?.id
 
   const nextCategories = catalog.categories.map((item) =>
     item.id === categoryId
@@ -410,6 +507,7 @@ export const updateCategory = (categoryId, input) => {
           ...item,
           nameFi,
           nameEn,
+          parentId,
         }
       : item,
   )

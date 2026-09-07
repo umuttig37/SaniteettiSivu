@@ -98,6 +98,16 @@ type AdminProductForm = {
   optionGroups: AdminOptionGroupForm[]
 }
 
+const isCategoryOnlyAdminChange = (current: AdminProductForm, original: AdminProductForm) => {
+  const { category: currentCategory, ...currentProductFields } = current
+  const { category: originalCategory, ...originalProductFields } = original
+
+  return (
+    normalizeCategoryId(currentCategory) !== normalizeCategoryId(originalCategory) &&
+    JSON.stringify(currentProductFields) === JSON.stringify(originalProductFields)
+  )
+}
+
 type CustomerAddress = {
   streetAddress: string
   postalCode: string
@@ -160,7 +170,10 @@ type CategoryDef = {
   slug: string
   nameFi: string
   nameEn: string
+  parentId?: string
 }
+
+type AdminCategoryDraft = Pick<CategoryDef, 'nameFi' | 'nameEn'> & { parentId: string }
 
 type CatalogPayload = {
   products: Product[]
@@ -1695,6 +1708,7 @@ const normalizeCategoryDef = (item: CategoryDef | string): CategoryDef => {
     slug: item.slug?.trim() || id,
     nameFi: item.nameFi?.trim() || id,
     nameEn: item.nameEn?.trim() || item.nameFi?.trim() || id,
+    parentId: item.parentId ? normalizeCategoryId(item.parentId) : undefined,
   }
 }
 
@@ -2067,6 +2081,7 @@ function App() {
   const hasInitialCatalog = initialCatalog.products.length > 0 && initialCatalog.categories.length > 0
   const initialRoute = typeof window !== 'undefined' ? window.__INITIAL_ROUTE__ : null
   const initialCheckoutSuccessRef = useRef<CheckoutSuccessState | null>(readStoredCheckoutSuccess())
+  const adminOriginalProductFormRef = useRef<AdminProductForm | null>(null)
   const initialCheckoutSuccess = initialCheckoutSuccessRef.current
   const lang: Lang = 'fi'
   const [productCatalog, setProductCatalog] = useState<Product[]>(initialCatalog.products)
@@ -2107,7 +2122,8 @@ function App() {
   const [adminPage, setAdminPage] = useState(1)
   const [adminCategoryName, setAdminCategoryName] = useState('')
   const [adminCategoryNameEn, setAdminCategoryNameEn] = useState('')
-  const [adminCategoryDrafts, setAdminCategoryDrafts] = useState<Record<string, { nameFi: string; nameEn: string }>>({})
+  const [adminCategoryParentId, setAdminCategoryParentId] = useState('')
+  const [adminCategoryDrafts, setAdminCategoryDrafts] = useState<Record<string, AdminCategoryDraft>>({})
   const [adminNewOptionGroupName, setAdminNewOptionGroupName] = useState('')
   const [selectedQuantity, setSelectedQuantity] = useState(1)
   const [selectedOptionSelections, setSelectedOptionSelections] = useState<Record<string, string>>({})
@@ -2175,13 +2191,46 @@ function App() {
   const checkoutErrorRef = useRef<HTMLDivElement | null>(null)
   const heroStyle = { '--hero-bg': `url(${heroBgImage})` } as CSSProperties
   const t = useMemo(() => text[lang], [lang])
-  const categoriesForFilters = categories
   const categoryMap = useMemo(() => {
     return categories.reduce<Record<string, CategoryDef>>((acc, item) => {
       acc[item.id] = item
       return acc
     }, {})
   }, [categories])
+  const categoriesForFilters = useMemo(() => categories.filter((item) => !item.parentId), [categories])
+  const categoryChildrenMap = useMemo(() => {
+    return categories.reduce<Record<string, CategoryDef[]>>((acc, item) => {
+      if (item.parentId) {
+        acc[item.parentId] = [...(acc[item.parentId] ?? []), item]
+      }
+      return acc
+    }, {})
+  }, [categories])
+  const activeCategoryDefinition = activeCategory === 'all' ? undefined : categoryMap[activeCategory]
+  const activeMainCategory = activeCategoryDefinition?.parentId
+    ? categoryMap[activeCategoryDefinition.parentId]
+    : activeCategoryDefinition
+  const activeSubcategories = activeMainCategory ? categoryChildrenMap[activeMainCategory.id] ?? [] : []
+  const activeCategoryIds = useMemo(() => {
+    if (activeCategory === 'all') {
+      return null
+    }
+    if (categoryMap[activeCategory]?.parentId) {
+      return new Set([activeCategory])
+    }
+    return new Set([activeCategory, ...(categoryChildrenMap[activeCategory] ?? []).map((item) => item.id)])
+  }, [activeCategory, categoryChildrenMap, categoryMap])
+  const adminCategoriesForDisplay = useMemo(
+    () => categoriesForFilters.flatMap((category) => [category, ...(categoryChildrenMap[category.id] ?? [])]),
+    [categoriesForFilters, categoryChildrenMap],
+  )
+  const categorySiblingPositions = useMemo(() => {
+    return adminCategoriesForDisplay.reduce<Record<string, { index: number; total: number }>>((acc, category) => {
+      const siblings = category.parentId ? categoryChildrenMap[category.parentId] ?? [] : categoriesForFilters
+      acc[category.id] = { index: siblings.findIndex((item) => item.id === category.id), total: siblings.length }
+      return acc
+    }, {})
+  }, [adminCategoriesForDisplay, categoriesForFilters, categoryChildrenMap])
   const getCategoryLabel = (categoryId: string) => {
     const match = categoryMap[categoryId]
     if (!match) {
@@ -2233,7 +2282,7 @@ function App() {
         categoryTerms,
         ...(item.searchKeywords ?? []),
       ])
-      const matchesCategory = query !== '' || activeCategory === 'all' || item.category === activeCategory
+      const matchesCategory = query !== '' || activeCategoryIds === null || activeCategoryIds.has(item.category)
       return matchesQuery && matchesCategory
     })
 
@@ -2246,7 +2295,7 @@ function App() {
     }
 
     return next
-  }, [activeCategory, categoryMap, lang, productCatalog, productQuery, sortBy])
+  }, [activeCategoryIds, categoryMap, lang, productCatalog, productQuery, sortBy])
 
   const totalCount = filteredProducts.length
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize))
@@ -2379,10 +2428,11 @@ function App() {
 
   useEffect(() => {
     setAdminCategoryDrafts(
-      categories.reduce<Record<string, { nameFi: string; nameEn: string }>>((acc, category) => {
+      categories.reduce<Record<string, AdminCategoryDraft>>((acc, category) => {
         acc[category.id] = {
           nameFi: category.nameFi,
           nameEn: category.nameEn,
+          parentId: category.parentId ?? '',
         }
         return acc
       }, {}),
@@ -2707,6 +2757,15 @@ function App() {
 
   useEffect(() => {
     setAdminProductForm((prev) => {
+      const originalProductForm = adminOriginalProductFormRef.current
+      if (
+        prev.id &&
+        originalProductForm?.id === prev.id &&
+        isCategoryOnlyAdminChange(prev, originalProductForm)
+      ) {
+        return prev
+      }
+
       const next = { ...prev }
       let changed = false
 
@@ -2925,10 +2984,13 @@ function App() {
     setActiveCategory(categoryId)
 
     const url = new URL(window.location.href)
-    if (url.searchParams.has('q')) {
-      url.searchParams.delete('q')
-      navigateTo(`${url.pathname}${url.search}${url.hash}`, true)
+    url.searchParams.delete('q')
+    if (categoryId !== 'all' && categoryMap[categoryId]) {
+      url.searchParams.set('category', categoryMap[categoryId].slug)
+    } else {
+      url.searchParams.delete('category')
     }
+    navigateTo(`${url.pathname}${url.search}${url.hash}`, true)
   }
 
   const openProduct = (product: Product) => {
@@ -3517,6 +3579,7 @@ function App() {
   }
 
   const resetAdminForm = () => {
+    adminOriginalProductFormRef.current = null
     setAdminProductForm({
       id: null,
       name: '',
@@ -3548,6 +3611,12 @@ function App() {
     const category = normalizeCategoryId(adminProductForm.category)
     const price = Number(adminProductForm.price)
     const stock = Number(adminProductForm.stock)
+    const originalProductForm = adminOriginalProductFormRef.current
+    const isCategoryOnlyUpdate = Boolean(
+      adminProductForm.id &&
+      originalProductForm?.id === adminProductForm.id &&
+      isCategoryOnlyAdminChange(adminProductForm, originalProductForm),
+    )
 
     if (!name || !sku || !category || Number.isNaN(price) || Number.isNaN(stock)) {
       setAdminError(lang === 'fi' ? 'Täytä nimi, SKU, kategoria, hinta ja varasto.' : 'Fill name, SKU, category, price and stock.')
@@ -3576,12 +3645,17 @@ function App() {
     }
 
     try {
-      const response = await adminFetch(adminProductForm.id ? `/api/admin/products/${adminProductForm.id}` : '/api/admin/products', {
-        method: adminProductForm.id ? 'PUT' : 'POST',
+      const endpoint = isCategoryOnlyUpdate
+        ? `/api/admin/products/${adminProductForm.id}/category`
+        : adminProductForm.id
+          ? `/api/admin/products/${adminProductForm.id}`
+          : '/api/admin/products'
+      const response = await adminFetch(endpoint, {
+        method: isCategoryOnlyUpdate ? 'PATCH' : adminProductForm.id ? 'PUT' : 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(isCategoryOnlyUpdate ? { category } : payload),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
       if (response.status === 401) {
@@ -3737,7 +3811,7 @@ function App() {
     )
     const generatedKeywords = buildSearchKeywords(product.name, categoryMap[product.category]?.nameFi ?? product.category, product.sku).join(', ')
 
-    setAdminProductForm({
+    const nextForm: AdminProductForm = {
       id: product.id,
       name: product.name,
       sku: product.sku,
@@ -3754,7 +3828,10 @@ function App() {
       featured: Boolean(product.featured),
       featuredRank: product.featured ? String(product.featuredRank ?? 0) : '',
       optionGroups: formatAdminOptionGroups(product.optionGroups),
-    })
+    }
+
+    adminOriginalProductFormRef.current = nextForm
+    setAdminProductForm(nextForm)
     setAdminNewOptionGroupName('')
     setAdminImageUrl('')
     setAdminSeoTouched(Boolean(product.seoTitle && product.seoTitle !== generatedTitle))
@@ -3812,7 +3889,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ nameFi, nameEn }),
+        body: JSON.stringify({ nameFi, nameEn, parentId: adminCategoryParentId }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; category?: CategoryDef; message?: string }
       if (response.status === 401) {
@@ -3829,6 +3906,7 @@ function App() {
       }
       setAdminCategoryName('')
       setAdminCategoryNameEn('')
+      setAdminCategoryParentId('')
       setAdminError('')
     } catch {
       setAdminError(lang === 'fi' ? 'Kategorian lisäys epäonnistui.' : 'Failed to add category.')
@@ -3864,16 +3942,23 @@ function App() {
   }
 
   const moveCategory = async (categoryId: string, direction: -1 | 1) => {
-    const currentIndex = categories.findIndex((item) => item.id === categoryId)
-    const nextIndex = currentIndex + direction
-
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= categories.length) {
+    const category = categoryMap[categoryId]
+    if (!category) {
       return
     }
 
-    const nextOrder = [...categories]
-    const [moved] = nextOrder.splice(currentIndex, 1)
-    nextOrder.splice(nextIndex, 0, moved)
+    const siblings = categories.filter((item) => (item.parentId ?? '') === (category.parentId ?? ''))
+    const currentIndex = siblings.findIndex((item) => item.id === categoryId)
+    const nextIndex = currentIndex + direction
+
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= siblings.length) {
+      return
+    }
+
+    const nextOrder = categories.map((item) => item.id)
+    const currentOrderIndex = nextOrder.indexOf(siblings[currentIndex].id)
+    const nextOrderIndex = nextOrder.indexOf(siblings[nextIndex].id)
+    ;[nextOrder[currentOrderIndex], nextOrder[nextOrderIndex]] = [nextOrder[nextOrderIndex], nextOrder[currentOrderIndex]]
 
     try {
       const response = await adminFetch('/api/admin/categories/reorder', {
@@ -3881,7 +3966,7 @@ function App() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ order: nextOrder.map((item) => item.id) }),
+        body: JSON.stringify({ order: nextOrder }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
       if (response.status === 401) {
@@ -3899,12 +3984,13 @@ function App() {
     }
   }
 
-  const updateCategoryDraft = (categoryId: string, patch: Partial<{ nameFi: string; nameEn: string }>) => {
+  const updateCategoryDraft = (categoryId: string, patch: Partial<AdminCategoryDraft>) => {
     setAdminCategoryDrafts((prev) => ({
       ...prev,
       [categoryId]: {
         nameFi: prev[categoryId]?.nameFi ?? categoryMap[categoryId]?.nameFi ?? '',
         nameEn: prev[categoryId]?.nameEn ?? categoryMap[categoryId]?.nameEn ?? '',
+        parentId: prev[categoryId]?.parentId ?? categoryMap[categoryId]?.parentId ?? '',
         ...patch,
       },
     }))
@@ -3914,6 +4000,7 @@ function App() {
     const draft = adminCategoryDrafts[categoryId]
     const nameFi = draft?.nameFi?.trim() ?? ''
     const nameEn = draft?.nameEn?.trim() ?? ''
+    const parentId = draft?.parentId?.trim() ?? ''
 
     if (!nameFi || !nameEn) {
       setAdminError(lang === 'fi' ? 'Täytä kategorian nimi molemmilla kielillä.' : 'Fill category names in both languages.')
@@ -3924,7 +4011,7 @@ function App() {
       const response = await adminFetch(`/api/admin/categories/${categoryId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ nameFi, nameEn }),
+        body: JSON.stringify({ nameFi, nameEn, parentId }),
       })
       const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
       if (response.status === 401) {
@@ -4305,9 +4392,9 @@ function App() {
                       onChange={(event) => setAdminProductForm((prev) => ({ ...prev, category: event.target.value }))}
                     >
                       <option value="">{lang === 'fi' ? 'Valitse kategoria' : 'Select category'}</option>
-                      {categories.map((category) => (
+                      {adminCategoriesForDisplay.map((category) => (
                         <option key={category.id} value={category.id}>
-                          {lang === 'fi' ? category.nameFi : category.nameEn}
+                          {category.parentId ? '-- ' : ''}{lang === 'fi' ? category.nameFi : category.nameEn}
                         </option>
                       ))}
                     </select>
@@ -4322,6 +4409,14 @@ function App() {
                         value={adminCategoryNameEn}
                         onChange={(event) => setAdminCategoryNameEn(event.target.value)}
                       />
+                      <select value={adminCategoryParentId} onChange={(event) => setAdminCategoryParentId(event.target.value)}>
+                        <option value="">{lang === 'fi' ? 'Pääkategoria' : 'Main category'}</option>
+                        {categoriesForFilters.map((category) => (
+                          <option key={category.id} value={category.id}>
+                            {lang === 'fi' ? category.nameFi : category.nameEn}
+                          </option>
+                        ))}
+                      </select>
                       <button className="ghost tiny" type="button" onClick={addCategory}>
                         {lang === 'fi' ? 'Lisää' : 'Add'}
                       </button>
@@ -4597,8 +4692,8 @@ function App() {
 
                 <div className="admin-list">
                   <div className="admin-categories-list">
-                    {categories.map((category, index) => (
-                      <div key={category.id} className="admin-category-chip">
+                    {adminCategoriesForDisplay.map((category) => (
+                      <div key={category.id} className={`admin-category-chip ${category.parentId ? 'is-subcategory' : ''}`}>
                         <div className="admin-category-fields">
                           <input
                             className="filter-input"
@@ -4612,18 +4707,34 @@ function App() {
                             onChange={(event) => updateCategoryDraft(category.id, { nameEn: event.target.value })}
                             placeholder={lang === 'fi' ? 'Kategorian nimi (EN)' : 'Category name (EN)'}
                           />
+                          <select
+                            className="filter-input"
+                            value={adminCategoryDrafts[category.id]?.parentId ?? category.parentId ?? ''}
+                            disabled={category.id === 'muut' || Boolean(categoryChildrenMap[category.id]?.length)}
+                            onChange={(event) => updateCategoryDraft(category.id, { parentId: event.target.value })}
+                            aria-label={lang === 'fi' ? 'Yläkategoria' : 'Parent category'}
+                          >
+                            <option value="">{lang === 'fi' ? 'Pääkategoria' : 'Main category'}</option>
+                            {categoriesForFilters
+                              .filter((parent) => parent.id !== category.id)
+                              .map((parent) => (
+                                <option key={parent.id} value={parent.id}>
+                                  {lang === 'fi' ? parent.nameFi : parent.nameEn}
+                                </option>
+                              ))}
+                          </select>
                         </div>
                         <div className="admin-category-actions">
                           <button className="ghost tiny" type="button" onClick={() => saveCategoryNames(category.id)}>
                             {lang === 'fi' ? 'Tallenna' : 'Save'}
                           </button>
-                          <button className="ghost tiny" type="button" disabled={index === 0} onClick={() => moveCategory(category.id, -1)}>
+                          <button className="ghost tiny" type="button" disabled={categorySiblingPositions[category.id]?.index === 0} onClick={() => moveCategory(category.id, -1)}>
                             {lang === 'fi' ? 'Ylös' : 'Up'}
                           </button>
-                          <button className="ghost tiny" type="button" disabled={index === categories.length - 1} onClick={() => moveCategory(category.id, 1)}>
+                          <button className="ghost tiny" type="button" disabled={categorySiblingPositions[category.id]?.index === categorySiblingPositions[category.id]?.total - 1} onClick={() => moveCategory(category.id, 1)}>
                             {lang === 'fi' ? 'Alas' : 'Down'}
                           </button>
-                          <button className="ghost tiny danger" type="button" disabled={category.id === 'muut'} onClick={() => deleteCategory(category.id)}>
+                          <button className="ghost tiny danger" type="button" disabled={category.id === 'muut' || Boolean(categoryChildrenMap[category.id]?.length)} onClick={() => deleteCategory(category.id)}>
                             {lang === 'fi' ? 'Poista' : 'Delete'}
                           </button>
                         </div>
@@ -5769,11 +5880,35 @@ function App() {
               <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
             </button>
             {categoriesForFilters.map((item) => (
-              <button key={item.id} className={`category-card ${activeCategory === item.id ? 'active' : ''}`} onClick={() => selectCategory(item.id)}>
+              <button key={item.id} className={`category-card ${activeMainCategory?.id === item.id ? 'active' : ''}`} onClick={() => selectCategory(item.id)}>
                 <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
               </button>
             ))}
           </div>
+          {activeMainCategory && activeSubcategories.length > 0 && (
+            <div className="subcategory-panel">
+              <span className="subcategory-title">
+                {lang === 'fi' ? 'Valitse Kategoria' : 'Select category'}
+              </span>
+              <div className="subcategory-list">
+                <button
+                  className={`subcategory-button ${activeCategory === activeMainCategory.id ? 'active' : ''}`}
+                  onClick={() => selectCategory(activeMainCategory.id)}
+                >
+                  {lang === 'fi' ? `Kaikki: ${activeMainCategory.nameFi}` : `All: ${activeMainCategory.nameEn}`}
+                </button>
+                {activeSubcategories.map((subcategory) => (
+                  <button
+                    key={subcategory.id}
+                    className={`subcategory-button ${activeCategory === subcategory.id ? 'active' : ''}`}
+                    onClick={() => selectCategory(subcategory.id)}
+                  >
+                    {lang === 'fi' ? subcategory.nameFi : subcategory.nameEn}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </section>
 
         {showFeaturedHomeSection && featuredHomeProducts.length > 0 && (
@@ -5866,7 +6001,7 @@ function App() {
                     {categoriesForFilters.map((item) => (
                       <button
                         key={item.id}
-                        className={`ghost tiny ${activeCategory === item.id ? 'active-filter' : ''}`}
+                        className={`ghost tiny ${activeMainCategory?.id === item.id ? 'active-filter' : ''}`}
                         onClick={() => selectCategory(item.id)}
                       >
                         {lang === 'fi' ? item.nameFi : item.nameEn}
@@ -5874,6 +6009,28 @@ function App() {
                     ))}
                   </div>
                 </div>
+                {activeMainCategory && activeSubcategories.length > 0 && (
+                  <div className="filter-block">
+                    <span className="filter-title">{lang === 'fi' ? 'Alakategoriat' : 'Subcategories'}</span>
+                    <div className="filter-inline">
+                      <button
+                        className={`ghost tiny ${activeCategory === activeMainCategory.id ? 'active-filter' : ''}`}
+                        onClick={() => selectCategory(activeMainCategory.id)}
+                      >
+                        {lang === 'fi' ? 'Kaikki' : 'All'}
+                      </button>
+                      {activeSubcategories.map((subcategory) => (
+                        <button
+                          key={subcategory.id}
+                          className={`ghost tiny ${activeCategory === subcategory.id ? 'active-filter' : ''}`}
+                          onClick={() => selectCategory(subcategory.id)}
+                        >
+                          {lang === 'fi' ? subcategory.nameFi : subcategory.nameEn}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="filter-block">
                   <span className="filter-title">{t.search}</span>
                   <input className="filter-input" value={productQuery} onChange={(event) => setProductQuery(event.target.value)} placeholder={t.search} />

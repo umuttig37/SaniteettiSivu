@@ -16,6 +16,7 @@ import {
   readPublicCatalog,
   reorderCategories,
   updateCategory,
+  updateProductCategory,
   upsertProduct,
   getProductMediaAsset,
 } from './catalog-store.mjs'
@@ -230,7 +231,15 @@ const getSpaRouteFromRequest = (req) => {
     }
   }
 
-  return null
+  return {
+    type: 'home',
+    guestCheckout: false,
+    authMode: 'login',
+    nextPath: null,
+    paytrailResult: null,
+    categorySlug: String(req.query?.category ?? '').trim() || null,
+    searchQuery: String(req.query?.q ?? '').trim() || null,
+  }
 }
 
 const parseCookies = (cookieHeader) => {
@@ -1687,6 +1696,27 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
   res.status(201).json(getPublicCatalogResponse(payload.id))
 })
 
+app.patch('/api/admin/products/:productId/category', requireAdmin, (req, res) => {
+  const categoryId = String(req.body?.category ?? req.body?.categoryId ?? '').trim()
+  if (!categoryId) {
+    res.status(400).json({ message: 'Missing category' })
+    return
+  }
+
+  const catalog = readCatalog()
+  if (!catalog.categories.some((category) => category.id === categoryId)) {
+    res.status(400).json({ message: 'Category not found' })
+    return
+  }
+  if (!catalog.products.some((product) => product.id === req.params.productId)) {
+    res.status(404).json({ message: 'Product not found' })
+    return
+  }
+
+  updateProductCategory(req.params.productId, categoryId)
+  res.json(getPublicCatalogResponse(req.params.productId))
+})
+
 app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {
   const payload = normalizeIncomingProduct(req.body, req.params.productId)
   const validationError = validateProductPayload(payload)
@@ -1707,13 +1737,21 @@ app.delete('/api/admin/products/:productId', requireAdmin, (req, res) => {
 app.post('/api/admin/categories', requireAdmin, (req, res) => {
   const nameFi = String(req.body?.nameFi ?? '').trim()
   const nameEn = String(req.body?.nameEn ?? '').trim() || nameFi
+  const parentId = String(req.body?.parentId ?? '').trim()
   if (!nameFi) {
     res.status(400).json({ message: 'Missing category name' })
     return
   }
 
-  const previousCategoryIds = new Set(readCatalog().categories.map((category) => category.id))
-  const updatedCatalog = addCategory({ nameFi, nameEn, id: nameFi })
+  const currentCatalog = readCatalog()
+  const parent = parentId ? currentCatalog.categories.find((category) => category.id === parentId) : null
+  if (parentId && (!parent || parent.parentId)) {
+    res.status(400).json({ message: 'Invalid parent category.' })
+    return
+  }
+
+  const previousCategoryIds = new Set(currentCatalog.categories.map((category) => category.id))
+  const updatedCatalog = addCategory({ nameFi, nameEn, id: nameFi, parentId })
   const category = updatedCatalog.categories.find((item) => !previousCategoryIds.has(item.id))
 
   if (!category) {
@@ -1729,6 +1767,10 @@ app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
     res.status(400).json({ message: 'Fallback category cannot be deleted.' })
     return
   }
+  if (readCatalog().categories.some((category) => category.parentId === req.params.categoryId)) {
+    res.status(409).json({ message: 'Move or delete subcategories before deleting their parent category.' })
+    return
+  }
   deleteCategory(req.params.categoryId)
   res.json(getPublicCatalogResponse())
 })
@@ -1736,12 +1778,29 @@ app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
 app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
   const nameFi = String(req.body?.nameFi ?? '').trim()
   const nameEn = String(req.body?.nameEn ?? nameFi).trim()
+  const parentId = String(req.body?.parentId ?? '').trim()
   if (!nameFi || !nameEn) {
     res.status(400).json({ message: 'Missing category names' })
     return
   }
 
-  updateCategory(req.params.categoryId, { nameFi, nameEn })
+  const currentCatalog = readCatalog()
+  const category = currentCatalog.categories.find((item) => item.id === req.params.categoryId)
+  const parent = parentId ? currentCatalog.categories.find((item) => item.id === parentId) : null
+  const hasChildren = currentCatalog.categories.some((item) => item.parentId === req.params.categoryId)
+  if (!category) {
+    res.status(404).json({ message: 'Category not found.' })
+    return
+  }
+  if (
+    parentId &&
+    (req.params.categoryId === 'muut' || parentId === req.params.categoryId || !parent || parent.parentId || hasChildren)
+  ) {
+    res.status(400).json({ message: 'Invalid parent category.' })
+    return
+  }
+
+  updateCategory(req.params.categoryId, { nameFi, nameEn, parentId })
   res.json(getPublicCatalogResponse())
 })
 

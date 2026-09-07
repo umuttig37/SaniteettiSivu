@@ -415,12 +415,40 @@ const renderOptionGroupsMarkup = (product) => {
   `
 }
 
-const renderHomeMarkup = ({ catalog }) => {
+const getCategoryHref = (category) => `/?category=${encodeURIComponent(category.slug)}`
+
+const getCategoryProductIds = (catalog, category) => {
+  if (!category) {
+    return null
+  }
+  if (category.parentId) {
+    return new Set([category.id])
+  }
+
+  return new Set([
+    category.id,
+    ...catalog.categories.filter((item) => item.parentId === category.id).map((item) => item.id),
+  ])
+}
+
+const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
   const featuredCards = getFeaturedProducts(catalog.products, 12)
-  const productCards = [...catalog.products].sort(compareFeaturedPriority).slice(0, 8)
-  const categories = catalog.categories.filter((item) => item.id !== 'muut')
+  const categoryMap = new Map(catalog.categories.map((item) => [item.id, item]))
+  const categories = catalog.categories.filter((item) => item.id !== 'muut' && !item.parentId)
+  const activeMainCategory = activeCategory?.parentId ? categoryMap.get(activeCategory.parentId) : activeCategory
+  const activeSubcategories = activeMainCategory
+    ? catalog.categories.filter((item) => item.parentId === activeMainCategory.id)
+    : []
+  const activeCategoryIds = getCategoryProductIds(catalog, activeCategory)
+  const productCards = [...catalog.products]
+    .filter((product) => !activeCategoryIds || activeCategoryIds.has(product.category))
+    .sort(compareFeaturedPriority)
   const categoryCounts = catalog.products.reduce((acc, product) => {
     acc[product.category] = (acc[product.category] ?? 0) + 1
+    const parentId = categoryMap.get(product.category)?.parentId
+    if (parentId) {
+      acc[parentId] = (acc[parentId] ?? 0) + 1
+    }
     return acc
   }, {})
 
@@ -448,7 +476,7 @@ const renderHomeMarkup = ({ catalog }) => {
             ${categories
               .map(
                 (category) => `
-                  <a class="category-card" href="/?category=${encodeURIComponent(category.slug)}">
+                  <a class="category-card ${activeMainCategory?.id === category.id ? 'active' : ''}" href="${getCategoryHref(category)}">
                     <strong>${escapeHtml(category.nameFi)}</strong>
                     <span class="muted">${categoryCounts[category.id] ?? 0}</span>
                   </a>
@@ -456,6 +484,29 @@ const renderHomeMarkup = ({ catalog }) => {
               )
               .join('')}
           </div>
+          ${
+            activeMainCategory && activeSubcategories.length > 0
+              ? `
+                <div class="subcategory-panel">
+                  <span class="subcategory-title">Valitse Kategoria</span>
+                  <div class="subcategory-list">
+                    <a class="subcategory-button ${activeCategory?.id === activeMainCategory.id ? 'active' : ''}" href="${getCategoryHref(activeMainCategory)}">
+                      Kaikki: ${escapeHtml(activeMainCategory.nameFi)}
+                    </a>
+                    ${activeSubcategories
+                      .map(
+                        (subcategory) => `
+                          <a class="subcategory-button ${activeCategory?.id === subcategory.id ? 'active' : ''}" href="${getCategoryHref(subcategory)}">
+                            ${escapeHtml(subcategory.nameFi)}
+                          </a>
+                        `,
+                      )
+                      .join('')}
+                  </div>
+                </div>
+              `
+              : ''
+          }
         </section>
 
         ${
@@ -503,7 +554,7 @@ const renderHomeMarkup = ({ catalog }) => {
         <section class="section products-section" id="products">
           <div class="products-header">
             <div>
-              <h2>Tuotteet</h2>
+              <h2>${escapeHtml(activeCategory?.nameFi ?? 'Tuotteet')}</h2>
               <p class="muted">Maksu laskulla</p>
               <p class="muted shipping-note">Ilmainen toimitus yli 300 € tilauksille</p>
             </div>
@@ -814,6 +865,17 @@ const renderDocument = ({ siteUrl, meta, initialState, ssrMarkup = '' }) => {
 
 export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
   const utilityMeta = getUtilityPageMeta(siteUrl, route)
+  const activeCategory =
+    route?.type === 'home' && route.categorySlug
+      ? catalog.categories.find((category) => category.slug === route.categorySlug || category.id === route.categorySlug) ?? null
+      : null
+  const categoryMeta = activeCategory
+    ? {
+        title: `${repairText(activeCategory.nameFi)} | Suomen Paperitukku`,
+        description: `Tutustu kategoriaan ${repairText(activeCategory.nameFi)} ja tilaa tuotteet yritykselle Suomen Paperitukusta.`,
+        canonical: absoluteUrl(siteUrl, getCategoryHref(activeCategory)),
+      }
+    : null
 
   return renderDocument({
     siteUrl,
@@ -826,15 +888,15 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
           preloadImages: [],
         }
       : {
-          ...homeMeta,
+          ...(categoryMeta ?? homeMeta),
           type: 'website',
-          canonical: absoluteUrl(siteUrl, '/'),
+          canonical: categoryMeta?.canonical ?? absoluteUrl(siteUrl, '/'),
           image: absoluteUrl(siteUrl, '/brand-logo.png'),
           structuredData: buildHomeStructuredData(siteUrl, catalog),
           preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
         },
     initialState: { catalog, route },
-    ssrMarkup: utilityMeta ? renderUtilityMarkup(route) : renderHomeMarkup({ catalog }),
+    ssrMarkup: utilityMeta ? renderUtilityMarkup(route) : renderHomeMarkup({ catalog, activeCategory }),
   })
 }
 
@@ -880,6 +942,16 @@ export const renderSitemapXml = ({ siteUrl, catalog }) => {
       loc: absoluteUrl(siteUrl, '/'),
       lastmod: new Date().toISOString(),
     },
+    ...catalog.categories.map((category) => ({
+      loc: absoluteUrl(siteUrl, getCategoryHref(category)),
+      lastmod:
+        catalog.products
+          .filter((product) => getCategoryProductIds(catalog, category).has(product.category))
+          .map((product) => product.updatedAt)
+          .filter(Boolean)
+          .sort()
+          .at(-1) ?? new Date().toISOString(),
+    })),
     ...catalog.products.map((product) => ({
       loc: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
       lastmod: product.updatedAt ?? new Date().toISOString(),
