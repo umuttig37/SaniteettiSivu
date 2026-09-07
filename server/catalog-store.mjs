@@ -457,7 +457,9 @@ const getPublicImageUrl = (product, imageIndex, imageValue) => {
     return raw
   }
 
-  return `/media/product/${encodeURIComponent(product.slug ?? product.id ?? 'tuote')}/${imageIndex}`
+  const mediaPath = `/media/product/${encodeURIComponent(product.slug ?? product.id ?? 'tuote')}/${imageIndex}`
+  const version = String(product.updatedAt ?? '').trim()
+  return version ? `${mediaPath}?v=${encodeURIComponent(version)}` : mediaPath
 }
 
 const toPublicProduct = (product) => {

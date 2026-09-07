@@ -810,7 +810,7 @@ const resolveStoredImageValue = (value, existingProduct) => {
     return nextValue
   }
 
-  const mediaMatch = nextValue.match(/(?:^https?:\/\/[^/]+)?\/media\/product\/([^/]+)\/(\d+)$/)
+  const mediaMatch = nextValue.match(/(?:^https?:\/\/[^/]+)?\/media\/product\/([^/?#]+)\/(\d+)(?:\?[^#]*)?(?:#.*)?$/)
   if (!mediaMatch) {
     return nextValue
   }
