@@ -107,10 +107,6 @@ html {
   flex-wrap: wrap;
 }
 
-.top-highlights-home .top-highlight-card:nth-child(2) {
-  display: none;
-}
-
 .top-highlight-card {
   display: inline-flex;
   align-items: center;
@@ -582,27 +578,45 @@ html {
 }
 
 .delivery-area {
-  display: grid;
-  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
-  gap: 2rem;
+  position: relative;
+  isolation: isolate;
+  min-height: 220px;
+  display: flex;
   align-items: center;
+  overflow: hidden;
   margin-top: 1.2rem;
   margin-bottom: 1.8rem;
-  border: 1px solid rgba(127, 151, 192, 0.24);
-  border-radius: 20px;
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+  border: 1px solid rgba(78, 117, 165, 0.2);
+  border-radius: 16px;
   background:
-    radial-gradient(circle at 100% 0%, rgba(244, 181, 112, 0.2), transparent 42%),
-    linear-gradient(135deg, rgba(235, 243, 255, 0.96), rgba(255, 255, 255, 0.96));
-  box-shadow: 0 14px 34px rgba(19, 45, 86, 0.08);
+    linear-gradient(90deg, rgba(249, 252, 255, 0.98) 0%, rgba(249, 252, 255, 0.93) 34%, rgba(249, 252, 255, 0.62) 52%, rgba(249, 252, 255, 0.08) 72%),
+    url('/sptbanner.jpg') 66% center / cover no-repeat;
+  box-shadow: 0 10px 28px rgba(19, 45, 86, 0.1);
+}
+
+.delivery-area-copy {
+  position: relative;
+  z-index: 1;
+  width: min(52%, 560px);
 }
 
 .delivery-area h2 {
-  margin: 0.35rem 0 0;
+  max-width: 520px;
+  margin: 0.4rem 0 0.65rem;
+  color: #102a4b;
+  font-family: inherit;
+  font-size: clamp(1.65rem, 2.4vw, 2.25rem);
+  line-height: 1.08;
 }
 
 .delivery-area p {
-  color: var(--muted);
-  line-height: 1.7;
+  max-width: 540px;
+  margin: 0;
+  color: #344b67;
+  font-size: 0.96rem;
+  line-height: 1.58;
 }
 
 .utility-page {
@@ -2767,8 +2781,16 @@ html {
   }
 
   .delivery-area {
-    grid-template-columns: 1fr;
-    gap: 0.8rem;
+    min-height: 210px;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+    background:
+      linear-gradient(90deg, rgba(249, 252, 255, 0.98) 0%, rgba(249, 252, 255, 0.92) 45%, rgba(249, 252, 255, 0.5) 72%, rgba(249, 252, 255, 0.12) 100%),
+      url('/sptbanner.jpg') 62% center / cover no-repeat;
+  }
+
+  .delivery-area-copy {
+    width: min(72%, 500px);
   }
 
   .brand img {
@@ -2898,6 +2920,28 @@ html {
   .top {
     gap: 0.35rem 0.7rem;
     padding: 0.55rem 0.6rem 0.45rem;
+  }
+
+  .delivery-area {
+    min-height: 225px;
+    padding: 1.2rem;
+    border-radius: 14px;
+    background:
+      linear-gradient(90deg, rgba(249, 252, 255, 0.98) 0%, rgba(249, 252, 255, 0.94) 48%, rgba(249, 252, 255, 0.52) 76%, rgba(249, 252, 255, 0.1) 100%),
+      url('/sptbanner.jpg') 64% center / cover no-repeat;
+  }
+
+  .delivery-area-copy {
+    width: 76%;
+  }
+
+  .delivery-area h2 {
+    font-size: 1.38rem;
+  }
+
+  .delivery-area p {
+    font-size: 0.84rem;
+    line-height: 1.48;
   }
 
   .brand {

@@ -4469,17 +4469,6 @@ function App() {
         <div className="top-highlight-card">
           <span className="top-highlight-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.61 2.61a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6.09 6.09l1.47-1.27a2 2 0 0 1 2.11-.45c.84.28 1.71.49 2.61.61A2 2 0 0 1 22 16.92Z" />
-            </svg>
-          </span>
-          <div className="top-highlight-copy">
-            <strong>{lang === 'fi' ? 'Puhelin' : 'Phone'}</strong>
-            <span>{t.footer.phone}</span>
-          </div>
-        </div>
-        <div className="top-highlight-card">
-          <span className="top-highlight-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
               <path d="M10 17h4V5H2v12h3" />
               <path d="M14 8h4l4 4v5h-3" />
               <circle cx="7.5" cy="17.5" r="2.5" />
@@ -4487,8 +4476,20 @@ function App() {
             </svg>
           </span>
           <div className="top-highlight-copy">
-            <strong>{lang === 'fi' ? 'Ilmainen toimitus' : 'Free delivery'}</strong>
-            <span>{lang === 'fi' ? `yli ${freeShippingThreshold} € tilauksille` : `for orders over ${freeShippingThreshold} €`}</span>
+            <strong>{lang === 'fi' ? 'Nopea toimitus' : 'Fast delivery'}</strong>
+            <span>{lang === 'fi' ? 'Jopa samana päivänä' : 'Even on the same day'}</span>
+          </div>
+        </div>
+        <div className="top-highlight-card">
+          <span className="top-highlight-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M20 12V5a1 1 0 0 0-1-1h-7L4 12l8 8 8-8Z" />
+              <circle cx="15.5" cy="8.5" r="1.5" />
+            </svg>
+          </span>
+          <div className="top-highlight-copy">
+            <strong>{lang === 'fi' ? 'Markkinan edullisimmat hinnat' : 'The lowest prices on the market'}</strong>
+            <span>{lang === 'fi' ? 'Yrityksille suunniteltu valikoima' : 'A range built for businesses'}</span>
           </div>
         </div>
         <div className="top-highlight-card">
@@ -6695,17 +6696,17 @@ function App() {
 
         {!isCategoryPage && (
           <section className="section delivery-area" aria-labelledby="delivery-area-title">
-            <div>
+            <div className="delivery-area-copy">
               <span className="delivery-area-kicker">{lang === 'fi' ? 'Toimitusalue' : 'Delivery area'}</span>
               <h2 id="delivery-area-title">
                 {lang === 'fi' ? 'Toimitamme yrityksille ympäri Suomen' : 'Delivery for businesses across Finland'}
               </h2>
+              <p>
+                {lang === 'fi'
+                  ? 'Palvelemme yritysasiakkaita koko Suomessa. Tilaa työpaikan paperi-, hygienia- ja siivoustuotteet suoraan Suomen Paperitukusta.'
+                  : 'We serve business customers throughout Finland. Order paper, hygiene and cleaning products directly from Suomen Paperitukku.'}
+              </p>
             </div>
-            <p>
-              {lang === 'fi'
-                ? 'Palvelemme yritysasiakkaita Helsingissä, Vantaalla, Espoossa, Tampereella, Turussa ja Oulussa sekä muualla Suomessa. Tilaa työpaikan paperi-, hygienia- ja siivoustuotteet suoraan Suomen Paperitukusta.'
-                : 'We serve business customers in Helsinki, Vantaa, Espoo, Tampere, Turku and Oulu, as well as elsewhere in Finland.'}
-            </p>
           </section>
         )}
 

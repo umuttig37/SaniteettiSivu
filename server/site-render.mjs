@@ -715,11 +715,11 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
         </section>
 
         <section class="section delivery-area" aria-labelledby="delivery-area-title">
-          <div>
+          <div class="delivery-area-copy">
             <span class="delivery-area-kicker">Toimitusalue</span>
             <h2 id="delivery-area-title">Toimitamme yrityksille ympäri Suomen</h2>
+            <p>Palvelemme yritysasiakkaita koko Suomessa. Tilaa työpaikan paperi-, hygienia- ja siivoustuotteet suoraan Suomen Paperitukusta.</p>
           </div>
-          <p>Palvelemme yritysasiakkaita Helsingissä, Vantaalla, Espoossa, Tampereella, Turussa ja Oulussa sekä muualla Suomessa. Tilaa työpaikan paperi-, hygienia- ja siivoustuotteet suoraan Suomen Paperitukusta.</p>
         </section>
 
         <section class="section contact" id="contact">
