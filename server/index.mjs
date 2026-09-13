@@ -28,6 +28,7 @@ import {
   setCustomerPrice,
 } from './customer-price-store.mjs'
 import {
+  getCategoryPath,
   renderProductOgSvg,
   renderProductPage,
   renderRobotsTxt,
@@ -181,7 +182,7 @@ const getPaytrailSiteUrl = (req) => {
 
 const isPaytrailPublicUrlAllowed = (value) => isPublicHttpsUrl(value)
 
-const getSpaRouteFromRequest = (req) => {
+const getSpaRouteFromRequest = (req, catalog) => {
   const pathname = String(req.path ?? '').replace(/\/+$/g, '') || '/'
   const guestCheckout = String(req.query?.guest ?? '').trim() === '1'
   const authMode = String(req.query?.mode ?? '').trim() === 'register' ? 'register' : 'login'
@@ -235,6 +236,19 @@ const getSpaRouteFromRequest = (req) => {
       authMode: 'login',
       nextPath: null,
       paytrailResult: paytrailMatch[1],
+    }
+  }
+
+  const directCategory = catalog?.categories?.find((category) => getCategoryPath(category) === pathname)
+  if (directCategory) {
+    return {
+      type: 'home',
+      guestCheckout: false,
+      authMode: 'login',
+      nextPath: null,
+      paytrailResult: null,
+      categorySlug: directCategory.slug,
+      searchQuery: String(req.query?.q ?? '').trim() || null,
     }
   }
 
@@ -2365,7 +2379,18 @@ app.get(/^(?!\/api\/|\/robots\.txt$|\/sitemap\.xml$|\/og\/).*/, (req, res) => {
     }
   }
 
-  const route = getSpaRouteFromRequest(req)
+  const legacyCategorySlug = String(req.query.category ?? '').trim()
+  if (legacyCategorySlug) {
+    const category = catalog.categories.find(
+      (item) => item.slug === legacyCategorySlug || item.id === legacyCategorySlug,
+    )
+    if (category) {
+      res.redirect(301, getCategoryPath(category))
+      return
+    }
+  }
+
+  const route = getSpaRouteFromRequest(req, catalog)
   res.type('html').send(
     renderSpaPage({
       siteUrl: getSiteUrl(req),

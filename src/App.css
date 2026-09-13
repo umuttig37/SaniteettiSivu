@@ -177,6 +177,11 @@ html {
   cursor: pointer;
 }
 
+.header-contact-link {
+  color: #1748a1;
+  font-weight: 750;
+}
+
 .actions {
   display: flex;
   align-items: center;
@@ -215,6 +220,15 @@ html {
   width: 1.28rem;
   height: 1.28rem;
   display: block;
+}
+
+.mobile-contact-button {
+  text-decoration: none;
+}
+
+.mobile-contact-button svg {
+  width: 1.28rem;
+  height: 1.28rem;
 }
 
 .mobile-cart-button {
@@ -531,6 +545,67 @@ html {
 
 .section h2 {
   margin-bottom: 0.7rem;
+}
+
+.category-landing {
+  display: grid;
+  gap: 1.2rem;
+  padding-top: 2.4rem;
+}
+
+.category-landing-copy {
+  display: grid;
+  gap: 0.55rem;
+  max-width: 780px;
+}
+
+.category-landing-copy h1 {
+  font-family: var(--display);
+  font-size: clamp(2rem, 4vw, 3rem);
+  line-height: 1.08;
+}
+
+.category-landing-copy p {
+  color: var(--muted);
+  font-size: 1.02rem;
+  line-height: 1.65;
+}
+
+.category-landing-kicker,
+.delivery-area-kicker {
+  color: #1d57bf;
+  font-size: 0.76rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.category-products {
+  padding-top: 1rem;
+}
+
+.delivery-area {
+  display: grid;
+  grid-template-columns: minmax(240px, 0.8fr) minmax(0, 1.2fr);
+  gap: 2rem;
+  align-items: center;
+  margin-top: 1.2rem;
+  margin-bottom: 1.8rem;
+  border: 1px solid rgba(127, 151, 192, 0.24);
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(244, 181, 112, 0.2), transparent 42%),
+    linear-gradient(135deg, rgba(235, 243, 255, 0.96), rgba(255, 255, 255, 0.96));
+  box-shadow: 0 14px 34px rgba(19, 45, 86, 0.08);
+}
+
+.delivery-area h2 {
+  margin: 0.35rem 0 0;
+}
+
+.delivery-area p {
+  color: var(--muted);
+  line-height: 1.7;
 }
 
 .utility-page {
@@ -1000,6 +1075,7 @@ html {
   font-size: 0.88rem;
   font-weight: 650;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .subcategory-button.active {
@@ -2604,6 +2680,10 @@ html {
     font-size: 0.98rem;
   }
 
+  .header-contact-link {
+    display: none;
+  }
+
   .actions {
     width: 100%;
     justify-content: flex-end;
@@ -2680,6 +2760,11 @@ html {
   .footer {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
+  }
+
+  .delivery-area {
+    grid-template-columns: 1fr;
+    gap: 0.8rem;
   }
 
   .brand img {

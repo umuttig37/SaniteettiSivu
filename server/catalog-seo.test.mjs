@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { renderProductPage, renderSitemapXml, renderSpaPage } from './site-render.mjs'
+import { getCategoryPath, renderProductPage, renderSitemapXml, renderSpaPage } from './site-render.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 
@@ -117,17 +117,26 @@ test('server-rendered category pages expose product links without JavaScript', (
 
   assert.match(mainHtml, /href="\/tuote\/product-main"/)
   assert.match(mainHtml, /href="\/tuote\/product-child"/)
-  assert.match(mainHtml, /href="\/\?category=child"/)
+  assert.match(mainHtml, /href="\/child"/)
   assert.doesNotMatch(mainHtml, /href="\/tuote\/product-transition"/)
+  assert.doesNotMatch(mainHtml, /class="hero"/)
+  assert.doesNotMatch(mainHtml, /Suosittelemme juuri nyt/)
+  assert.match(mainHtml, /<h1>Main<\/h1>/)
   assert.match(childHtml, /href="\/tuote\/product-child"/)
   assert.doesNotMatch(childHtml, /href="\/tuote\/product-main"/)
   assert.match(homeHtml, /href="\/tuote\/product-transition"/)
-  assert.match(mainHtml, /<link rel="canonical" href="https:\/\/example\.test\/\?category=main"/)
+  assert.match(mainHtml, /<link rel="canonical" href="https:\/\/example\.test\/main"/)
+  assert.match(childHtml, /<link rel="canonical" href="https:\/\/example\.test\/child"/)
+  assert.doesNotMatch(mainHtml, /\?category=/)
 })
 
 test('product pages retain one canonical URL and Product structured data', () => {
   const catalog = createCatalog()
-  const product = catalog.products[1]
+  const product = {
+    ...catalog.products[1],
+    name: 'Tork Existing product',
+    seoTitle: 'Tork Existing | Suomen Paperitukku',
+  }
   const html = renderProductPage({
     siteUrl: 'https://example.test',
     catalog,
@@ -139,6 +148,11 @@ test('product pages retain one canonical URL and Product structured data', () =>
   assert.match(html, /<link rel="canonical" href="https:\/\/example\.test\/tuote\/product-child"/)
   assert.match(html, /"@type":"Product"/)
   assert.match(html, /"url":"https:\/\/example\.test\/tuote\/product-child"/)
+  assert.match(html, /"brand":\{"@type":"Brand","name":"Tork"\}/)
+  assert.equal((html.match(/"@type":"Product"/g) ?? []).length, 1)
+  assert.equal((html.match(/data-seo="structured-data"/g) ?? []).length, 1)
+  assert.match(html, /https:\/\/example\.test\/child/)
+  assert.match(html, /<title>Tork Existing product \| Suomen Paperitukku<\/title>/)
 })
 
 test('sitemap includes every existing product and category URL', () => {
@@ -148,6 +162,35 @@ test('sitemap includes every existing product and category URL', () => {
   for (const product of catalog.products) {
     assert.match(sitemap, new RegExp(`https://example\\.test/tuote/${product.slug}`))
   }
-  assert.match(sitemap, /https:\/\/example\.test\/\?category=main/)
-  assert.match(sitemap, /https:\/\/example\.test\/\?category=child/)
+  assert.match(sitemap, /https:\/\/example\.test\/main/)
+  assert.match(sitemap, /https:\/\/example\.test\/child/)
+  assert.doesNotMatch(sitemap, /\?category=/)
+  const locations = Array.from(sitemap.matchAll(/<loc>(.*?)<\/loc>/g), (match) => match[1])
+  assert.equal(new Set(locations).size, locations.length)
+})
+
+test('reserved application paths use a conflict-free category URL', () => {
+  assert.equal(getCategoryPath({ id: 'kassa', slug: 'kassa' }), '/kategoria/kassa')
+  assert.equal(getCategoryPath({ id: 'pesuaineet', slug: 'pesuaineet' }), '/pesuaineet')
+})
+
+test('initial HTML only embeds products relevant to the rendered page', () => {
+  const catalog = createCatalog()
+  const productHtml = renderProductPage({
+    siteUrl: 'https://example.test',
+    catalog,
+    product: catalog.products[0],
+    category: catalog.categories[0],
+    related: [],
+  })
+  const childHtml = renderSpaPage({
+    siteUrl: 'https://example.test',
+    catalog,
+    route: { type: 'home', categorySlug: 'child' },
+  })
+
+  assert.doesNotMatch(productHtml, /product-transition/)
+  assert.doesNotMatch(productHtml, /product-child/)
+  assert.doesNotMatch(childHtml, /product-transition/)
+  assert.doesNotMatch(childHtml, /product-main/)
 })

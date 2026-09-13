@@ -164,6 +164,121 @@ const getFeaturedProducts = (products, limit = 12) =>
 
 const getProductAlt = (product) => `${repairText(product?.name ?? '')} yrityksille`
 
+const knownProductBrands = [
+  'Tork',
+  'Katrin',
+  'Kiilto',
+  'Vileda',
+  'TASKI',
+  'Bioska',
+  'BioBag',
+  'Nilfisk',
+  'Abena',
+  'Erisan',
+  'TECcare',
+  'Oxivir',
+  'Comfort',
+  'Glade',
+  'Mr Muscle',
+  'Sun',
+]
+
+const escapeRegExp = (value) => String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+
+const getProductBrand = (product) => {
+  const name = repairText(product?.name ?? '')
+  return knownProductBrands.find((brand) => new RegExp(`(^|[^a-z0-9])${escapeRegExp(brand)}([^a-z0-9]|$)`, 'iu').test(name)) ?? null
+}
+
+const getProductSeoTitle = (product) => {
+  const name = repairText(product?.name ?? '').trim()
+  const storedTitle = repairText(product?.seoTitle ?? '').trim()
+
+  return storedTitle.toLocaleLowerCase('fi').startsWith(name.toLocaleLowerCase('fi'))
+    ? storedTitle
+    : `${name} | Suomen Paperitukku`
+}
+
+const reservedCategoryPaths = new Set([
+  'api',
+  'assets',
+  'brand-logo.png',
+  'ehdot',
+  'favicon.svg',
+  'kassa',
+  'kategoria',
+  'media',
+  'og',
+  'ostoskori',
+  'products',
+  'robots.txt',
+  'sitemap.xml',
+  'tili',
+  'tuote',
+  'vite.svg',
+])
+
+export const getCategoryPath = (category) => {
+  const slug = String(category?.slug ?? category?.id ?? '').trim()
+  if (!slug) {
+    return '/'
+  }
+  const encodedSlug = encodeURIComponent(slug)
+  return reservedCategoryPaths.has(slug) ? `/kategoria/${encodedSlug}` : `/${encodedSlug}`
+}
+
+const getCategoryDescription = (category, parentCategory = null) => {
+  const name = repairText(category?.nameFi ?? 'Tuotteet')
+  const parentContext = parentCategory
+    ? ` osana ${repairText(parentCategory.nameFi)}-valikoimaa`
+    : ''
+  return `${name} yrityksille kilpailukykyiseen hintaan${parentContext}. Tilaa tuotteet Suomen Paperitukusta toimitettuna ympäri Suomen.`
+}
+
+const getCategorySeo = (siteUrl, category, parentCategory = null) => {
+  const canonical = absoluteUrl(siteUrl, getCategoryPath(category))
+  const breadcrumbItems = [
+    {
+      '@type': 'ListItem',
+      position: 1,
+      name: 'Etusivu',
+      item: absoluteUrl(siteUrl, '/'),
+    },
+  ]
+
+  if (parentCategory) {
+    breadcrumbItems.push({
+      '@type': 'ListItem',
+      position: breadcrumbItems.length + 1,
+      name: repairText(parentCategory.nameFi),
+      item: absoluteUrl(siteUrl, getCategoryPath(parentCategory)),
+    })
+  }
+
+  breadcrumbItems.push({
+    '@type': 'ListItem',
+    position: breadcrumbItems.length + 1,
+    name: repairText(category.nameFi),
+    item: canonical,
+  })
+
+  return {
+    title: `${repairText(category.nameFi)} yrityksille | Suomen Paperitukku`,
+    description: getCategoryDescription(category, parentCategory),
+    canonical,
+    image: absoluteUrl(siteUrl, '/brand-logo.png'),
+    type: 'website',
+    structuredData: [
+      {
+        '@context': 'https://schema.org',
+        '@type': 'BreadcrumbList',
+        itemListElement: breadcrumbItems,
+      },
+    ],
+    preloadImages: [],
+  }
+}
+
 const extractUnitLabel = (priceUnit) => {
   const unit = repairText(priceUnit ?? '')
     .replace(/€/g, '')
@@ -238,11 +353,12 @@ const getOptionMetaHeader = (groupName) => (/yksikk|unit/i.test(String(groupName
 
 const productSeo = (siteUrl, product, category) => {
   const canonical = absoluteUrl(siteUrl, `/tuote/${product.slug}`)
-  const title = repairText(product.seoTitle || `${product.name} | Suomen Paperitukku`)
+  const title = getProductSeoTitle(product)
   const description = stripTags(product.metaDescription || product.description || homeMeta.description)
   const image = absoluteUrl(siteUrl, `/og/product/${product.slug}.svg`)
   const keywords = Array.isArray(product.searchKeywords) ? repairText(product.searchKeywords.join(', ')) : ''
   const effectivePrice = getDefaultSelectedOptionPrice(product)
+  const brand = getProductBrand(product)
 
   const breadcrumbData = {
     '@context': 'https://schema.org',
@@ -258,7 +374,7 @@ const productSeo = (siteUrl, product, category) => {
         '@type': 'ListItem',
         position: 2,
         name: repairText(category?.nameFi ?? 'Tuotteet'),
-        item: absoluteUrl(siteUrl, `/?category=${encodeURIComponent(category?.slug ?? '')}`),
+        item: absoluteUrl(siteUrl, category ? getCategoryPath(category) : '/'),
       },
       {
         '@type': 'ListItem',
@@ -278,10 +394,14 @@ const productSeo = (siteUrl, product, category) => {
     image: [absoluteUrl(siteUrl, product.images?.[0] ?? product.image)],
     category: repairText(category?.nameFi ?? product.category),
     keywords: Array.isArray(product.searchKeywords) ? repairText(product.searchKeywords.join(', ')) : undefined,
-    brand: {
-      '@type': 'Brand',
-      name: 'Suomen Paperitukku',
-    },
+    ...(brand
+      ? {
+          brand: {
+            '@type': 'Brand',
+            name: brand,
+          },
+        }
+      : {}),
     offers: {
       '@type': 'Offer',
       url: canonical,
@@ -341,29 +461,36 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
   const itemListProducts =
     homeProducts.length > 0 ? homeProducts : [...catalog.products].sort(compareFeaturedPriority).slice(0, 12)
 
-  const featuredProducts = itemListProducts.map((product, index) => ({
-    '@type': 'ListItem',
-    position: index + 1,
-    url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
-    item: {
-      '@type': 'Product',
-      name: repairText(product.name),
-      image: absoluteUrl(siteUrl, product.images?.[0] ?? product.image),
-      description: repairText(product.metaDescription || product.description),
-      sku: repairText(product.sku),
-      brand: {
-        '@type': 'Brand',
-        name: 'Suomen Paperitukku',
+  const featuredProducts = itemListProducts.map((product, index) => {
+    const brand = getProductBrand(product)
+    return {
+      '@type': 'ListItem',
+      position: index + 1,
+      url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
+      item: {
+        '@type': 'Product',
+        name: repairText(product.name),
+        image: absoluteUrl(siteUrl, product.images?.[0] ?? product.image),
+        description: repairText(product.metaDescription || product.description),
+        sku: repairText(product.sku),
+        ...(brand
+          ? {
+              brand: {
+                '@type': 'Brand',
+                name: brand,
+              },
+            }
+          : {}),
+        offers: {
+          '@type': 'Offer',
+          priceCurrency: 'EUR',
+          price: Number(product.price ?? 0).toFixed(2),
+          availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
+          url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
+        },
       },
-      offers: {
-        '@type': 'Offer',
-        priceCurrency: 'EUR',
-        price: Number(product.price ?? 0).toFixed(2),
-        availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
-        url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
-      },
-    },
-  }))
+    }
+  })
 
   const itemList = {
     '@context': 'https://schema.org',
@@ -415,8 +542,6 @@ const renderOptionGroupsMarkup = (product) => {
   `
 }
 
-const getCategoryHref = (category) => `/?category=${encodeURIComponent(category.slug)}`
-
 const getCategoryProductIds = (catalog, category) => {
   if (!category) {
     return null
@@ -443,6 +568,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
   const productCards = [...catalog.products]
     .filter((product) => !activeCategoryIds || activeCategoryIds.has(product.category))
     .sort(compareFeaturedPriority)
+    .slice(0, 36)
   const categoryCounts = catalog.products.reduce((acc, product) => {
     acc[product.category] = (acc[product.category] ?? 0) + 1
     const parentId = categoryMap.get(product.category)?.parentId
@@ -461,7 +587,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button" href="/#contact">Yhteystiedot</a>
+          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
         </nav>
       </header>
       <main class="main">
@@ -476,7 +602,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
             ${categories
               .map(
                 (category) => `
-                  <a class="category-card ${activeMainCategory?.id === category.id ? 'active' : ''}" href="${getCategoryHref(category)}">
+                  <a class="category-card ${activeMainCategory?.id === category.id ? 'active' : ''}" href="${getCategoryPath(category)}">
                     <strong>${escapeHtml(category.nameFi)}</strong>
                     <span class="muted">${categoryCounts[category.id] ?? 0}</span>
                   </a>
@@ -490,13 +616,13 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
                 <div class="subcategory-panel">
                   <span class="subcategory-title">Valitse Kategoria</span>
                   <div class="subcategory-list">
-                    <a class="subcategory-button ${activeCategory?.id === activeMainCategory.id ? 'active' : ''}" href="${getCategoryHref(activeMainCategory)}">
+                    <a class="subcategory-button ${activeCategory?.id === activeMainCategory.id ? 'active' : ''}" href="${getCategoryPath(activeMainCategory)}">
                       Kaikki: ${escapeHtml(activeMainCategory.nameFi)}
                     </a>
                     ${activeSubcategories
                       .map(
                         (subcategory) => `
-                          <a class="subcategory-button ${activeCategory?.id === subcategory.id ? 'active' : ''}" href="${getCategoryHref(subcategory)}">
+                          <a class="subcategory-button ${activeCategory?.id === subcategory.id ? 'active' : ''}" href="${getCategoryPath(subcategory)}">
                             ${escapeHtml(subcategory.nameFi)}
                           </a>
                         `,
@@ -588,6 +714,14 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           </div>
         </section>
 
+        <section class="section delivery-area" aria-labelledby="delivery-area-title">
+          <div>
+            <span class="delivery-area-kicker">Toimitusalue</span>
+            <h2 id="delivery-area-title">Toimitamme yrityksille ympäri Suomen</h2>
+          </div>
+          <p>Palvelemme yritysasiakkaita Helsingissä, Vantaalla, Espoossa, Tampereella, Turussa ja Oulussa sekä muualla Suomessa. Tilaa työpaikan paperi-, hygienia- ja siivoustuotteet suoraan Suomen Paperitukusta.</p>
+        </section>
+
         <section class="section contact" id="contact">
           <h2>Yhteystiedot</h2>
           <p class="muted">Tarvitsetko tarjouksen tai isomman erän? Ota yhteyttä Suomen Paperitukkuun.</p>
@@ -657,7 +791,7 @@ const renderHead = ({ siteUrl, meta }) => {
     <link rel="canonical" href="${escapeHtml(canonical)}" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="shortcut icon" href="/favicon.svg" />
-    ${structuredData.map((item) => `<script type="application/ld+json">${jsonScript(item)}</script>`).join('\n')}
+    ${structuredData.length > 0 ? `<script type="application/ld+json" data-seo="structured-data">${jsonScript(structuredData)}</script>` : ''}
   `
 }
 
@@ -676,7 +810,7 @@ const renderProductMarkup = ({ product, category, related }) => {
     <nav class="breadcrumbs" aria-label="Breadcrumb">
       <a href="/">Etusivu</a>
       <span aria-hidden="true">/</span>
-      <a href="/?category=${encodeURIComponent(category?.slug ?? '')}">${escapeHtml(category?.nameFi ?? 'Tuotteet')}</a>
+      <a href="${category ? getCategoryPath(category) : '/'}">${escapeHtml(category?.nameFi ?? 'Tuotteet')}</a>
       <span aria-hidden="true">/</span>
       <span>${escapeHtml(product.name)}</span>
     </nav>
@@ -711,7 +845,7 @@ const renderProductMarkup = ({ product, category, related }) => {
         </a>
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button" href="/#contact">Yhteystiedot</a>
+          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
         </nav>
       </header>
       <main class="main">
@@ -741,6 +875,119 @@ const renderProductMarkup = ({ product, category, related }) => {
             </div>
           </div>
           ${relatedMarkup}
+        </section>
+      </main>
+      <footer class="footer">
+        <div>
+          <strong>Suomen Paperitukku</strong>
+          <p>Asiakaspalvelu</p>
+          <p>+358 44 978 2446</p>
+          <p>suomenpaperitukku@gmail.com</p>
+        </div>
+        <div class="footer-center">
+          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
+        </div>
+        <div class="footer-meta">
+          <p>3590057-8</p>
+          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
+        </div>
+      </footer>
+    </div>
+  `
+}
+
+const renderCategoryProductCards = (products) =>
+  products
+    .map(
+      (product) => `
+        <article class="card product-card">
+          <a class="product-card-button" href="/tuote/${encodeURIComponent(product.slug)}">
+            <div class="product-link">
+              <img class="product-image" src="${escapeHtml(product.images?.[0] ?? product.image)}" alt="${escapeHtml(getProductAlt(product))}" loading="lazy" decoding="async" />
+              <h2 class="product-name">${escapeHtml(product.name)}</h2>
+            </div>
+            <div class="product-body">
+              <div class="availability">
+                <span class="status ${product.stock > 0 ? 'status-ok' : 'status-low'}">
+                  <span class="dot"></span> ${product.stock > 0 ? 'Varastossa' : 'Loppu'}
+                </span>
+              </div>
+              <div class="price-block">
+                <span class="muted">${formatPrice(Number(product.price) * 1.255)} € (sis. alv)</span>
+                <span class="price-top"><span class="price-main">${formatPrice(product.price)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
+              </div>
+            </div>
+          </a>
+        </article>
+      `,
+    )
+    .join('')
+
+const renderCategoryMarkup = ({ catalog, category }) => {
+  const categoryMap = new Map(catalog.categories.map((item) => [item.id, item]))
+  const parentCategory = category.parentId ? categoryMap.get(category.parentId) ?? null : null
+  const subcategories = category.parentId
+    ? []
+    : catalog.categories.filter((item) => item.parentId === category.id)
+  const categoryIds = getCategoryProductIds(catalog, category)
+  const categoryProducts = [...catalog.products]
+    .filter((product) => categoryIds.has(product.category))
+    .sort(compareFeaturedPriority)
+
+  return `
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
+          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" decoding="async" fetchpriority="high" />
+        </a>
+        <nav class="nav" aria-label="Päänavigaatio">
+          <a class="nav-button" href="/#categories">Kategoriat</a>
+          <a class="nav-button" href="/#products">Tuotteet</a>
+          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
+        </nav>
+      </header>
+      <main class="main">
+        <section class="section category-landing">
+          <nav class="breadcrumbs" aria-label="Breadcrumb">
+            <a href="/">Etusivu</a>
+            <span aria-hidden="true">/</span>
+            ${
+              parentCategory
+                ? `<a href="${getCategoryPath(parentCategory)}">${escapeHtml(parentCategory.nameFi)}</a><span aria-hidden="true">/</span>`
+                : ''
+            }
+            <span>${escapeHtml(category.nameFi)}</span>
+          </nav>
+          <div class="category-landing-copy">
+            <span class="category-landing-kicker">Tuotekategoria</span>
+            <h1>${escapeHtml(category.nameFi)}</h1>
+            <p>${escapeHtml(getCategoryDescription(category, parentCategory))}</p>
+          </div>
+          ${
+            subcategories.length > 0
+              ? `<div class="subcategory-panel">
+                  <span class="subcategory-title">Valitse Kategoria</span>
+                  <div class="subcategory-list">
+                    ${subcategories
+                      .map(
+                        (subcategory) => `<a class="subcategory-button" href="${getCategoryPath(subcategory)}">${escapeHtml(subcategory.nameFi)}</a>`,
+                      )
+                      .join('')}
+                  </div>
+                </div>`
+              : ''
+          }
+        </section>
+        <section class="section products-section category-products" id="products">
+          <div class="products-header">
+            <div>
+              <h2>Tuotteet</h2>
+              <p class="muted">${categoryProducts.length} tuotetta kategoriassa ${escapeHtml(category.nameFi)}</p>
+            </div>
+          </div>
+          <div class="grid products-grid">
+            ${renderCategoryProductCards(categoryProducts)}
+          </div>
         </section>
       </main>
       <footer class="footer">
@@ -869,13 +1116,26 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
     route?.type === 'home' && route.categorySlug
       ? catalog.categories.find((category) => category.slug === route.categorySlug || category.id === route.categorySlug) ?? null
       : null
-  const categoryMeta = activeCategory
-    ? {
-        title: `${repairText(activeCategory.nameFi)} | Suomen Paperitukku`,
-        description: `Tutustu kategoriaan ${repairText(activeCategory.nameFi)} ja tilaa tuotteet yritykselle Suomen Paperitukusta.`,
-        canonical: absoluteUrl(siteUrl, getCategoryHref(activeCategory)),
-      }
+  const parentCategory = activeCategory?.parentId
+    ? catalog.categories.find((category) => category.id === activeCategory.parentId) ?? null
     : null
+  const categoryMeta = activeCategory ? getCategorySeo(siteUrl, activeCategory, parentCategory) : null
+  const categoryProductIds = activeCategory ? getCategoryProductIds(catalog, activeCategory) : null
+  const categoryProducts = categoryProductIds
+    ? catalog.products.filter((product) => categoryProductIds.has(product.category))
+    : []
+  const homeProducts = Array.from(
+    new Map(
+      [...getFeaturedProducts(catalog.products, 12), ...[...catalog.products].sort(compareFeaturedPriority).slice(0, 36)].map((product) => [
+        product.id,
+        product,
+      ]),
+    ).values(),
+  )
+  const initialCatalog = {
+    categories: catalog.categories,
+    products: utilityMeta ? [] : activeCategory ? categoryProducts : homeProducts,
+  }
 
   return renderDocument({
     siteUrl,
@@ -887,16 +1147,20 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
           structuredData: [],
           preloadImages: [],
         }
-      : {
-          ...(categoryMeta ?? homeMeta),
+      : categoryMeta ?? {
+          ...homeMeta,
           type: 'website',
-          canonical: categoryMeta?.canonical ?? absoluteUrl(siteUrl, '/'),
+          canonical: absoluteUrl(siteUrl, '/'),
           image: absoluteUrl(siteUrl, '/brand-logo.png'),
           structuredData: buildHomeStructuredData(siteUrl, catalog),
           preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
         },
-    initialState: { catalog, route },
-    ssrMarkup: utilityMeta ? renderUtilityMarkup(route) : renderHomeMarkup({ catalog, activeCategory }),
+    initialState: { catalog: initialCatalog, route },
+    ssrMarkup: utilityMeta
+      ? renderUtilityMarkup(route)
+      : activeCategory
+        ? renderCategoryMarkup({ catalog, category: activeCategory })
+        : renderHomeMarkup({ catalog }),
   })
 }
 
@@ -905,7 +1169,10 @@ export const renderProductPage = ({ siteUrl, catalog, product, category, related
     siteUrl,
     meta: productSeo(siteUrl, product, category),
     initialState: {
-      catalog,
+      catalog: {
+        categories: catalog.categories,
+        products: [product, ...related],
+      },
       route: { type: 'product', slug: product.slug },
     },
     ssrMarkup: renderProductMarkup({ product, category, related }),
@@ -937,24 +1204,29 @@ export const renderProductOgSvg = ({ product, category }) => {
 }
 
 export const renderSitemapXml = ({ siteUrl, catalog }) => {
+  const latestCatalogUpdate = catalog.products
+    .map((product) => product.updatedAt)
+    .filter(Boolean)
+    .sort()
+    .at(-1)
   const urls = [
     {
       loc: absoluteUrl(siteUrl, '/'),
-      lastmod: new Date().toISOString(),
+      lastmod: latestCatalogUpdate,
     },
     ...catalog.categories.map((category) => ({
-      loc: absoluteUrl(siteUrl, getCategoryHref(category)),
+      loc: absoluteUrl(siteUrl, getCategoryPath(category)),
       lastmod:
         catalog.products
           .filter((product) => getCategoryProductIds(catalog, category).has(product.category))
           .map((product) => product.updatedAt)
           .filter(Boolean)
           .sort()
-          .at(-1) ?? new Date().toISOString(),
+          .at(-1),
     })),
     ...catalog.products.map((product) => ({
       loc: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
-      lastmod: product.updatedAt ?? new Date().toISOString(),
+      lastmod: product.updatedAt,
     })),
   ]
 
@@ -964,7 +1236,7 @@ ${urls
   .map(
     (item) => `  <url>
     <loc>${escapeHtml(item.loc)}</loc>
-    <lastmod>${escapeHtml(item.lastmod)}</lastmod>
+    ${item.lastmod ? `<lastmod>${escapeHtml(item.lastmod)}</lastmod>` : ''}
   </url>`,
   )
   .join('\n')}
