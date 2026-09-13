@@ -587,7 +587,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
         </nav>
       </header>
       <main class="main">
@@ -845,7 +845,7 @@ const renderProductMarkup = ({ product, category, related }) => {
         </a>
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
         </nav>
       </header>
       <main class="main">
@@ -943,7 +943,7 @@ const renderCategoryMarkup = ({ catalog, category }) => {
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="tel:+358449782446">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
         </nav>
       </header>
       <main class="main">

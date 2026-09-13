@@ -3088,9 +3088,24 @@ function App() {
   }
 
   const scrollToSectionId = (sectionId: string) => {
-    window.setTimeout(() => {
-      document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 0)
+    let attempts = 0
+    const scrollWhenReady = () => {
+      const section = document.getElementById(sectionId)
+      if (!section && attempts < 5) {
+        attempts += 1
+        window.setTimeout(scrollWhenReady, 50)
+        return
+      }
+      if (!section) {
+        return
+      }
+
+      const headerHeight = document.querySelector<HTMLElement>('.top')?.getBoundingClientRect().height ?? 0
+      const sectionTop = section.getBoundingClientRect().top + window.scrollY - headerHeight - 12
+      window.scrollTo({ top: Math.max(0, sectionTop), behavior: 'smooth' })
+    }
+
+    window.setTimeout(scrollWhenReady, 0)
   }
 
   const syncProductInUrl = (product: Product | null, nextQuery: string | null = null) => {
@@ -3258,6 +3273,16 @@ function App() {
       navigateTo('/')
     }
     scrollToSectionId(sectionId)
+  }
+
+  const goToContact = () => {
+    setIsAdminPage(false)
+    setShowContactPanel(true)
+    if (routeState.type !== 'home' || routeState.categorySlug || selectedProduct) {
+      setActiveCategory('all')
+      navigateTo('/#contact')
+    }
+    scrollToSectionId('contact')
   }
 
   const cartItems = Object.values(cart)
@@ -4524,7 +4549,14 @@ function App() {
             {t.nav[1]}
           </a>
           {!isAdminPage && (
-            <a className="nav-button header-contact-link" href={`tel:${t.footer.phone.replace(/\s+/g, '')}`}>
+            <a
+              className="nav-button header-contact-link"
+              href="/#contact"
+              onClick={(event) => {
+                event.preventDefault()
+                goToContact()
+              }}
+            >
               {lang === 'fi' ? 'Ota yhteyttä' : 'Contact us'}
             </a>
           )}
@@ -4619,8 +4651,12 @@ function App() {
                   <div className="mobile-utility-actions" aria-label="Pikatoiminnot">
                     <a
                       className="ghost mobile-icon-button mobile-contact-button"
-                      href={`tel:${t.footer.phone.replace(/\s+/g, '')}`}
-                      aria-label={lang === 'fi' ? `Soita ${t.footer.phone}` : `Call ${t.footer.phone}`}
+                      href="/#contact"
+                      aria-label={lang === 'fi' ? 'Näytä yhteystiedot' : 'Show contact details'}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        goToContact()
+                      }}
                     >
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
                         <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.86 19.86 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6A19.86 19.86 0 0 1 2.12 4.18 2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.12.9.33 1.77.61 2.61a2 2 0 0 1-.45 2.11L8 9.91a16 16 0 0 0 6.09 6.09l1.47-1.27a2 2 0 0 1 2.11-.45c.84.28 1.71.49 2.61.61A2 2 0 0 1 22 16.92Z" />
