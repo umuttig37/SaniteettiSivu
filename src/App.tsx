@@ -458,7 +458,7 @@ const rawText = {
       brand: 'Suomen Paperitukku',
       service: 'Asiakaspalvelu',
       phone: '+358 44 978 2446',
-      email: 'suomenpaperitukku@gmail.com',
+      email: 'info@suomenpaperitukku.fi',
       terms: 'Tilaus- ja toimitusehdot',
       hours: '',
       legal: '3590057-8',
@@ -556,7 +556,7 @@ const rawText = {
       brand: 'Suomen Paperitukku',
       service: 'Customer service',
       phone: '+358 44 978 2446',
-      email: 'suomenpaperitukku@gmail.com',
+      email: 'info@suomenpaperitukku.fi',
       terms: 'Terms of sale and delivery',
       hours: '',
       legal: '3590057-8',
@@ -2011,7 +2011,7 @@ const applyHomeSeo = (products: Product[] = []) => {
       name: 'Suomen Paperitukku',
       url: `${siteUrl}/`,
       logo: `${siteUrl}/brand-logo.png`,
-      email: 'suomenpaperitukku@gmail.com',
+      email: 'info@suomenpaperitukku.fi',
       telephone: '+358449782446',
       address: {
         '@type': 'PostalAddress',
@@ -4557,7 +4557,7 @@ function App() {
                 goToContact()
               }}
             >
-              {lang === 'fi' ? 'Ota yhteyttä' : 'Contact us'}
+              {lang === 'fi' ? 'Yhteystiedot' : 'Contact details'}
             </a>
           )}
         </nav>
@@ -6718,7 +6718,7 @@ function App() {
               <div className="contact-info">
                 <div className="contact-info-card">
                   <strong>{lang === 'fi' ? 'Sähköposti' : 'Email'}</strong>
-                  <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
+                  <a href="mailto:info@suomenpaperitukku.fi">info@suomenpaperitukku.fi</a>
                 </div>
                 <div className="contact-info-card">
                   <strong>{lang === 'fi' ? 'Puhelinnumero' : 'Phone number'}</strong>

@@ -2671,7 +2671,7 @@ html {
     display: flex;
     width: 100%;
     justify-self: stretch;
-    justify-content: center;
+    justify-content: flex-end;
     gap: 1.25rem;
     margin-left: 0;
     font-size: 0.98rem;

@@ -125,7 +125,7 @@ test('server-rendered category pages expose product links without JavaScript', (
   assert.match(childHtml, /href="\/tuote\/product-child"/)
   assert.doesNotMatch(childHtml, /href="\/tuote\/product-main"/)
   assert.match(homeHtml, /href="\/tuote\/product-transition"/)
-  assert.match(homeHtml, /class="nav-button header-contact-link" href="\/#contact"/)
+  assert.match(homeHtml, /class="nav-button header-contact-link" href="\/#contact">Yhteystiedot<\/a>/)
   assert.match(mainHtml, /<link rel="canonical" href="https:\/\/example\.test\/main"/)
   assert.match(childHtml, /<link rel="canonical" href="https:\/\/example\.test\/child"/)
   assert.doesNotMatch(mainHtml, /\?category=/)

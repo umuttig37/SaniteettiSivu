@@ -1021,7 +1021,7 @@ const emailFooter = (lang) => {
     <p style="margin:14px 0 0;">
       ${t.regards}<br />
       +358 44 978 2446<br />
-      suomenpaperitukku@gmail.com
+      info@suomenpaperitukku.fi
     </p>
   `
 }

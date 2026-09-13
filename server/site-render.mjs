@@ -434,7 +434,7 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
     name: 'Suomen Paperitukku',
     url: siteUrl,
     logo: absoluteUrl(siteUrl, '/brand-logo.png'),
-    email: 'suomenpaperitukku@gmail.com',
+    email: 'info@suomenpaperitukku.fi',
     telephone: '+358449782446',
     address: {
       '@type': 'PostalAddress',
@@ -587,7 +587,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Yhteystiedot</a>
         </nav>
       </header>
       <main class="main">
@@ -729,7 +729,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
             <div class="contact-info">
               <div class="contact-info-card">
                 <strong>Sähköposti</strong>
-                <a href="mailto:suomenpaperitukku@gmail.com">suomenpaperitukku@gmail.com</a>
+                <a href="mailto:info@suomenpaperitukku.fi">info@suomenpaperitukku.fi</a>
               </div>
               <div class="contact-info-card">
                 <strong>Puhelin</strong>
@@ -744,7 +744,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           <strong>Suomen Paperitukku</strong>
           <p>Asiakaspalvelu</p>
           <p>+358 44 978 2446</p>
-          <p>suomenpaperitukku@gmail.com</p>
+          <p>info@suomenpaperitukku.fi</p>
         </div>
         <div class="footer-center">
           <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
@@ -845,7 +845,7 @@ const renderProductMarkup = ({ product, category, related }) => {
         </a>
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Yhteystiedot</a>
         </nav>
       </header>
       <main class="main">
@@ -882,7 +882,7 @@ const renderProductMarkup = ({ product, category, related }) => {
           <strong>Suomen Paperitukku</strong>
           <p>Asiakaspalvelu</p>
           <p>+358 44 978 2446</p>
-          <p>suomenpaperitukku@gmail.com</p>
+          <p>info@suomenpaperitukku.fi</p>
         </div>
         <div class="footer-center">
           <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
@@ -943,7 +943,7 @@ const renderCategoryMarkup = ({ catalog, category }) => {
         <nav class="nav" aria-label="Päänavigaatio">
           <a class="nav-button" href="/#categories">Kategoriat</a>
           <a class="nav-button" href="/#products">Tuotteet</a>
-          <a class="nav-button header-contact-link" href="/#contact">Ota yhteyttä</a>
+          <a class="nav-button header-contact-link" href="/#contact">Yhteystiedot</a>
         </nav>
       </header>
       <main class="main">
@@ -995,7 +995,7 @@ const renderCategoryMarkup = ({ catalog, category }) => {
           <strong>Suomen Paperitukku</strong>
           <p>Asiakaspalvelu</p>
           <p>+358 44 978 2446</p>
-          <p>suomenpaperitukku@gmail.com</p>
+          <p>info@suomenpaperitukku.fi</p>
         </div>
         <div class="footer-center">
           <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
