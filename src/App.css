@@ -228,15 +228,6 @@ html {
   display: block;
 }
 
-.mobile-contact-button {
-  text-decoration: none;
-}
-
-.mobile-contact-button svg {
-  width: 1.28rem;
-  height: 1.28rem;
-}
-
 .mobile-cart-button {
   position: relative;
 }
@@ -2664,7 +2655,7 @@ html {
     grid-template-columns: auto minmax(0, 1fr);
     grid-template-areas:
       "brand right"
-      ". nav";
+      "nav nav";
     align-items: start;
     gap: 0.45rem 0.85rem;
     padding: 0.65rem 0.8rem 0.55rem;
@@ -2678,16 +2669,17 @@ html {
   .nav {
     grid-area: nav;
     display: flex;
-    width: auto;
-    justify-self: end;
-    justify-content: flex-end;
+    width: 100%;
+    justify-self: stretch;
+    justify-content: center;
     gap: 1.25rem;
     margin-left: 0;
     font-size: 0.98rem;
   }
 
   .header-contact-link {
-    display: none;
+    display: inline-flex;
+    order: -1;
   }
 
   #categories,
