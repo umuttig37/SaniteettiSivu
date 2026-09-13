@@ -62,6 +62,8 @@ type Product = {
   name: string
   category: string
   price: number
+  regularPrice?: number
+  customerPrice?: number
   priceUnit: string
   unitNote?: string
   sku: string
@@ -277,6 +279,14 @@ type AdminCustomer = {
   businessId: string
   phone: string
   email: string
+}
+
+type AdminCustomerPrice = {
+  customerId: string
+  productId: string
+  price: number
+  createdAt: string
+  updatedAt: string
 }
 
 const svgData = (label: string, color: string) => {
@@ -1435,8 +1445,10 @@ const formatPrice = (value: number, lang: Lang) => {
 
 const roundCurrency = (value: number) => Math.round(value * 100) / 100
 
+const getRegularProductPrice = (product: Product) => product.regularPrice ?? product.price
+
 const getResolvedUnitPrice = (product: Product, selectedOptions: SelectedProductOption[]) =>
-  selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
+  product.customerPrice ?? selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
 
 const formatOptionValueMeta = (
   groupName: string,
@@ -2098,7 +2110,7 @@ function App() {
   const [adminAuthed, setAdminAuthed] = useState(false)
   const [adminSessionLoading, setAdminSessionLoading] = useState(false)
   const [customerProfile, setCustomerProfile] = useState<CustomerProfile | null>(null)
-  const [customerSessionLoading, setCustomerSessionLoading] = useState(false)
+  const [customerSessionLoading, setCustomerSessionLoading] = useState(true)
   const [authLoading, setAuthLoading] = useState(false)
   const [authError, setAuthError] = useState('')
   const [authNotice, setAuthNotice] = useState('')
@@ -2182,6 +2194,14 @@ function App() {
   const [adminCustomersLoading, setAdminCustomersLoading] = useState(false)
   const [adminCustomersError, setAdminCustomersError] = useState('')
   const [adminCustomersNotice, setAdminCustomersNotice] = useState('')
+  const [adminPriceCustomerId, setAdminPriceCustomerId] = useState('')
+  const [adminPriceProductId, setAdminPriceProductId] = useState('')
+  const [adminPriceValue, setAdminPriceValue] = useState('')
+  const [adminPriceQuery, setAdminPriceQuery] = useState('')
+  const [adminCustomerPrices, setAdminCustomerPrices] = useState<AdminCustomerPrice[]>([])
+  const [adminCustomerPricesLoading, setAdminCustomerPricesLoading] = useState(false)
+  const [adminCustomerPricesError, setAdminCustomerPricesError] = useState('')
+  const [adminCustomerPricesNotice, setAdminCustomerPricesNotice] = useState('')
   const [customerActionCustomerId, setCustomerActionCustomerId] = useState<string | null>(null)
   const [customerActionType, setCustomerActionType] = useState<'approve' | 'delete' | null>(null)
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
@@ -2314,6 +2334,14 @@ function App() {
   const selectedProductOutOfStock = selectedProduct ? selectedProduct.stock <= 0 : false
   const relatedProducts = selectedProduct ? getRelated(productCatalog, selectedProduct, 4) : []
   const featuredHomeProducts = useMemo(() => getFeaturedProducts(productCatalog, 12), [productCatalog])
+  const adminPriceProducts = useMemo(() => {
+    const query = adminPriceQuery.trim()
+    return [...productCatalog]
+      .filter((product) => !query || matchesProductSearch(query, [product.name, product.sku]))
+      .sort((left, right) => left.name.localeCompare(right.name, 'fi'))
+  }, [adminPriceQuery, productCatalog])
+  const selectedAdminPriceCustomer = adminCustomers.find((customer) => customer.id === adminPriceCustomerId) ?? null
+  const selectedAdminPriceProduct = productCatalog.find((product) => product.id === adminPriceProductId) ?? null
   const showFeaturedHomeSection = activeCategory === 'all' && productQuery.trim() === ''
   const minDeliveryDate = getEarliestDeliveryDate()
 
@@ -2421,6 +2449,37 @@ function App() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (customerSessionLoading) {
+      return
+    }
+
+    let active = true
+    const loadPricedCatalog = async () => {
+      try {
+        const response = await fetch('/api/catalog', {
+          credentials: 'include',
+          cache: 'no-store',
+        })
+        if (!response.ok) {
+          return
+        }
+        const payload = normalizeCatalog((await response.json()) as CatalogPayload)
+        if (active) {
+          setProductCatalog(payload.products)
+          setCategories(payload.categories)
+        }
+      } catch {
+        // Keep the currently rendered catalog if refreshing account prices fails.
+      }
+    }
+
+    void loadPricedCatalog()
+    return () => {
+      active = false
+    }
+  }, [customerProfile?.id, customerSessionLoading])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -3354,6 +3413,12 @@ function App() {
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
+    setAdminPriceCustomerId('')
+    setAdminPriceProductId('')
+    setAdminPriceValue('')
+    setAdminCustomerPrices([])
+    setAdminCustomerPricesError('')
+    setAdminCustomerPricesNotice('')
     setCustomerActionCustomerId(null)
     setCustomerActionType(null)
     setAdminError(lang === 'fi' ? 'Kirjautuminen vanheni. Kirjaudu uudelleen.' : 'Your session expired. Please sign in again.')
@@ -3408,6 +3473,12 @@ function App() {
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
+    setAdminPriceCustomerId('')
+    setAdminPriceProductId('')
+    setAdminPriceValue('')
+    setAdminCustomerPrices([])
+    setAdminCustomerPricesError('')
+    setAdminCustomerPricesNotice('')
     setCustomerActionCustomerId(null)
     setCustomerActionType(null)
   }
@@ -3459,6 +3530,120 @@ function App() {
       setAdminCustomersError(lang === 'fi' ? 'Käyttäjien haku epäonnistui.' : 'Failed to load customers.')
     } finally {
       setAdminCustomersLoading(false)
+    }
+  }
+
+  const loadAdminCustomerPrices = async (customerId: string) => {
+    if (!customerId) {
+      setAdminCustomerPrices([])
+      return
+    }
+
+    setAdminCustomerPricesLoading(true)
+    setAdminCustomerPricesError('')
+    try {
+      const response = await adminFetch(`/api/admin/customer-prices/${encodeURIComponent(customerId)}`)
+      const payload = (await response.json()) as { prices?: AdminCustomerPrice[]; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminCustomerPricesError(payload.message ?? (lang === 'fi' ? 'Asiakashintojen haku epäonnistui.' : 'Failed to load customer prices.'))
+        return
+      }
+      setAdminCustomerPrices(Array.isArray(payload.prices) ? payload.prices : [])
+    } catch {
+      setAdminCustomerPricesError(lang === 'fi' ? 'Asiakashintojen haku epäonnistui.' : 'Failed to load customer prices.')
+    } finally {
+      setAdminCustomerPricesLoading(false)
+    }
+  }
+
+  const selectAdminPriceCustomer = (customerId: string) => {
+    setAdminPriceCustomerId(customerId)
+    setAdminPriceProductId('')
+    setAdminPriceValue('')
+    setAdminCustomerPricesNotice('')
+    setAdminCustomerPricesError('')
+    void loadAdminCustomerPrices(customerId)
+  }
+
+  const saveAdminCustomerPrice = async () => {
+    const price = Number(adminPriceValue.trim().replace(',', '.'))
+    if (!adminPriceCustomerId || !adminPriceProductId || !Number.isFinite(price) || price <= 0) {
+      setAdminCustomerPricesError(
+        lang === 'fi' ? 'Valitse asiakas ja tuote sekä anna kelvollinen tarjoushinta.' : 'Select a customer and product and enter a valid price.',
+      )
+      return
+    }
+
+    setAdminCustomerPricesLoading(true)
+    setAdminCustomerPricesError('')
+    setAdminCustomerPricesNotice('')
+    try {
+      const response = await adminFetch(
+        `/api/admin/customer-prices/${encodeURIComponent(adminPriceCustomerId)}/${encodeURIComponent(adminPriceProductId)}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ price }),
+        },
+      )
+      const payload = (await response.json()) as { customerPrice?: AdminCustomerPrice; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.customerPrice) {
+        setAdminCustomerPricesError(payload.message ?? (lang === 'fi' ? 'Tarjoushinnan tallennus epäonnistui.' : 'Failed to save the price.'))
+        return
+      }
+
+      setAdminCustomerPrices((current) => {
+        const exists = current.some((entry) => entry.productId === payload.customerPrice!.productId)
+        return exists
+          ? current.map((entry) => (entry.productId === payload.customerPrice!.productId ? payload.customerPrice! : entry))
+          : [...current, payload.customerPrice!]
+      })
+      setAdminPriceValue('')
+      setAdminCustomerPricesNotice(lang === 'fi' ? 'Asiakaskohtainen hinta tallennettiin.' : 'Customer-specific price saved.')
+    } catch {
+      setAdminCustomerPricesError(lang === 'fi' ? 'Tarjoushinnan tallennus epäonnistui.' : 'Failed to save the price.')
+    } finally {
+      setAdminCustomerPricesLoading(false)
+    }
+  }
+
+  const removeAdminCustomerPrice = async (productId: string) => {
+    if (!adminPriceCustomerId) {
+      return
+    }
+
+    setAdminCustomerPricesLoading(true)
+    setAdminCustomerPricesError('')
+    setAdminCustomerPricesNotice('')
+    try {
+      const response = await adminFetch(
+        `/api/admin/customer-prices/${encodeURIComponent(adminPriceCustomerId)}/${encodeURIComponent(productId)}`,
+        { method: 'DELETE' },
+      )
+      const payload = (await response.json()) as { message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminCustomerPricesError(payload.message ?? (lang === 'fi' ? 'Tarjoushinnan poisto epäonnistui.' : 'Failed to remove the price.'))
+        return
+      }
+
+      setAdminCustomerPrices((current) => current.filter((entry) => entry.productId !== productId))
+      setAdminCustomerPricesNotice(lang === 'fi' ? 'Asiakaskohtainen hinta poistettiin.' : 'Customer-specific price removed.')
+    } catch {
+      setAdminCustomerPricesError(lang === 'fi' ? 'Tarjoushinnan poisto epäonnistui.' : 'Failed to remove the price.')
+    } finally {
+      setAdminCustomerPricesLoading(false)
     }
   }
 
@@ -3569,6 +3754,12 @@ function App() {
       }
 
       setAdminCustomers((prev) => prev.filter((item) => item.id !== customerId))
+      if (adminPriceCustomerId === customerId) {
+        setAdminPriceCustomerId('')
+        setAdminPriceProductId('')
+        setAdminPriceValue('')
+        setAdminCustomerPrices([])
+      }
       setAdminCustomersNotice(lang === 'fi' ? 'Käyttäjä poistettiin.' : 'Customer deleted.')
     } catch {
       setAdminCustomersError(lang === 'fi' ? 'Käyttäjän poisto epäonnistui.' : 'Failed to delete customer.')
@@ -3816,7 +4007,7 @@ function App() {
       name: product.name,
       sku: product.sku,
       category: product.category,
-      price: String(product.price),
+      price: String(getRegularProductPrice(product)),
       priceUnit: product.priceUnit,
       unitNote: product.unitNote ?? '',
       stock: String(product.stock),
@@ -4771,7 +4962,7 @@ function App() {
                           </div>
                         </div>
                         <div className="admin-row-meta">
-                          <span>{formatPrice(item.price, lang)} €</span>
+                          <span>{formatPrice(getRegularProductPrice(item), lang)} €</span>
                           <span>{lang === 'fi' ? 'Varasto' : 'Stock'}: {item.stock}</span>
                           <button className="ghost tiny" onClick={() => editProductFromAdmin(item)}>
                             {lang === 'fi' ? 'Muokkaa' : 'Edit'}
@@ -4857,6 +5048,146 @@ function App() {
                     )}
                   </div>
 
+                  <div className="admin-customer-prices" id="admin-customer-prices">
+                    <div className="admin-orders-head">
+                      <div className="admin-section-title">
+                        <h3>{lang === 'fi' ? 'Asiakaskohtaiset hinnat' : 'Customer-specific prices'}</h3>
+                        <span className="muted small">
+                          {lang === 'fi'
+                            ? 'Asettamaton tuote käyttää aina normaalia verkkokauppahintaa.'
+                            : 'Products without an override always use the regular store price.'}
+                        </span>
+                      </div>
+                      {adminPriceCustomerId && (
+                        <button
+                          className="ghost tiny"
+                          type="button"
+                          onClick={() => void loadAdminCustomerPrices(adminPriceCustomerId)}
+                          disabled={adminCustomerPricesLoading}
+                        >
+                          {lang === 'fi' ? 'Päivitä' : 'Refresh'}
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="admin-price-form">
+                      <label>
+                        <span>{lang === 'fi' ? 'Asiakastili' : 'Customer account'}</span>
+                        <select value={adminPriceCustomerId} onChange={(event) => selectAdminPriceCustomer(event.target.value)}>
+                          <option value="">{lang === 'fi' ? 'Valitse asiakas' : 'Select customer'}</option>
+                          {adminCustomers.map((customer) => (
+                            <option key={customer.id} value={customer.id}>
+                              {customer.companyName} - {customer.email}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>{lang === 'fi' ? 'Hae tuotetta' : 'Search products'}</span>
+                        <input
+                          value={adminPriceQuery}
+                          onChange={(event) => setAdminPriceQuery(event.target.value)}
+                          placeholder={lang === 'fi' ? 'Tuotteen nimi tai SKU' : 'Product name or SKU'}
+                        />
+                      </label>
+                      <label>
+                        <span>{lang === 'fi' ? 'Tuote' : 'Product'}</span>
+                        <select
+                          value={adminPriceProductId}
+                          disabled={!adminPriceCustomerId}
+                          onChange={(event) => {
+                            setAdminPriceProductId(event.target.value)
+                            const existingPrice = adminCustomerPrices.find((entry) => entry.productId === event.target.value)
+                            setAdminPriceValue(existingPrice ? String(existingPrice.price) : '')
+                          }}
+                        >
+                          <option value="">{lang === 'fi' ? 'Valitse tuote' : 'Select product'}</option>
+                          {adminPriceProducts.map((product) => (
+                            <option key={product.id} value={product.id}>
+                              {product.name} ({product.sku})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <label>
+                        <span>{lang === 'fi' ? 'Tarjoushinta (alv 0 %)' : 'Custom price (VAT 0%)'}</span>
+                        <input
+                          type="number"
+                          min="0.01"
+                          step="0.01"
+                          value={adminPriceValue}
+                          disabled={!adminPriceProductId}
+                          onChange={(event) => setAdminPriceValue(event.target.value)}
+                          placeholder="0,00"
+                        />
+                      </label>
+                      <button
+                        className="primary"
+                        type="button"
+                        disabled={adminCustomerPricesLoading || !adminPriceCustomerId || !adminPriceProductId}
+                        onClick={() => void saveAdminCustomerPrice()}
+                      >
+                        {lang === 'fi' ? 'Tallenna hinta' : 'Save price'}
+                      </button>
+                    </div>
+
+                    {selectedAdminPriceCustomer && (
+                      <p className="muted small">
+                        {lang === 'fi' ? 'Valittu asiakas' : 'Selected customer'}: <strong>{selectedAdminPriceCustomer.companyName}</strong>
+                        {selectedAdminPriceProduct && (
+                          <> · {lang === 'fi' ? 'Normaalihinta' : 'Regular price'}: {formatPrice(getRegularProductPrice(selectedAdminPriceProduct), lang)} €</>
+                        )}
+                      </p>
+                    )}
+                    {adminCustomerPricesNotice && <div className="success">{adminCustomerPricesNotice}</div>}
+                    {adminCustomerPricesError && <div className="error">{adminCustomerPricesError}</div>}
+                    {adminCustomerPricesLoading && <p className="muted small">{lang === 'fi' ? 'Tallennetaan...' : 'Saving...'}</p>}
+
+                    {adminPriceCustomerId && !adminCustomerPricesLoading && (
+                      <div className="admin-price-list">
+                        {adminCustomerPrices.map((entry) => {
+                          const product = productCatalog.find((item) => item.id === entry.productId)
+                          return (
+                            <div className="admin-price-row" key={`${entry.customerId}-${entry.productId}`}>
+                              <div>
+                                <strong>{product?.name ?? entry.productId}</strong>
+                                <p className="muted small">
+                                  {product?.sku ?? entry.productId} · {lang === 'fi' ? 'Normaali' : 'Regular'}:{' '}
+                                  {product ? `${formatPrice(getRegularProductPrice(product), lang)} €` : '-'}
+                                </p>
+                              </div>
+                              <div className="admin-price-row-actions">
+                                <strong>{formatPrice(entry.price, lang)} €</strong>
+                                <button
+                                  className="ghost tiny"
+                                  type="button"
+                                  onClick={() => {
+                                    setAdminPriceProductId(entry.productId)
+                                    setAdminPriceValue(String(entry.price))
+                                  }}
+                                >
+                                  {lang === 'fi' ? 'Muokkaa' : 'Edit'}
+                                </button>
+                                <button
+                                  className="ghost tiny danger"
+                                  type="button"
+                                  onClick={() => void removeAdminCustomerPrice(entry.productId)}
+                                >
+                                  {lang === 'fi' ? 'Poista hinta' : 'Remove price'}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {adminCustomerPrices.length === 0 && (
+                          <p className="muted small">
+                            {lang === 'fi' ? 'Tälle asiakkaalle ei ole asetettu erikoishintoja.' : 'No custom prices set for this customer.'}
+                          </p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="admin-customers">
                     <div className="admin-orders-head">
                       <div className="admin-section-title">
@@ -4915,6 +5246,18 @@ function App() {
                                   : customerActionCustomerId === customer.id && customerActionType === 'approve'
                                     ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
                                     : (lang === 'fi' ? 'Hyv\u00E4ksy + email' : 'Approve + email')}
+                              </button>
+                              <button
+                                className="ghost tiny"
+                                type="button"
+                                onClick={() => {
+                                  selectAdminPriceCustomer(customer.id)
+                                  window.requestAnimationFrame(() => {
+                                    document.getElementById('admin-customer-prices')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                  })
+                                }}
+                              >
+                                {lang === 'fi' ? 'Aseta hinnat' : 'Set prices'}
                               </button>
                               <button
                                 className="ghost tiny danger"
@@ -5779,7 +6122,7 @@ function App() {
                                   />
                                   <span>{value.label}</span>
                                 </span>
-                                <span className="muted">{formatOptionValueMeta(group.name, value.detail, value.price, lang, selectedProduct.priceUnit)}</span>
+                                <span className="muted">{formatOptionValueMeta(group.name, value.detail, selectedProduct.customerPrice === undefined ? value.price : undefined, lang, selectedProduct.priceUnit)}</span>
                               </label>
                             )
                           })}

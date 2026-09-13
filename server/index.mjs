@@ -21,6 +21,13 @@ import {
   getProductMediaAsset,
 } from './catalog-store.mjs'
 import {
+  deleteCustomerPrice,
+  ensureCustomerPriceStore,
+  getCustomerPriceMap,
+  readCustomerPrices,
+  setCustomerPrice,
+} from './customer-price-store.mjs'
+import {
   renderProductOgSvg,
   renderProductPage,
   renderRobotsTxt,
@@ -391,8 +398,9 @@ const normalizeSelectedOptions = (selectedOptions) =>
 const getResolvedUnitPrice = (product, selectedOptions) =>
   normalizeSelectedOptions(selectedOptions).find((item) => item.valuePrice !== undefined)?.valuePrice ?? Number(product.price ?? 0)
 
-const getCatalogOrderItems = (rawItems) => {
+const getCatalogOrderItems = (rawItems, customerId = null) => {
   const catalog = readCatalog()
+  const customerPrices = customerId ? getCustomerPriceMap(customerId) : new Map()
 
   return (Array.isArray(rawItems) ? rawItems : []).reduce((acc, rawItem) => {
     const productId = String(rawItem?.productId ?? '').trim()
@@ -404,7 +412,9 @@ const getCatalogOrderItems = (rawItems) => {
     }
 
     const selectedOptions = normalizeSelectedOptions(rawItem?.selectedOptions)
-    const unitPrice = roundCurrency(getResolvedUnitPrice(product, selectedOptions))
+    const regularUnitPrice = getResolvedUnitPrice(product, selectedOptions)
+    const customerPrice = customerPrices.get(product.id)
+    const unitPrice = roundCurrency(customerPrice ?? regularUnitPrice)
 
     acc.push({
       productId: product.id,
@@ -799,6 +809,33 @@ const requireAdmin = (req, res, next) => {
     return
   }
   next()
+}
+
+const getCustomerCatalog = (customerId = null) => {
+  const catalog = readPublicCatalog()
+  if (!customerId) {
+    return catalog
+  }
+
+  const customerPrices = getCustomerPriceMap(customerId)
+  if (customerPrices.size === 0) {
+    return catalog
+  }
+
+  return {
+    categories: catalog.categories,
+    products: catalog.products.map((product) => {
+      const customerPrice = customerPrices.get(product.id)
+      return customerPrice === undefined
+        ? product
+        : {
+            ...product,
+            regularPrice: product.price,
+            customerPrice,
+            price: customerPrice,
+          }
+    }),
+  }
 }
 
 const requireCustomer = (req, res, next) => {
@@ -1454,6 +1491,7 @@ const finalizePaytrailOrder = async (req, source = 'redirect') => {
 ensureCatalogStore()
 ensureOrdersStore()
 ensureCustomerStore()
+ensureCustomerPriceStore()
 
 app.use(express.static(publicDir, { index: false, setHeaders: setStaticAssetHeaders }))
 app.use(express.static(distDir, { index: false, setHeaders: setStaticAssetHeaders }))
@@ -1669,8 +1707,51 @@ app.delete('/api/admin/customers/:customerId', requireAdmin, (req, res) => {
   })
 })
 
-app.get('/api/catalog', (_req, res) => {
-  res.json(readPublicCatalog())
+app.get('/api/admin/customer-prices/:customerId', requireAdmin, (req, res) => {
+  if (!getCustomerById(req.params.customerId)) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  res.json({ prices: readCustomerPrices(req.params.customerId) })
+})
+
+app.put('/api/admin/customer-prices/:customerId/:productId', requireAdmin, (req, res) => {
+  const customerId = String(req.params.customerId ?? '').trim()
+  const productId = String(req.params.productId ?? '').trim()
+  const price = Number(String(req.body?.price ?? '').replace(',', '.'))
+  if (!getCustomerById(customerId)) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+  if (!readCatalog().products.some((product) => product.id === productId)) {
+    res.status(404).json({ message: 'Product not found.' })
+    return
+  }
+  if (!Number.isFinite(price) || price <= 0) {
+    res.status(400).json({ message: 'Price must be a positive number.' })
+    return
+  }
+
+  const customerPrice = setCustomerPrice({ customerId, productId, price })
+  res.json({ ok: true, customerPrice })
+})
+
+app.delete('/api/admin/customer-prices/:customerId/:productId', requireAdmin, (req, res) => {
+  if (!getCustomerById(req.params.customerId)) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  deleteCustomerPrice(req.params.customerId, req.params.productId)
+  res.json({ ok: true })
+})
+
+app.get('/api/catalog', (req, res) => {
+  const customerId = getCustomerSession(req)?.customer?.id ?? null
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.setHeader('Vary', 'Cookie')
+  res.json(getCustomerCatalog(customerId))
 })
 
 app.get('/media/product/:slug/:imageIndex', (req, res) => {
@@ -1813,7 +1894,7 @@ app.post('/api/admin/categories/reorder', requireAdmin, (req, res) => {
 app.post('/api/checkout/invoice', requireCustomer, async (req, res) => {
   try {
     const customer = req.customer
-    const items = getCatalogOrderItems(req.body?.items)
+    const items = getCatalogOrderItems(req.body?.items, customer.id)
     const checkout = normalizeCheckoutInput(req.body)
     const lang = 'fi'
 
@@ -1878,7 +1959,7 @@ app.post('/api/checkout/paytrail/start', requireCustomer, async (req, res) => {
       return
     }
     const customer = req.customer
-    const items = getCatalogOrderItems(req.body?.items)
+    const items = getCatalogOrderItems(req.body?.items, customer.id)
     const checkout = normalizeCheckoutInput(req.body)
     const lang = 'fi'
 

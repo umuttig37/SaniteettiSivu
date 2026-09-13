@@ -2115,6 +2115,78 @@ html {
   gap: 0.7rem;
 }
 
+.admin-customer-prices {
+  border-top: 1px solid var(--border);
+  padding-top: 0.8rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.admin-price-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.65rem;
+  padding: 0.8rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #f7faff;
+}
+
+.admin-price-form label {
+  display: grid;
+  gap: 0.3rem;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.admin-price-form input,
+.admin-price-form select {
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-price-form .primary {
+  align-self: end;
+  min-height: 42px;
+}
+
+.admin-price-list {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.admin-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #fff;
+}
+
+.admin-price-row p {
+  margin: 0.2rem 0 0;
+}
+
+.admin-price-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
 .admin-section-title {
   display: grid;
   gap: 0.15rem;
@@ -2691,6 +2763,15 @@ html {
 
   .admin-customer-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-price-form {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-price-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .contact-layout {

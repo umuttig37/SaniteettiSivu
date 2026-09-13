@@ -16,6 +16,7 @@ dist-ssr
 data/orders.json
 data/catalog.json
 data/customers.json
+data/customer-prices.json
 
 
 
