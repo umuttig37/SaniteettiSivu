@@ -4692,6 +4692,29 @@ function App() {
       </div>
     </section>
   )
+  const categoryMenu = (
+    <div className="category-menu">
+      <div className="category-menu-head">
+        <h2>{lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}</h2>
+        <span>{lang === 'fi' ? 'Valitse kategoria' : 'Choose a category'}</span>
+      </div>
+      <nav className="category-grid" aria-label={lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}>
+        <a className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} href="/" onClick={(event) => { event.preventDefault(); selectCategory('all') }}>
+          <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
+        </a>
+        {categoriesForFilters.map((item) => (
+          <a
+            key={item.id}
+            className={`category-card ${(lang === 'fi' ? item.nameFi : item.nameEn).length > 14 ? 'long-label' : ''} ${activeMainCategory?.id === item.id ? 'active' : ''}`}
+            href={getCategoryHref(item)}
+            onClick={(event) => { event.preventDefault(); selectCategory(item.id) }}
+          >
+            <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
+          </a>
+        ))}
+      </nav>
+    </div>
+  )
   const useStickyFooterLayout =
     routeState.type === 'auth'
     || routeState.type === 'cart'
@@ -6679,7 +6702,7 @@ function App() {
         ) : (
           <>
         {isCategoryPage && activeCategoryDefinition ? (
-          <section className="section category-landing">
+          <section className="section category-landing" id="categories">
             <nav className="breadcrumbs" aria-label="Breadcrumb">
               <a href="/" onClick={(event) => { event.preventDefault(); goHome() }}>
                 {lang === 'fi' ? 'Etusivu' : 'Home'}
@@ -6703,6 +6726,7 @@ function App() {
               <h1>{lang === 'fi' ? activeCategoryDefinition.nameFi : activeCategoryDefinition.nameEn}</h1>
               <p>{getCategoryDescription(activeCategoryDefinition, activeParentCategory)}</p>
             </div>
+            {categoryMenu}
             {!activeCategoryDefinition.parentId && activeSubcategories.length > 0 && (
               <div className="subcategory-panel">
                 <span className="subcategory-title">{lang === 'fi' ? 'Valitse Kategoria' : 'Select category'}</span>
@@ -6748,27 +6772,7 @@ function App() {
         </section>
 
         <section className="section category-section" id="categories">
-          <div className="category-menu">
-            <div className="category-menu-head">
-              <h2>{lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}</h2>
-              <span>{lang === 'fi' ? 'Valitse kategoria' : 'Choose a category'}</span>
-            </div>
-            <nav className="category-grid" aria-label={lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}>
-              <a className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} href="/" onClick={(event) => { event.preventDefault(); selectCategory('all') }}>
-                <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
-              </a>
-              {categoriesForFilters.map((item) => (
-                <a
-                  key={item.id}
-                  className={`category-card ${(lang === 'fi' ? item.nameFi : item.nameEn).length > 14 ? 'long-label' : ''} ${activeMainCategory?.id === item.id ? 'active' : ''}`}
-                  href={getCategoryHref(item)}
-                  onClick={(event) => { event.preventDefault(); selectCategory(item.id) }}
-                >
-                  <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
-                </a>
-              ))}
-            </nav>
-          </div>
+          {categoryMenu}
           {activeMainCategory && activeSubcategories.length > 0 && (
             <div className="subcategory-panel">
               <span className="subcategory-title">
