@@ -1031,41 +1031,95 @@ html {
   flex-wrap: wrap;
 }
 
+.category-section {
+  padding-top: 1.2rem;
+  padding-bottom: 1.2rem;
+}
+
+.category-menu {
+  overflow: hidden;
+  border: 1px solid rgba(133, 157, 194, 0.34);
+  border-radius: 18px;
+  background: #fff;
+  box-shadow: 0 12px 30px rgba(23, 52, 94, 0.08);
+}
+
+.category-menu-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid rgba(133, 157, 194, 0.28);
+  background: linear-gradient(90deg, #f8fbff 0%, #fff 100%);
+}
+
+.category-menu-head h2 {
+  margin: 0;
+  font-size: 1.05rem;
+}
+
+.category-menu-head span {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
 .category-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-  gap: 0.65rem;
-  margin-top: 0.2rem;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  background: rgba(133, 157, 194, 0.28);
 }
 
 .category-card {
-  border: 1px solid var(--border);
-  border-radius: 14px;
+  min-width: 0;
+  min-height: 60px;
+  border: 0;
+  border-radius: 0;
   background: #fff;
-  padding: 0.58rem 0.72rem;
-  min-height: 0;
+  padding: 0.65rem 0.75rem;
   text-align: left;
-  display: grid;
-  gap: 0.2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
   cursor: pointer;
   color: inherit;
   text-decoration: none;
-  transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background-color 0.18s ease;
+  transition: color 0.18s ease, background-color 0.18s ease;
+}
+
+.category-card::after {
+  content: '›';
+  flex: 0 0 auto;
+  color: #87a0c6;
+  font-size: 1.1rem;
+  line-height: 1;
 }
 
 .category-card strong {
-  font-size: 0.95rem;
-  line-height: 1.2;
+  min-width: 0;
+  font-size: 0.88rem;
+  line-height: 1.15;
+}
+
+.category-card.long-label strong {
+  font-size: 0.78rem;
 }
 
 .category-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 24px rgba(19, 45, 86, 0.08);
+  background: #f5f8fe;
+  color: #1748a1;
 }
 
 .category-card.active {
-  border-color: #83a9f1;
-  background: #edf4ff;
+  background: #eaf2ff;
+  color: #1748a1;
+}
+
+.category-card.active::after {
+  color: #2f68c8;
 }
 
 .subcategory-panel {
@@ -1116,6 +1170,16 @@ html {
   border: 1px solid var(--border);
   background: #fff;
   font-weight: 600;
+}
+
+@media (max-width: 1000px) {
+  .category-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .category-card {
+    min-height: 54px;
+  }
 }
 
 .grid {

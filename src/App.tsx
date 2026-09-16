@@ -6747,22 +6747,27 @@ function App() {
           </div>
         </section>
 
-        <section className="section" id="categories">
-          <h2 className="sr-only">{t.categoriesTitle}</h2>
-          <div className="category-grid">
-            <a className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} href="/" onClick={(event) => { event.preventDefault(); selectCategory('all') }}>
-              <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
-            </a>
-            {categoriesForFilters.map((item) => (
-              <a
-                key={item.id}
-                className={`category-card ${activeMainCategory?.id === item.id ? 'active' : ''}`}
-                href={getCategoryHref(item)}
-                onClick={(event) => { event.preventDefault(); selectCategory(item.id) }}
-              >
-                <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
+        <section className="section category-section" id="categories">
+          <div className="category-menu">
+            <div className="category-menu-head">
+              <h2>{lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}</h2>
+              <span>{lang === 'fi' ? 'Valitse kategoria' : 'Choose a category'}</span>
+            </div>
+            <nav className="category-grid" aria-label={lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}>
+              <a className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} href="/" onClick={(event) => { event.preventDefault(); selectCategory('all') }}>
+                <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
               </a>
-            ))}
+              {categoriesForFilters.map((item) => (
+                <a
+                  key={item.id}
+                  className={`category-card ${(lang === 'fi' ? item.nameFi : item.nameEn).length > 14 ? 'long-label' : ''} ${activeMainCategory?.id === item.id ? 'active' : ''}`}
+                  href={getCategoryHref(item)}
+                  onClick={(event) => { event.preventDefault(); selectCategory(item.id) }}
+                >
+                  <strong>{lang === 'fi' ? item.nameFi : item.nameEn}</strong>
+                </a>
+              ))}
+            </nav>
           </div>
           {activeMainCategory && activeSubcategories.length > 0 && (
             <div className="subcategory-panel">
