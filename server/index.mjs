@@ -68,6 +68,7 @@ import {
   isPublicHttpsUrl,
   readFirstEnvValue,
 } from './env-utils.mjs'
+import { getSelectedUnitLabel, resolveCustomerUnitPrice } from './unit-pricing.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -429,7 +430,11 @@ const getCatalogOrderItems = (rawItems, customerId = null) => {
     const selectedOptions = normalizeSelectedOptions(rawItem?.selectedOptions)
     const regularUnitPrice = getResolvedUnitPrice(product, selectedOptions)
     const customerPrice = customerPrices.get(product.id)
-    const unitPrice = roundCurrency(customerPrice ?? regularUnitPrice)
+    const resolvedCustomerPrice = customerPrice === undefined
+      ? null
+      : resolveCustomerUnitPrice(product, selectedOptions, customerPrice)
+    const unitPrice = roundCurrency(resolvedCustomerPrice ?? regularUnitPrice)
+    const selectedUnitLabel = getSelectedUnitLabel(product, selectedOptions)
 
     acc.push({
       productId: product.id,
@@ -437,7 +442,7 @@ const getCatalogOrderItems = (rawItems, customerId = null) => {
       name: product.name,
       quantity,
       unitPrice,
-      priceUnit: product.priceUnit,
+      priceUnit: selectedUnitLabel ? `EUR / ${selectedUnitLabel}` : product.priceUnit,
       selectedOptions,
     })
 

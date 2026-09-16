@@ -1464,8 +1464,78 @@ const roundCurrency = (value: number) => Math.round(value * 100) / 100
 
 const getRegularProductPrice = (product: Product) => product.regularPrice ?? product.price
 
-const getResolvedUnitPrice = (product: Product, selectedOptions: SelectedProductOption[]) =>
-  product.customerPrice ?? selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
+const parseOptionQuantity = (detail?: string) => {
+  const match = String(detail ?? '')
+    .replace(/\s+/g, '')
+    .match(/\d+(?:[.,]\d+)?/)
+  if (!match) {
+    return null
+  }
+
+  const quantity = Number(match[0].replace(',', '.'))
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : null
+}
+
+const getUnitOptionGroup = (product: Product) => {
+  const groups = normalizeOptionGroups(product.optionGroups)
+  const namedUnitGroup = groups.find((group) => /yksikk|unit/i.test(group.name))
+  if (namedUnitGroup) {
+    return namedUnitGroup
+  }
+
+  if (groups.length === 1) {
+    const [onlyGroup] = groups
+    if (onlyGroup.values.length > 1 && onlyGroup.values.every((value) => parseOptionQuantity(value.detail) !== null)) {
+      return onlyGroup
+    }
+  }
+
+  return null
+}
+
+const getSelectedUnitOption = (product: Product, selectedOptions: SelectedProductOption[]) => {
+  const unitGroup = getUnitOptionGroup(product)
+  if (!unitGroup) {
+    return null
+  }
+
+  const selection = selectedOptions.find((item) => (
+    item.groupId === unitGroup.id
+    || item.groupName.trim().toLowerCase() === unitGroup.name.trim().toLowerCase()
+  ))
+
+  return unitGroup.values.find((value) => value.id === selection?.valueId) ?? unitGroup.values[0] ?? null
+}
+
+const getCustomerUnitMultiplier = (product: Product, selectedOptions: SelectedProductOption[]) => {
+  const unitGroup = getUnitOptionGroup(product)
+  const baseValue = unitGroup?.values[0]
+  const selectedValue = getSelectedUnitOption(product, selectedOptions)
+  if (!baseValue || !selectedValue) {
+    return 1
+  }
+
+  const baseQuantity = parseOptionQuantity(baseValue.detail) ?? 1
+  const selectedQuantity = parseOptionQuantity(selectedValue.detail) ?? baseQuantity
+  return selectedQuantity / baseQuantity
+}
+
+const getResolvedUnitPrice = (product: Product, selectedOptions: SelectedProductOption[]) => {
+  if (product.customerPrice !== undefined) {
+    const resolvedPrice = product.customerPrice * getCustomerUnitMultiplier(product, selectedOptions)
+    return Math.round((resolvedPrice + Number.EPSILON) * 100) / 100
+  }
+
+  return selectedOptions.find((item) => item.valuePrice !== undefined)?.valuePrice ?? product.price
+}
+
+const getResolvedPriceUnit = (product: Product, selectedOptions: SelectedProductOption[]) => {
+  const selectedUnit = getSelectedUnitOption(product, selectedOptions)
+  return selectedUnit?.label ? `€ / ${selectedUnit.label}` : product.priceUnit
+}
+
+const getBaseUnitLabel = (product: Product, lang: Lang) =>
+  getUnitOptionGroup(product)?.values[0]?.label || extractUnitLabel(product.priceUnit, lang)
 
 const formatOptionValueMeta = (
   groupName: string,
@@ -5375,8 +5445,8 @@ function App() {
                         <h3>{lang === 'fi' ? 'Asiakaskohtaiset hinnat' : 'Customer-specific prices'}</h3>
                         <span className="muted small">
                           {lang === 'fi'
-                            ? 'Asettamaton tuote käyttää aina normaalia verkkokauppahintaa.'
-                            : 'Products without an override always use the regular store price.'}
+                            ? 'Aseta pienimmän yksikön hinta. Laatikko- ja lavahinnat lasketaan automaattisesti yksikkömäärän mukaan. Asettamaton tuote käyttää normaalia verkkokauppahintaa.'
+                            : 'Set the price for the smallest unit. Case and pallet prices are calculated automatically from their unit quantities. Products without an override use the regular store price.'}
                         </span>
                       </div>
                       {adminPriceCustomerId && (
@@ -5431,7 +5501,7 @@ function App() {
                         </select>
                       </label>
                       <label>
-                        <span>{lang === 'fi' ? 'Tarjoushinta (alv 0 %)' : 'Custom price (VAT 0%)'}</span>
+                        <span>{lang === 'fi' ? 'Tarjoushinta / pienin yksikkö (alv 0 %)' : 'Custom price / smallest unit (VAT 0%)'}</span>
                         <input
                           type="number"
                           min="0.01"
@@ -5456,7 +5526,10 @@ function App() {
                       <p className="muted small">
                         {lang === 'fi' ? 'Valittu asiakas' : 'Selected customer'}: <strong>{selectedAdminPriceCustomer.companyName}</strong>
                         {selectedAdminPriceProduct && (
-                          <> · {lang === 'fi' ? 'Normaalihinta' : 'Regular price'}: {formatPrice(getRegularProductPrice(selectedAdminPriceProduct), lang)} €</>
+                          <>
+                            {' · '}{lang === 'fi' ? 'Normaalihinta' : 'Regular price'}: {formatPrice(getRegularProductPrice(selectedAdminPriceProduct), lang)} €
+                            {' · '}{lang === 'fi' ? 'Hinnoitteluyksikkö' : 'Pricing unit'}: {getBaseUnitLabel(selectedAdminPriceProduct, lang)}
+                          </>
                         )}
                       </p>
                     )}
@@ -5478,7 +5551,10 @@ function App() {
                                 </p>
                               </div>
                               <div className="admin-price-row-actions">
-                                <strong>{formatPrice(entry.price, lang)} €</strong>
+                                <strong>
+                                  {formatPrice(entry.price, lang)} €
+                                  {product ? ` / ${getBaseUnitLabel(product, lang)}` : ''}
+                                </strong>
                                 <button
                                   className="ghost tiny"
                                   type="button"
@@ -5909,7 +5985,7 @@ function App() {
                             <span className="muted small">SKU {item.product.sku}</span>
                             {item.selectedOptions.length > 0 && <span className="muted small">{formatSelectedOptionsText(item.selectedOptions)}</span>}
                             <span className="tag">
-                              {formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions), lang)} € {getPriceUnitSuffix(item.product.priceUnit, t.product.vatNote)}
+                              {formatPrice(getResolvedUnitPrice(item.product, item.selectedOptions), lang)} € {getPriceUnitSuffix(getResolvedPriceUnit(item.product, item.selectedOptions), t.product.vatNote)}
                             </span>
                           </div>
                           <div className="cart-page-item-tools">
@@ -6504,7 +6580,7 @@ function App() {
                   </span>
                   <span className="price-top">
                     <span className="price-main">{formatPrice(selectedProductUnitPrice, lang)} €</span>
-                    <span className="price-suffix">{getPriceUnitSuffix(selectedProduct.priceUnit, t.product.vatNote)}</span>
+                    <span className="price-suffix">{getPriceUnitSuffix(getResolvedPriceUnit(selectedProduct, selectedProductOptions), t.product.vatNote)}</span>
                   </span>
                   {selectedProduct.unitNote && <span className="muted">{selectedProduct.unitNote}</span>}
                 </div>
