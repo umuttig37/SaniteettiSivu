@@ -127,6 +127,7 @@ type CustomerProfile = {
   businessId: string
   phone: string
   email: string
+  eInvoiceAddress: string
   defaultShippingAddress: CustomerAddress | null
   defaultBillingCompany: string
   defaultBillingAddress: CustomerAddress | null
@@ -144,6 +145,7 @@ type RegisterForm = {
   businessId: string
   phone: string
   email: string
+  eInvoiceAddress: string
   password: string
 }
 
@@ -163,6 +165,7 @@ type CheckoutForm = {
   billingAddress: string
   billingZip: string
   billingCity: string
+  eInvoiceAddress: string
   notes: string
   paymentMethod: 'invoice' | 'card'
 }
@@ -256,6 +259,7 @@ type AdminOrder = {
     billingAddress: string
     billingZip?: string
     billingCity?: string
+    eInvoiceAddress?: string
     notes: string
     businessId?: string
   }
@@ -279,7 +283,13 @@ type AdminCustomer = {
   businessId: string
   phone: string
   email: string
+  eInvoiceAddress: string
 }
+
+type AdminCustomerDraft = Pick<
+  AdminCustomer,
+  'id' | 'firstName' | 'lastName' | 'companyName' | 'businessId' | 'phone' | 'email' | 'eInvoiceAddress'
+>
 
 type AdminCustomerPrice = {
   customerId: string
@@ -425,6 +435,7 @@ const rawText = {
       deliveryDateHint: 'Valitse aikaisintaan huominen.',
       billingCompany: 'Laskutusyritys',
       billingAddress: 'Laskutusosoite',
+      eInvoiceAddress: 'Verkkolaskuosoite',
       notes: 'Lisätiedot',
       order: 'Tee tilaus',
     },
@@ -523,6 +534,7 @@ const rawText = {
       deliveryDateHint: 'Choose tomorrow or a later date.',
       billingCompany: 'Billing company',
       billingAddress: 'Billing address',
+      eInvoiceAddress: 'E-invoice address',
       notes: 'Notes',
       order: 'Place order',
     },
@@ -1325,6 +1337,11 @@ const localizeAdminMessage = (message: string | undefined, lang: Lang) => {
     'Admin login is not configured on the server. Set ADMIN_USER (or ADMIN_USERNAME) and ADMIN_PASS (or ADMIN_PASSWORD).':
       'Admin-kirjautumista ei ole m\u00E4\u00E4ritetty palvelimelle. Aseta ADMIN_USER tai ADMIN_USERNAME sek\u00E4 ADMIN_PASS tai ADMIN_PASSWORD.',
     'Customer not found.': 'K\u00E4ytt\u00E4j\u00E4\u00E4 ei l\u00F6ytynyt.',
+    'Missing customer fields.': 'T\u00E4yt\u00E4 asiakkaan kaikki pakolliset tiedot.',
+    'Business ID must be valid and in the format 1234567-8.': 'Anna kelvollinen y-tunnus muodossa 1234567-8.',
+    'Phone number must contain 7-15 digits.': 'Puhelinnumerossa tulee olla 7-15 numeroa.',
+    'Enter a valid email address.': 'Anna kelvollinen s\u00E4hk\u00F6postiosoite.',
+    'An account with this email already exists.': 'T\u00E4ll\u00E4 s\u00E4hk\u00F6postiosoitteella on jo olemassa toinen tili.',
   }
 
   return translations[message] ?? message
@@ -2228,6 +2245,20 @@ const applyProductSeo = (product: Product, category: CategoryDef | undefined) =>
   ])
 }
 
+function InvoiceIcon({ small = false }: { small?: boolean }) {
+  return (
+    <span className={`payment-method-icon invoice${small ? ' small' : ''}`} aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M6.5 3.5h8l3 3v14h-11z" />
+        <path d="M14.5 3.5v3h3" />
+        <path d="M9 11h6" />
+        <path d="M9 14.5h6" />
+        <path d="M9 18h3.5" />
+      </svg>
+    </span>
+  )
+}
+
 function App() {
   const initialCatalog = getInitialCatalog()
   const hasInitialCatalog = initialCatalog.products.length > 0 && initialCatalog.categories.length > 0
@@ -2270,6 +2301,7 @@ function App() {
     businessId: '',
     phone: '',
     email: '',
+    eInvoiceAddress: '',
     password: '',
   })
   const [productQuery, setProductQuery] = useState(() => initialRouteState.searchQuery ?? '')
@@ -2326,6 +2358,7 @@ function App() {
     billingAddress: '',
     billingZip: '',
     billingCity: '',
+    eInvoiceAddress: '',
     notes: '',
     paymentMethod: 'invoice',
   })
@@ -2340,6 +2373,7 @@ function App() {
   const [adminCustomersLoading, setAdminCustomersLoading] = useState(false)
   const [adminCustomersError, setAdminCustomersError] = useState('')
   const [adminCustomersNotice, setAdminCustomersNotice] = useState('')
+  const [adminCustomerDraft, setAdminCustomerDraft] = useState<AdminCustomerDraft | null>(null)
   const [adminPriceCustomerId, setAdminPriceCustomerId] = useState('')
   const [adminPriceProductId, setAdminPriceProductId] = useState('')
   const [adminPriceValue, setAdminPriceValue] = useState('')
@@ -2349,7 +2383,7 @@ function App() {
   const [adminCustomerPricesError, setAdminCustomerPricesError] = useState('')
   const [adminCustomerPricesNotice, setAdminCustomerPricesNotice] = useState('')
   const [customerActionCustomerId, setCustomerActionCustomerId] = useState<string | null>(null)
-  const [customerActionType, setCustomerActionType] = useState<'approve' | 'delete' | null>(null)
+  const [customerActionType, setCustomerActionType] = useState<'approve' | 'delete' | 'save' | null>(null)
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
   const isGuestCheckout = routeState.type === 'checkout' && routeState.guestCheckout && !customerProfile
   const selectedPaymentMethod = isGuestCheckout ? 'card' : checkoutForm.paymentMethod
@@ -2668,6 +2702,7 @@ function App() {
       billingAddress: prev.billingAddress || customerProfile.defaultBillingAddress?.streetAddress || '',
       billingZip: prev.billingZip || customerProfile.defaultBillingAddress?.postalCode || '',
       billingCity: prev.billingCity || customerProfile.defaultBillingAddress?.city || '',
+      eInvoiceAddress: prev.eInvoiceAddress || customerProfile.eInvoiceAddress || '',
     }))
   }, [customerProfile])
 
@@ -3347,12 +3382,21 @@ function App() {
         ? 'Valitse toimituspäivä vähintään kahden päivän päähän ja arkipäivälle.'
         : 'Choose a weekday at least two days from today.'
     }
-    if (selectedPaymentMethod === 'invoice' && (!checkoutForm.billingCompany || !checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity)) {
+    if (selectedPaymentMethod === 'invoice' && !checkoutForm.billingCompany) {
       return lang === 'fi'
-        ? 'Täytä laskutusyritys, laskutusosoite, postinumero ja kaupunki.'
-        : 'Fill in billing company, billing address, postal code and city.'
+        ? 'Täytä laskutusyritys.'
+        : 'Fill in the billing company.'
     }
-    if (selectedPaymentMethod === 'invoice' && !isValidPostalCode(checkoutForm.billingZip)) {
+    if (
+      selectedPaymentMethod === 'invoice'
+      && !checkoutForm.eInvoiceAddress.trim()
+      && (!checkoutForm.billingAddress || !checkoutForm.billingZip || !checkoutForm.billingCity)
+    ) {
+      return lang === 'fi'
+        ? 'Täytä verkkolaskuosoite tai tavallisen laskun laskutusosoite, postinumero ja kaupunki.'
+        : 'Enter an e-invoice address or the postal billing address, postal code and city.'
+    }
+    if (selectedPaymentMethod === 'invoice' && !checkoutForm.eInvoiceAddress.trim() && !isValidPostalCode(checkoutForm.billingZip)) {
       return lang === 'fi' ? 'Laskutuksen postinumerossa tulee olla 5 numeroa.' : 'Billing postal code must contain 5 digits.'
     }
     return ''
@@ -3536,6 +3580,7 @@ function App() {
         businessId: '',
         phone: '',
         email: '',
+        eInvoiceAddress: '',
         password: '',
       })
       navigateTo(buildAuthHref('login', nextPath), true)
@@ -3576,6 +3621,7 @@ function App() {
       billingAddress: '',
       billingZip: '',
       billingCity: '',
+      eInvoiceAddress: '',
       notes: '',
       paymentMethod: 'invoice',
     })
@@ -3602,6 +3648,7 @@ function App() {
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
+    setAdminCustomerDraft(null)
     setAdminPriceCustomerId('')
     setAdminPriceProductId('')
     setAdminPriceValue('')
@@ -3662,6 +3709,7 @@ function App() {
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
+    setAdminCustomerDraft(null)
     setAdminPriceCustomerId('')
     setAdminPriceProductId('')
     setAdminPriceValue('')
@@ -3719,6 +3767,72 @@ function App() {
       setAdminCustomersError(lang === 'fi' ? 'Käyttäjien haku epäonnistui.' : 'Failed to load customers.')
     } finally {
       setAdminCustomersLoading(false)
+    }
+  }
+
+  const editAdminCustomer = (customer: AdminCustomer) => {
+    setAdminCustomerDraft({
+      id: customer.id,
+      firstName: customer.firstName,
+      lastName: customer.lastName,
+      companyName: customer.companyName,
+      businessId: customer.businessId,
+      phone: customer.phone,
+      email: customer.email,
+      eInvoiceAddress: customer.eInvoiceAddress,
+    })
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+  }
+
+  const updateAdminCustomerDraft = (field: Exclude<keyof AdminCustomerDraft, 'id'>, value: string) => {
+    setAdminCustomerDraft((current) => (current ? { ...current, [field]: value } : current))
+  }
+
+  const saveAdminCustomer = async () => {
+    if (!adminCustomerDraft) {
+      return
+    }
+
+    setCustomerActionCustomerId(adminCustomerDraft.id)
+    setCustomerActionType('save')
+    setAdminCustomersError('')
+    setAdminCustomersNotice('')
+    try {
+      const response = await adminFetch(`/api/admin/customers/${encodeURIComponent(adminCustomerDraft.id)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...adminCustomerDraft,
+          businessId: formatBusinessIdInput(adminCustomerDraft.businessId),
+          phone: normalizePhoneInput(adminCustomerDraft.phone),
+          email: adminCustomerDraft.email.trim(),
+          eInvoiceAddress: adminCustomerDraft.eInvoiceAddress.trim(),
+        }),
+      })
+      const payload = (await response.json()) as { customer?: AdminCustomer; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.customer) {
+        setAdminCustomersError(
+          localizeAdminMessage(payload.message, lang)
+            ?? (lang === 'fi' ? 'Asiakastietojen tallennus epäonnistui.' : 'Failed to save customer details.'),
+        )
+        return
+      }
+
+      setAdminCustomers((current) => current.map((customer) => (
+        customer.id === payload.customer!.id ? payload.customer! : customer
+      )))
+      setAdminCustomerDraft(null)
+      setAdminCustomersNotice(lang === 'fi' ? 'Asiakastiedot tallennettiin.' : 'Customer details saved.')
+    } catch {
+      setAdminCustomersError(lang === 'fi' ? 'Asiakastietojen tallennus epäonnistui.' : 'Failed to save customer details.')
+    } finally {
+      setCustomerActionCustomerId(null)
+      setCustomerActionType(null)
     }
   }
 
@@ -5216,6 +5330,11 @@ function App() {
                                 <strong>{lang === 'fi' ? 'Toimituspäivä' : 'Delivery date'}:</strong> {formatCalendarDate(order.customer.deliveryDate, lang)}
                               </p>
                             )}
+                            {order.customer.eInvoiceAddress && (
+                              <p className="muted small">
+                                <strong>{lang === 'fi' ? 'Verkkolaskuosoite' : 'E-invoice address'}:</strong> {order.customer.eInvoiceAddress}
+                              </p>
+                            )}
                             <div className="admin-order-items">
                               {order.items.map((item, index) => (
                                 <div key={`${order.id}-${item.productId}-${index}`} className="admin-order-item">
@@ -5431,11 +5550,62 @@ function App() {
                               <p><strong>{lang === 'fi' ? 'S\u00E4hk\u00F6posti' : 'Email'}:</strong> {customer.email}</p>
                               <p><strong>{lang === 'fi' ? 'Puhelin' : 'Phone'}:</strong> {customer.phone || '-'}</p>
                               <p><strong>{lang === 'fi' ? 'Y-tunnus' : 'Business ID'}:</strong> {customer.businessId || '-'}</p>
+                              <p><strong>{lang === 'fi' ? 'Verkkolaskuosoite' : 'E-invoice address'}:</strong> {customer.eInvoiceAddress || '-'}</p>
                               <p><strong>{lang === 'fi' ? 'Luotu' : 'Created'}:</strong> {formatDateTime(customer.createdAt, lang)}</p>
                               <p>
                                 <strong>{lang === 'fi' ? 'Hyv\u00E4ksytty' : 'Approved'}:</strong> {customer.approvedAt ? formatDateTime(customer.approvedAt, lang) : '-'}
                               </p>
                             </div>
+                            {adminCustomerDraft?.id === customer.id && (
+                              <div className="admin-customer-edit">
+                                <div className="admin-customer-edit-head">
+                                  <strong>{lang === 'fi' ? 'Muokkaa asiakastietoja' : 'Edit customer details'}</strong>
+                                  <span className="muted small">
+                                    {lang === 'fi' ? 'Salasanaa ei voi muuttaa tästä.' : 'The password cannot be changed here.'}
+                                  </span>
+                                </div>
+                                <div className="admin-customer-edit-grid">
+                                  <label>
+                                    {lang === 'fi' ? 'Etunimi' : 'First name'}
+                                    <input value={adminCustomerDraft.firstName} onChange={(event) => updateAdminCustomerDraft('firstName', event.target.value)} />
+                                  </label>
+                                  <label>
+                                    {lang === 'fi' ? 'Sukunimi' : 'Last name'}
+                                    <input value={adminCustomerDraft.lastName} onChange={(event) => updateAdminCustomerDraft('lastName', event.target.value)} />
+                                  </label>
+                                  <label>
+                                    {lang === 'fi' ? 'Yrityksen nimi' : 'Company name'}
+                                    <input value={adminCustomerDraft.companyName} onChange={(event) => updateAdminCustomerDraft('companyName', event.target.value)} />
+                                  </label>
+                                  <label>
+                                    {lang === 'fi' ? 'Y-tunnus' : 'Business ID'}
+                                    <input value={adminCustomerDraft.businessId} onChange={(event) => updateAdminCustomerDraft('businessId', formatBusinessIdInput(event.target.value))} />
+                                  </label>
+                                  <label>
+                                    {lang === 'fi' ? 'Sähköposti' : 'Email'}
+                                    <input type="email" value={adminCustomerDraft.email} onChange={(event) => updateAdminCustomerDraft('email', event.target.value)} />
+                                  </label>
+                                  <label>
+                                    {lang === 'fi' ? 'Puhelin' : 'Phone'}
+                                    <input type="tel" value={adminCustomerDraft.phone} onChange={(event) => updateAdminCustomerDraft('phone', normalizePhoneInput(event.target.value))} />
+                                  </label>
+                                  <label className="admin-customer-edit-wide">
+                                    {lang === 'fi' ? 'Verkkolaskuosoite (valinnainen)' : 'E-invoice address (optional)'}
+                                    <input maxLength={100} value={adminCustomerDraft.eInvoiceAddress} onChange={(event) => updateAdminCustomerDraft('eInvoiceAddress', event.target.value)} />
+                                  </label>
+                                </div>
+                                <div className="admin-customer-edit-actions">
+                                  <button className="primary tiny" type="button" disabled={customerActionCustomerId === customer.id} onClick={() => void saveAdminCustomer()}>
+                                    {customerActionCustomerId === customer.id && customerActionType === 'save'
+                                      ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
+                                      : (lang === 'fi' ? 'Tallenna tiedot' : 'Save details')}
+                                  </button>
+                                  <button className="ghost tiny" type="button" disabled={customerActionCustomerId === customer.id} onClick={() => setAdminCustomerDraft(null)}>
+                                    {lang === 'fi' ? 'Peruuta' : 'Cancel'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                             <div className="admin-customer-actions">
                               <button
                                 className="ghost tiny"
@@ -5448,6 +5618,16 @@ function App() {
                                   : customerActionCustomerId === customer.id && customerActionType === 'approve'
                                     ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
                                     : (lang === 'fi' ? 'Hyv\u00E4ksy + email' : 'Approve + email')}
+                              </button>
+                              <button
+                                className="ghost tiny"
+                                type="button"
+                                disabled={customerActionCustomerId === customer.id}
+                                onClick={() => editAdminCustomer(customer)}
+                              >
+                                {adminCustomerDraft?.id === customer.id
+                                  ? (lang === 'fi' ? 'Muokkaus auki' : 'Editing')
+                                  : (lang === 'fi' ? 'Muokkaa tietoja' : 'Edit details')}
                               </button>
                               <button
                                 className="ghost tiny"
@@ -5617,6 +5797,19 @@ function App() {
                           onChange={(event) => setRegisterForm((prev) => ({ ...prev, businessId: formatBusinessIdInput(event.target.value) }))}
                           placeholder="1234567-8"
                         />
+                      </div>
+                      <div className="field">
+                        <label>{lang === 'fi' ? 'Verkkolaskuosoite (valinnainen)' : 'E-invoice address (optional)'}</label>
+                        <input
+                          maxLength={100}
+                          value={registerForm.eInvoiceAddress}
+                          onChange={(event) => setRegisterForm((prev) => ({ ...prev, eInvoiceAddress: event.target.value }))}
+                        />
+                        <span className="field-help">
+                          {lang === 'fi'
+                            ? 'Jos yrityksesi käyttää verkkolaskutusta, lisää osoite tähän. Voit täydentää tiedon myös myöhemmin.'
+                            : 'Add the address if your company uses e-invoicing. It can also be added later.'}
+                        </span>
                       </div>
                       <div className="field">
                         <label>{lang === 'fi' ? 'Puhelinnumero' : 'Phone number'}</label>
@@ -5965,13 +6158,26 @@ function App() {
                             <h2>{lang === 'fi' ? 'Laskutustiedot' : 'Billing details'}</h2>
                             <span className="checkout-form-hint">
                               {lang === 'fi'
-                                ? 'T\u00E4yt\u00E4 n\u00E4m\u00E4 tiedot, jos maksat laskulla.'
-                                : 'Fill these in if you order by invoice or if the billing details differ from delivery.'}
+                                ? 'Verkkolaskua varten t\u00E4yt\u00E4 verkkolaskuosoite. Tavallista laskua varten j\u00E4t\u00E4 se tyhj\u00E4ksi ja t\u00E4yt\u00E4 laskutusosoite.'
+                                : 'For e-invoicing, enter an e-invoice address. For a regular invoice, leave it blank and enter the billing address.'}
                             </span>
                           </div>
                           <div className="field">
                             <label>{t.form.billingCompany}</label>
                             <input value={checkoutForm.billingCompany} onChange={(event) => updateForm('billingCompany', event.target.value)} />
+                          </div>
+                          <div className="field e-invoice-field">
+                            <label>{t.form.eInvoiceAddress} ({lang === 'fi' ? 'valinnainen' : 'optional'})</label>
+                            <input
+                              maxLength={100}
+                              value={checkoutForm.eInvoiceAddress}
+                              onChange={(event) => updateForm('eInvoiceAddress', event.target.value)}
+                            />
+                            <span className="field-help">
+                              {lang === 'fi'
+                                ? 'T\u00E4yt\u00E4 t\u00E4m\u00E4, jos haluat laskun verkkolaskuna. Muussa tapauksessa t\u00E4yt\u00E4 alla oleva tavallisen laskun osoite.'
+                                : 'Enter this for an e-invoice. Otherwise, fill in the regular billing address below.'}
+                            </span>
                           </div>
                           <div className="field">
                             <label>{t.form.billingAddress}</label>
@@ -6007,9 +6213,7 @@ function App() {
                                 />
                                 <div className="payment-method-body">
                                   <div className="payment-method-media">
-                                    <span className="payment-method-icon invoice" aria-hidden="true">
-                                      <span />
-                                    </span>
+                                    <InvoiceIcon />
                                   </div>
                                   <div className="payment-method-copy">
                                     <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
@@ -6110,15 +6314,19 @@ function App() {
                       <strong>{grossTotalSummaryValue}</strong>
                   </div>
                 </div>
+                  {selectedPaymentMethod === 'invoice' && checkoutForm.eInvoiceAddress.trim() && (
+                    <div className="account-note invoice-summary-note">
+                      <span className="muted small">{lang === 'fi' ? 'Verkkolaskuosoite' : 'E-invoice address'}</span>
+                      <strong>{checkoutForm.eInvoiceAddress.trim()}</strong>
+                    </div>
+                  )}
                   <div className="account-note payment-options-note">
                     <span className="muted small">{lang === 'fi' ? 'Maksutavat' : 'Payment options'}</span>
                     <div className="payment-option-list">
                       {!isGuestCheckout && (
                         <div className="payment-option-chip">
                           <div className="payment-option-chip-media">
-                            <span className="payment-method-icon invoice small" aria-hidden="true">
-                              <span />
-                            </span>
+                            <InvoiceIcon small />
                           </div>
                           <strong>{lang === 'fi' ? 'Lasku' : 'Invoice'}</strong>
                         </div>

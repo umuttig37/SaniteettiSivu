@@ -26,6 +26,7 @@ export const ensureCustomerStore = () => {
 }
 
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
+const normalizeEInvoiceAddress = (value) => String(value ?? '').trim().slice(0, 100)
 
 export const normalizeBusinessId = (value) => {
   const cleaned = String(value ?? '')
@@ -94,6 +95,7 @@ const normalizeCustomer = (customer) => {
     businessId: normalizeBusinessId(customer?.businessId),
     phone: String(customer?.phone ?? '').trim(),
     email: normalizeEmail(customer?.email),
+    eInvoiceAddress: normalizeEInvoiceAddress(customer?.eInvoiceAddress) || undefined,
     passwordHash: String(customer?.passwordHash ?? '').trim(),
     passwordSalt: String(customer?.passwordSalt ?? '').trim(),
     defaultShippingAddress: normalizeAddress(customer?.defaultShippingAddress) ?? undefined,
@@ -206,6 +208,7 @@ export const createCustomer = (input) => {
     businessId: input?.businessId,
     phone: input?.phone,
     email,
+    eInvoiceAddress: input?.eInvoiceAddress,
     passwordHash: hash,
     passwordSalt: salt,
   })
@@ -279,6 +282,8 @@ export const updateCustomerAddresses = (customerId, input) => {
   const nextShippingAddress = normalizeAddress(input?.defaultShippingAddress)
   const nextBillingAddress = normalizeAddress(input?.defaultBillingAddress)
   const nextBillingCompany = String(input?.defaultBillingCompany ?? '').trim() || undefined
+  const hasEInvoiceAddress = Object.prototype.hasOwnProperty.call(input ?? {}, 'eInvoiceAddress')
+  const nextEInvoiceAddress = normalizeEInvoiceAddress(input?.eInvoiceAddress) || undefined
   let updatedCustomer = null
 
   const nextCustomers = customers.map((customer) => {
@@ -292,6 +297,7 @@ export const updateCustomerAddresses = (customerId, input) => {
       defaultShippingAddress: nextShippingAddress ?? customer.defaultShippingAddress,
       defaultBillingCompany: nextBillingCompany ?? customer.defaultBillingCompany,
       defaultBillingAddress: nextBillingAddress ?? customer.defaultBillingAddress,
+      eInvoiceAddress: hasEInvoiceAddress ? nextEInvoiceAddress : customer.eInvoiceAddress,
     })
 
     return updatedCustomer
@@ -304,6 +310,17 @@ export const updateCustomerAddresses = (customerId, input) => {
   writeCustomers(nextCustomers)
   return updatedCustomer
 }
+
+export const updateCustomerProfile = (customerId, input) =>
+  replaceCustomer(customerId, () => ({
+    firstName: String(input?.firstName ?? '').trim(),
+    lastName: String(input?.lastName ?? '').trim(),
+    companyName: String(input?.companyName ?? '').trim(),
+    businessId: normalizeBusinessId(input?.businessId),
+    phone: String(input?.phone ?? '').trim(),
+    email: normalizeEmail(input?.email),
+    eInvoiceAddress: normalizeEInvoiceAddress(input?.eInvoiceAddress) || undefined,
+  }))
 
 export const toPublicCustomer = (customer) => {
   if (!customer) {
@@ -320,6 +337,7 @@ export const toPublicCustomer = (customer) => {
     businessId: customer.businessId,
     phone: customer.phone,
     email: customer.email,
+    eInvoiceAddress: customer.eInvoiceAddress ?? '',
     defaultShippingAddress: customer.defaultShippingAddress ?? null,
     defaultBillingCompany: customer.defaultBillingCompany ?? customer.companyName,
     defaultBillingAddress: customer.defaultBillingAddress ?? null,
@@ -343,5 +361,6 @@ export const toAdminCustomer = (customer) => {
     businessId: customer.businessId,
     phone: customer.phone,
     email: customer.email,
+    eInvoiceAddress: customer.eInvoiceAddress ?? '',
   }
 }

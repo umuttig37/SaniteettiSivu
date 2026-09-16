@@ -50,6 +50,7 @@ import {
   toAdminCustomer,
   toPublicCustomer,
   updateCustomerAddresses,
+  updateCustomerProfile,
   verifyPassword,
 } from './customer-store.mjs'
 import {
@@ -614,6 +615,7 @@ const normalizeCheckoutInput = (payload = {}) => {
     deliveryDate: normalizeDeliveryDate(payload?.deliveryDate) || getEarliestDeliveryDate(),
     billingCompany: String(payload?.billingCompany || payload?.company || '').trim(),
     billingAddress,
+    eInvoiceAddress: String(payload?.eInvoiceAddress ?? '').trim().slice(0, 100),
     notes: String(payload?.notes ?? '').trim(),
     paymentMethod: payload?.paymentMethod === 'card' ? 'card' : 'invoice',
   }
@@ -945,6 +947,7 @@ const getMailText = (lang) => {
       vat: 'VAT',
       grossTotal: 'Total incl. VAT',
       billingAddress: 'Billing address',
+      eInvoiceAddress: 'E-invoice address',
       invoice: 'Invoice',
       card: 'Card payment (Paytrail)',
       shippedTitle: 'Your order is on the way',
@@ -990,6 +993,7 @@ const getMailText = (lang) => {
     vat: 'ALV',
     grossTotal: 'Verollinen yhteensä',
     billingAddress: 'Laskutusosoite',
+    eInvoiceAddress: 'Verkkolaskuosoite',
     invoice: 'Lasku',
     card: 'Korttimaksu (Paytrail)',
     shippedTitle: 'Tilauksesi on matkalla',
@@ -1098,6 +1102,7 @@ const customerOrderHtml = (order) => {
       ? `<p style="margin:0;">${t.billingAddress}: ${escapeHtml(formatOrderAddress(order.customer.billingAddress, order.customer.billingZip, order.customer.billingCity))}</p>`
       : ''
   }
+  ${order.customer.eInvoiceAddress ? `<p style="margin:6px 0 0;">${t.eInvoiceAddress}: ${escapeHtml(order.customer.eInvoiceAddress)}</p>` : ''}
   ${emailFooter(lang)}
 </div>
 `
@@ -1135,6 +1140,7 @@ const merchantOrderHtml = (order) => {
       ? `<p style="margin:0 0 6px;"><strong>${t.billingAddress}:</strong> ${escapeHtml(formatOrderAddress(order.customer.billingAddress, order.customer.billingZip, order.customer.billingCity))}</p>`
       : ''
   }
+  ${order.customer.eInvoiceAddress ? `<p style="margin:0 0 6px;"><strong>${t.eInvoiceAddress}:</strong> ${escapeHtml(order.customer.eInvoiceAddress)}</p>` : ''}
   ${emailFooter(lang)}
 </div>
 `
@@ -1169,6 +1175,7 @@ const merchantNewCustomerHtml = (customer) => {
   <p style="margin:0 0 8px;"><strong>${t.businessId}:</strong> ${escapeHtml(customer.businessId)}</p>
   <p style="margin:0 0 8px;"><strong>${t.phone}:</strong> ${escapeHtml(customer.phone)}</p>
   <p style="margin:0 0 8px;"><strong>${t.email}:</strong> ${escapeHtml(customer.email)}</p>
+  ${customer.eInvoiceAddress ? `<p style="margin:0 0 8px;"><strong>${t.eInvoiceAddress}:</strong> ${escapeHtml(customer.eInvoiceAddress)}</p>` : ''}
   <p style="margin:0 0 8px;"><strong>${t.accountStatus}:</strong> ${t.pending}</p>
   <p style="margin:0;">Hyväksy tai poista tili admin-paneelin käyttäjät-osiosta.</p>
   ${emailFooter('fi')}
@@ -1420,6 +1427,7 @@ const createOrderRecord = ({ orders, customer, checkout, items, lang, paymentMet
       billingAddress: checkout.billingAddress.streetAddress,
       billingZip: checkout.billingAddress.postalCode,
       billingCity: checkout.billingAddress.city,
+      eInvoiceAddress: checkout.eInvoiceAddress,
       notes: checkout.notes,
       firstName: customer.firstName,
       lastName: customer.lastName,
@@ -1539,6 +1547,7 @@ app.post('/api/customer/register', async (req, res) => {
   const businessId = normalizeBusinessId(req.body?.businessId)
   const phone = normalizePhone(req.body?.phone)
   const email = normalizeEmail(req.body?.email)
+  const eInvoiceAddress = String(req.body?.eInvoiceAddress ?? '').trim().slice(0, 100)
   const password = String(req.body?.password ?? '')
 
   if (!firstName || !lastName || !companyName || !businessId || !phone || !email || !password) {
@@ -1579,6 +1588,7 @@ app.post('/api/customer/register', async (req, res) => {
       businessId,
       phone,
       email,
+      eInvoiceAddress,
       password,
       approvalStatus: 'pending',
     })
@@ -1684,6 +1694,57 @@ app.get('/api/admin/customers', requireAdmin, (req, res) => {
     .filter(Boolean)
 
   res.json({ customers })
+})
+
+app.put('/api/admin/customers/:customerId', requireAdmin, (req, res) => {
+  const existingCustomer = getCustomerById(req.params.customerId)
+  if (!existingCustomer) {
+    res.status(404).json({ message: 'Customer not found.' })
+    return
+  }
+
+  const firstName = String(req.body?.firstName ?? '').trim()
+  const lastName = String(req.body?.lastName ?? '').trim()
+  const companyName = String(req.body?.companyName ?? '').trim()
+  const businessId = normalizeBusinessId(req.body?.businessId)
+  const phone = normalizePhone(req.body?.phone)
+  const email = normalizeEmail(req.body?.email)
+  const eInvoiceAddress = String(req.body?.eInvoiceAddress ?? '').trim().slice(0, 100)
+
+  if (!firstName || !lastName || !companyName || !businessId || !phone || !email) {
+    res.status(400).json({ message: 'Missing customer fields.' })
+    return
+  }
+  if (!isValidBusinessId(businessId)) {
+    res.status(400).json({ message: 'Business ID must be valid and in the format 1234567-8.' })
+    return
+  }
+  if (!isValidPhone(phone)) {
+    res.status(400).json({ message: 'Phone number must contain 7-15 digits.' })
+    return
+  }
+  if (!isValidEmail(email)) {
+    res.status(400).json({ message: 'Enter a valid email address.' })
+    return
+  }
+
+  const emailOwner = getCustomerByEmail(email)
+  if (emailOwner && emailOwner.id !== existingCustomer.id) {
+    res.status(409).json({ message: 'An account with this email already exists.' })
+    return
+  }
+
+  const customer = updateCustomerProfile(existingCustomer.id, {
+    firstName,
+    lastName,
+    companyName,
+    businessId,
+    phone,
+    email,
+    eInvoiceAddress,
+  })
+
+  res.json({ ok: true, customer: toAdminCustomer(customer) })
 })
 
 app.post('/api/admin/customers/:customerId/approve', requireAdmin, async (req, res) => {
@@ -1938,6 +1999,7 @@ app.post('/api/checkout/invoice', requireCustomer, async (req, res) => {
       defaultShippingAddress: checkout.deliveryAddress,
       defaultBillingCompany: checkout.billingCompany,
       defaultBillingAddress: checkout.billingAddress,
+      eInvoiceAddress: checkout.eInvoiceAddress,
     })
 
     orders.push(order)
@@ -2263,6 +2325,7 @@ app.post('/api/orders', async (req, res) => {
         billingAddress: customer.billingAddress ?? '',
         billingZip: customer.billingZip ?? '',
         billingCity: customer.billingCity ?? '',
+        eInvoiceAddress: customer.eInvoiceAddress ?? '',
         notes: customer.notes ?? '',
         businessId: customer.businessId ?? '',
       },
