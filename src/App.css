@@ -1768,6 +1768,17 @@ html {
   gap: 0.4rem;
 }
 
+.cart-page-item .cart-actions > button {
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  font-size: 0.82rem;
+}
+
+.cart-page-item .cart-actions {
+  gap: 0.3rem;
+}
+
 .cart-total {
   display: flex;
   justify-content: space-between;
