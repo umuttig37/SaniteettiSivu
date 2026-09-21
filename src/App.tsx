@@ -6727,14 +6727,14 @@ function App() {
               <p>{getCategoryDescription(activeCategoryDefinition, activeParentCategory)}</p>
             </div>
             {categoryMenu}
-            {!activeCategoryDefinition.parentId && activeSubcategories.length > 0 && (
+            {activeMainCategory && activeSubcategories.length > 0 && (
               <div className="subcategory-panel">
                 <span className="subcategory-title">{lang === 'fi' ? 'Valitse Kategoria' : 'Select category'}</span>
                 <div className="subcategory-list">
                   {activeSubcategories.map((subcategory) => (
                     <a
                       key={subcategory.id}
-                      className="subcategory-button"
+                      className={`subcategory-button ${activeCategory === subcategory.id ? 'active' : ''}`}
                       href={getCategoryHref(subcategory)}
                       onClick={(event) => { event.preventDefault(); selectCategory(subcategory.id) }}
                     >
