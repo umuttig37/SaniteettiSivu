@@ -69,8 +69,6 @@ const ensureDataDir = () => {
   }
 }
 
-const readCatalogFromDisk = () => normalizeCatalog(readCatalogJsonFromDisk())
-
 const readCatalogJsonFromDisk = () => {
   try {
     return readJson(catalogFile)
@@ -314,29 +312,27 @@ export const ensureCatalogStore = () => {
   if (!fs.existsSync(catalogFile)) {
     const seed = fs.existsSync(seedFile) ? normalizeCatalog(readJson(seedFile)) : normalizeCatalog(fallbackCatalog)
     writeJsonAtomic(catalogFile, seed)
-    rememberCatalog(seed)
-    return
+    return rememberCatalog(seed)
   }
 
   try {
-    normalizeCatalog(readCatalogJsonFromDisk())
+    return rememberCatalog(normalizeCatalog(readCatalogJsonFromDisk()))
   } catch (error) {
     throw new Error('Catalog could not be read. No catalog data was written.', { cause: error })
   }
 }
 
 export const readCatalog = () => {
-  ensureCatalogStore()
   const cached = getCachedCatalog()
   if (cached) {
     return cached
   }
 
-  return rememberCatalog(readCatalogFromDisk())
+  return ensureCatalogStore()
 }
 
 export const writeCatalog = (catalog) => {
-  ensureCatalogStore()
+  readCatalog()
   const normalized = normalizeCatalog(catalog)
   writeJsonAtomic(catalogFile, normalized)
   return rememberCatalog(normalized)
@@ -380,7 +376,18 @@ export const updateProductCategory = (productId, categoryId) => {
   }
 
   writeJsonAtomic(catalogFile, nextRawCatalog)
-  const nextCatalog = rememberCatalog(normalizeCatalog(nextRawCatalog))
+  const nextCatalog = rememberCatalog({
+    categories: catalog.categories,
+    products: catalog.products.map((product) =>
+      product.id === normalizedProductId
+        ? {
+            ...product,
+            category: normalizedCategoryId,
+            updatedAt,
+          }
+        : product,
+    ),
+  })
   return {
     catalog: nextCatalog,
     product: nextCatalog.products.find((product) => product.id === normalizedProductId) ?? null,

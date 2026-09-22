@@ -1864,18 +1864,29 @@ app.patch('/api/admin/products/:productId/category', requireAdmin, (req, res) =>
     return
   }
 
-  const catalog = readCatalog()
-  if (!catalog.categories.some((category) => category.id === categoryId)) {
-    res.status(400).json({ message: 'Category not found' })
-    return
-  }
-  if (!catalog.products.some((product) => product.id === req.params.productId)) {
-    res.status(404).json({ message: 'Product not found' })
-    return
-  }
+  try {
+    const result = updateProductCategory(req.params.productId, categoryId)
+    if (!result?.product) {
+      res.status(404).json({ message: 'Product not found' })
+      return
+    }
 
-  updateProductCategory(req.params.productId, categoryId)
-  res.json(getPublicCatalogResponse(req.params.productId))
+    res.json({
+      product: {
+        id: result.product.id,
+        category: result.product.category,
+        updatedAt: result.product.updatedAt,
+      },
+    })
+  } catch (error) {
+    if (error instanceof Error && error.message === 'Category not found') {
+      res.status(400).json({ message: error.message })
+      return
+    }
+
+    console.error('[catalog] Failed to update product category.', error)
+    res.status(500).json({ message: 'Failed to update product category' })
+  }
 })
 
 app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {

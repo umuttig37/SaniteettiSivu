@@ -2411,6 +2411,7 @@ function App() {
   const [adminSeoTouched, setAdminSeoTouched] = useState(false)
   const [adminMetaTouched, setAdminMetaTouched] = useState(false)
   const [adminKeywordsTouched, setAdminKeywordsTouched] = useState(false)
+  const [adminProductSaving, setAdminProductSaving] = useState(false)
   const [routeState, setRouteState] = useState<RouteState>(initialRouteState)
   const [checkoutForm, setCheckoutForm] = useState<CheckoutForm>({
     company: '',
@@ -4170,6 +4171,10 @@ function App() {
   }
 
   const saveAdminProduct = async () => {
+    if (adminProductSaving) {
+      return
+    }
+
     const name = adminProductForm.name.trim()
     const sku = adminProductForm.sku.trim()
     const category = normalizeCategoryId(adminProductForm.category)
@@ -4208,6 +4213,7 @@ function App() {
       optionGroups: parseAdminOptionGroups(adminProductForm.optionGroups),
     }
 
+    setAdminProductSaving(true)
     try {
       const endpoint = isCategoryOnlyUpdate
         ? `/api/admin/products/${adminProductForm.id}/category`
@@ -4221,9 +4227,34 @@ function App() {
         },
         body: JSON.stringify(isCategoryOnlyUpdate ? { category } : payload),
       })
-      const result = (await response.json()) as { catalog?: CatalogPayload; message?: string }
+      const result = (await response.json().catch(() => ({}))) as {
+        catalog?: CatalogPayload
+        product?: Pick<Product, 'id' | 'category' | 'updatedAt'>
+        message?: string
+      }
       if (response.status === 401) {
         handleAdminUnauthorized()
+        return
+      }
+      if (isCategoryOnlyUpdate) {
+        if (!response.ok || !result.product) {
+          setAdminError(result.message ?? (lang === 'fi' ? 'Tuotteen tallennus epäonnistui.' : 'Failed to save product.'))
+          return
+        }
+
+        setProductCatalog((current) =>
+          current.map((product) =>
+            product.id === result.product?.id
+              ? {
+                  ...product,
+                  category: result.product.category,
+                  updatedAt: result.product.updatedAt,
+                }
+              : product,
+          ),
+        )
+        setAdminError('')
+        resetAdminForm()
         return
       }
       if (!response.ok || !result.catalog) {
@@ -4235,6 +4266,8 @@ function App() {
       resetAdminForm()
     } catch {
       setAdminError(lang === 'fi' ? 'Tuotteen tallennus epäonnistui.' : 'Failed to save product.')
+    } finally {
+      setAdminProductSaving(false)
     }
   }
 
@@ -5276,7 +5309,7 @@ function App() {
                   </div>
                   {adminError && <div className="error">{adminError}</div>}
                   <div className="admin-actions">
-                    <button className="primary" type="button" onClick={saveAdminProduct}>
+                    <button className="primary" type="button" onClick={saveAdminProduct} disabled={adminProductSaving}>
                       {adminProductForm.id ? (lang === 'fi' ? 'Päivitä tuote' : 'Update product') : (lang === 'fi' ? 'Lisää tuote' : 'Add product')}
                     </button>
                     {adminProductForm.id && (
