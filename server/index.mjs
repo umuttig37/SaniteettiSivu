@@ -69,6 +69,7 @@ import {
   readFirstEnvValue,
 } from './env-utils.mjs'
 import { getSelectedUnitLabel, resolveCustomerUnitPrice } from './unit-pricing.mjs'
+import { renderGoogleMerchantXml } from './merchant-feed.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -2414,6 +2415,16 @@ app.get('/robots.txt', (req, res) => {
 
 app.get('/sitemap.xml', (req, res) => {
   res.type('application/xml').send(renderSitemapXml({ siteUrl: getSiteUrl(req), catalog: readCatalog() }))
+})
+
+app.get('/google-merchant.xml', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.type('application/xml').send(
+    renderGoogleMerchantXml({
+      siteUrl: getSiteUrl(req),
+      catalog: readPublicCatalog(),
+    }),
+  )
 })
 
 app.get('/og/product/:slug.svg', (req, res) => {
