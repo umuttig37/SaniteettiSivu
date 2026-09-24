@@ -70,6 +70,7 @@ import {
 } from './env-utils.mjs'
 import { getSelectedUnitLabel, resolveCustomerUnitPrice } from './unit-pricing.mjs'
 import { renderGoogleMerchantXml } from './merchant-feed.mjs'
+import { createDeliveryNotePdf, getDeliveryNoteFilename } from './delivery-note.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -101,7 +102,7 @@ const smtpHost = readFirstEnvValue(process.env, ['SMTP_HOST', 'MAIL_HOST'])
 const smtpName = readFirstEnvValue(process.env, ['SMTP_NAME', 'MAIL_NAME'])
 const smtpPort = Number.parseInt(readFirstEnvValue(process.env, ['SMTP_PORT', 'MAIL_PORT']), 10)
 const smtpSecureEnv = readFirstEnvValue(process.env, ['SMTP_SECURE', 'MAIL_SECURE']).toLowerCase()
-const mailFrom = readFirstEnvValue(process.env, ['MAIL_FROM', 'SMTP_FROM']) || smtpUser
+const mailFrom = readFirstEnvValue(process.env, ['MAIL_FROM', 'SMTP_FROM']) || 'Suomen Paperitukku <info@suomenpaperitukku.fi>'
 const ownerNotificationEmail = readFirstEnvValue(process.env, ['MAIL_TO', 'OWNER_EMAIL', 'ORDER_NOTIFICATION_EMAIL']) || 'umut.uygur30@gmail.com'
 const fallbackOwnerEmail = 'umut.uygur30@gmail.com'
 const ownerNotificationRecipients = Array.from(new Set([ownerNotificationEmail.trim(), fallbackOwnerEmail].filter(Boolean)))
@@ -958,6 +959,7 @@ const getMailText = (lang) => {
       card: 'Card payment (Paytrail)',
       shippedTitle: 'Your order is on the way',
       shippedBody: 'Order is now shipped',
+      shippedAttachment: 'The delivery note is attached to this email as a PDF.',
       shippedThanks: 'Thank you for ordering from Suomen Paperitukku.',
       questions: 'If you have any questions about your order, just reply to this email.',
       regards: 'Best regards',
@@ -1004,6 +1006,7 @@ const getMailText = (lang) => {
     card: 'Korttimaksu (Paytrail)',
     shippedTitle: 'Tilauksesi on matkalla',
     shippedBody: 'Tilaus on nyt lähetetty',
+    shippedAttachment: 'Tilauksen lähete on tämän viestin PDF-liitteenä.',
     shippedThanks: 'Kiitos tilauksesta Suomen Paperitukulta.',
     questions: 'Jos sinulla on kysyttävää tilauksesta, vastaathan tähän viestiin.',
     regards: 'Ystävällisin terveisin',
@@ -1215,6 +1218,7 @@ const shippedHtml = (order) => {
   <h2 style="margin:0 0 8px;">${t.shippedTitle}</h2>
   <p style="margin:0 0 12px;">${t.shippedBody} <strong>${order.id}</strong>.</p>
   ${order.customer.deliveryDate ? `<p style="margin:0 0 10px;"><strong>${t.deliveryDate}:</strong> ${escapeHtml(formatDeliveryDate(order.customer.deliveryDate, lang))}</p>` : ''}
+  <p style="margin:0 0 10px;">${t.shippedAttachment}</p>
   <p style="margin:0;">${t.shippedThanks}</p>
   ${emailFooter(lang)}
 </div>
@@ -2396,11 +2400,27 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
     const transporter = createTransporter()
     const orderLang = getOrderLang(order)
     const t = getMailText(orderLang)
+    const productsById = new Map(readCatalog().products.map((product) => [product.id, product]))
+    const deliveryNoteOrder = {
+      ...order,
+      items: (Array.isArray(order.items) ? order.items : []).map((item) => ({
+        ...item,
+        sku: item.sku || productsById.get(item.productId)?.sku || '',
+      })),
+    }
+    const deliveryNotePdf = await createDeliveryNotePdf(deliveryNoteOrder)
     await transporter.sendMail({
       from: mailFrom,
       to: order.customer.email,
       subject: `${t.subjectShipped} ${order.id}`,
       html: shippedHtml(order),
+      attachments: [
+        {
+          filename: getDeliveryNoteFilename(order.id),
+          content: deliveryNotePdf,
+          contentType: 'application/pdf',
+        },
+      ],
     })
 
     res.json({ ok: true, order })
