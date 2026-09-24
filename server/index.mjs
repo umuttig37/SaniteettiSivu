@@ -119,6 +119,7 @@ const customerSessionCookieName = 'spt_customer_session'
 const customerSessionMaxAgeMs = 1000 * 60 * 60 * 24 * 30
 const adminSessions = new Map()
 const customerSessions = new Map()
+const shippingOrdersInProgress = new Set()
 const paytrailConfig = getPaytrailConfig(process.env)
 const paytrailConfigErrorMessage =
   'Paytrail is not configured on the server. Set PAYTRAIL_ACCOUNT_ID (or PAYTRAIL_MERCHANT_ID) and PAYTRAIL_SECRET.'
@@ -2383,26 +2384,33 @@ app.post('/api/orders', async (req, res) => {
 })
 
 app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
+  const orderId = req.params.orderId
+  if (shippingOrdersInProgress.has(orderId)) {
+    res.status(409).json({ message: 'Shipment email is already being sent' })
+    return
+  }
+
+  shippingOrdersInProgress.add(orderId)
   try {
-    const orderId = req.params.orderId
     const orders = readOrders()
     const order = orders.find((item) => item.id === orderId)
     if (!order) {
       res.status(404).json({ message: 'Order not found' })
       return
     }
-    if (order.status !== 'shipped') {
-      order.status = 'shipped'
-      order.shippedAt = new Date().toISOString()
-      writeOrders(orders)
+    if (order.status === 'shipped') {
+      res.json({ ok: true, order, alreadyShipped: true })
+      return
     }
 
     const transporter = createTransporter()
     const orderLang = getOrderLang(order)
     const t = getMailText(orderLang)
+    const shippedAt = new Date().toISOString()
     const productsById = new Map(readCatalog().products.map((product) => [product.id, product]))
     const deliveryNoteOrder = {
       ...order,
+      shippedAt,
       items: (Array.isArray(order.items) ? order.items : []).map((item) => ({
         ...item,
         sku: item.sku || productsById.get(item.productId)?.sku || '',
@@ -2423,9 +2431,14 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
       ],
     })
 
+    order.status = 'shipped'
+    order.shippedAt = shippedAt
+    writeOrders(orders)
     res.json({ ok: true, order })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to send shipped email' })
+  } finally {
+    shippingOrdersInProgress.delete(orderId)
   }
 })
 
