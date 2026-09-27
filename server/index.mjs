@@ -1863,7 +1863,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
   res.status(201).json(getPublicCatalogResponse(payload.id))
 })
 
-app.patch('/api/admin/products/:productId/category', requireAdmin, (req, res) => {
+app.patch('/api/admin/products/:productId/category', requireAdmin, async (req, res) => {
   const categoryId = String(req.body?.category ?? req.body?.categoryId ?? '').trim()
   if (!categoryId) {
     res.status(400).json({ message: 'Missing category' })
@@ -1871,7 +1871,7 @@ app.patch('/api/admin/products/:productId/category', requireAdmin, (req, res) =>
   }
 
   try {
-    const result = updateProductCategory(req.params.productId, categoryId)
+    const result = await updateProductCategory(req.params.productId, categoryId)
     if (!result?.product) {
       res.status(404).json({ message: 'Product not found' })
       return

@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
-import os from 'node:os'
 import path from 'node:path'
 import test from 'node:test'
 import { fileURLToPath, pathToFileURL } from 'node:url'
+import { renderGoogleMerchantXml } from './merchant-feed.mjs'
 import { getCategoryPath, renderProductPage, renderSitemapXml, renderSpaPage } from './site-render.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const testTempDir = path.resolve(__dirname, '..', 'tmp')
 
 const createProduct = (overrides) => ({
   id: 'product-1',
@@ -42,7 +43,8 @@ const createCatalog = () => ({
 })
 
 const createIsolatedStore = async (catalogContent) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paperitukku-catalog-test-'))
+  fs.mkdirSync(testTempDir, { recursive: true })
+  const root = fs.mkdtempSync(path.join(testTempDir, 'paperitukku-catalog-test-'))
   const serverDir = path.join(root, 'server')
   const dataDir = path.join(root, 'data')
   fs.mkdirSync(serverDir)
@@ -61,7 +63,7 @@ test('category-only update changes only category and updatedAt on one stored pro
 
   try {
     const before = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
-    const result = isolated.store.updateProductCategory('product-main', 'child')
+    const result = await isolated.store.updateProductCategory('product-main', 'child')
     const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
     const beforeTarget = before.products.find((product) => product.id === 'product-main')
     const afterTarget = after.products.find((product) => product.id === 'product-main')
@@ -79,6 +81,179 @@ test('category-only update changes only category and updatedAt on one stored pro
     assert.equal(new Set(after.products.map((product) => product.id)).size, after.products.length)
     assert.equal(result.product.id, 'product-main')
     assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('category-only update refreshes cache and preserves SEO and catalog output', async () => {
+  const fixture = createCatalog()
+  fixture.products[0].image = 'data:image/png;base64,AAAA-category-regression-image'
+  fixture.products[0].images = [fixture.products[0].image]
+  const isolated = await createIsolatedStore(JSON.stringify(fixture, null, 2))
+
+  try {
+    const before = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const beforeTarget = structuredClone(before.products.find((product) => product.id === 'product-main'))
+    const beforeSitemap = renderSitemapXml({ siteUrl: 'https://example.test', catalog: before })
+    const beforeProductHtml = renderProductPage({
+      siteUrl: 'https://example.test',
+      catalog: before,
+      product: beforeTarget,
+      category: before.categories.find((category) => category.id === beforeTarget.category),
+      related: [],
+    })
+
+    await isolated.store.updateProductCategory('product-main', 'child')
+
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const cached = isolated.store.readCatalog()
+    const afterTarget = after.products.find((product) => product.id === 'product-main')
+    const cachedTarget = cached.products.find((product) => product.id === 'product-main')
+    const { category: beforeCategory, updatedAt: beforeUpdatedAt, ...beforeStable } = beforeTarget
+    const { category: afterCategory, updatedAt: afterUpdatedAt, ...afterStable } = afterTarget
+
+    assert.equal(beforeCategory, 'main')
+    assert.equal(afterCategory, 'child')
+    assert.notEqual(afterUpdatedAt, beforeUpdatedAt)
+    assert.deepEqual(afterStable, beforeStable)
+    assert.deepEqual(after.products.filter((product) => product.id !== 'product-main'), before.products.filter((product) => product.id !== 'product-main'))
+    assert.equal(after.products.length, before.products.length)
+    assert.equal(afterTarget.image, beforeTarget.image)
+    assert.deepEqual(afterTarget.images, beforeTarget.images)
+    assert.equal(cachedTarget.category, 'child')
+    assert.equal(cachedTarget.updatedAt, afterTarget.updatedAt)
+
+    const afterSitemap = renderSitemapXml({ siteUrl: 'https://example.test', catalog: after })
+    const beforeLocations = Array.from(beforeSitemap.matchAll(/<loc>(.*?)<\/loc>/g), (match) => match[1])
+    const afterLocations = Array.from(afterSitemap.matchAll(/<loc>(.*?)<\/loc>/g), (match) => match[1])
+    assert.deepEqual(afterLocations, beforeLocations)
+
+    const afterProductHtml = renderProductPage({
+      siteUrl: 'https://example.test',
+      catalog: after,
+      product: afterTarget,
+      category: after.categories.find((category) => category.id === afterTarget.category),
+      related: [],
+    })
+    assert.equal((afterProductHtml.match(/\"@type\":\"Product\"/g) ?? []).length, 1)
+    assert.match(afterProductHtml, /<link rel="canonical" href="https:\/\/example\.test\/tuote\/product-main"/)
+    assert.match(afterProductHtml, new RegExp(beforeTarget.name))
+    assert.match(beforeProductHtml, new RegExp(beforeTarget.name))
+
+    const merchantXml = renderGoogleMerchantXml({ siteUrl: 'https://example.test', catalog: after })
+    assert.match(merchantXml, /<g:link>https:\/\/example\.test\/tuote\/product-main<\/g:link>/)
+    assert.match(merchantXml, new RegExp(beforeTarget.name))
+
+    const mainHtml = renderSpaPage({
+      siteUrl: 'https://example.test',
+      catalog: after,
+      route: { type: 'home', categorySlug: 'main' },
+    })
+    const childHtml = renderSpaPage({
+      siteUrl: 'https://example.test',
+      catalog: after,
+      route: { type: 'home', categorySlug: 'child' },
+    })
+    assert.match(mainHtml, /href="\/tuote\/product-main"/)
+    assert.match(childHtml, /href="\/tuote\/product-main"/)
+    assert.equal(
+      cached.products.some((product) =>
+        [product.name, ...(product.searchKeywords ?? [])].join(' ').toLocaleLowerCase('fi').includes(beforeTarget.name.toLocaleLowerCase('fi')),
+      ),
+      true,
+    )
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('concurrent category-only updates are serialized without losing either change', async () => {
+  const isolated = await createIsolatedStore(JSON.stringify(createCatalog(), null, 2))
+
+  try {
+    await Promise.all([
+      isolated.store.updateProductCategory('product-main', 'child'),
+      isolated.store.updateProductCategory('product-child', 'muut'),
+    ])
+
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.equal(after.products.find((product) => product.id === 'product-main').category, 'child')
+    assert.equal(after.products.find((product) => product.id === 'product-child').category, 'muut')
+    assert.equal(after.products.length, 3)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('a failed streamed category update never replaces the existing catalog', async () => {
+  const fixture = createCatalog()
+  fixture.products.push(createProduct({ id: 'product-main', slug: 'duplicate-id', sku: 'DUPLICATE-ID' }))
+  const originalContent = JSON.stringify(fixture, null, 2)
+  const isolated = await createIsolatedStore(originalContent)
+
+  try {
+    await assert.rejects(
+      isolated.store.updateProductCategory('product-main', 'child'),
+      /not found uniquely/,
+    )
+    assert.equal(fs.readFileSync(isolated.catalogPath, 'utf8'), originalContent)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('a concurrent catalog write makes the streamed update abort safely', async () => {
+  const fixture = createCatalog()
+  fixture.products[0].image = `data:image/png;base64,${'A'.repeat(4_000_000)}`
+  fixture.products[0].images = [fixture.products[0].image]
+  const originalContent = JSON.stringify(fixture)
+  const isolated = await createIsolatedStore(originalContent)
+
+  try {
+    const updatePromise = isolated.store.updateProductCategory('product-main', 'child')
+    let temporaryFileObserved = false
+
+    for (let attempt = 0; attempt < 2_000; attempt += 1) {
+      if (fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp'))) {
+        temporaryFileObserved = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+
+    assert.equal(temporaryFileObserved, true)
+    fs.appendFileSync(isolated.catalogPath, ' ')
+    await assert.rejects(updatePromise, /Catalog changed during category update/)
+    assert.equal(fs.readFileSync(isolated.catalogPath, 'utf8'), `${originalContent} `)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('normal product creation and editing still use the existing full update path', async () => {
+  const isolated = await createIsolatedStore(JSON.stringify(createCatalog(), null, 2))
+
+  try {
+    const before = isolated.store.readCatalog()
+    const next = isolated.store.upsertProduct(
+      createProduct({ id: 'new-product', slug: 'new-product', name: 'New product', sku: 'NEW-1' }),
+    )
+
+    assert.equal(next.products.length, before.products.length + 1)
+    assert.equal(next.products.some((product) => product.id === 'new-product'), true)
+    assert.equal(next.products.some((product) => product.id === 'product-main'), true)
+
+    const existing = next.products.find((product) => product.id === 'product-main')
+    const edited = isolated.store.upsertProduct({ ...existing, description: 'Edited through the normal product path' })
+    const editedProduct = edited.products.find((product) => product.id === 'product-main')
+    assert.equal(edited.products.length, next.products.length)
+    assert.equal(editedProduct.description, 'Edited through the normal product path')
+    assert.equal(editedProduct.slug, existing.slug)
+    assert.equal(editedProduct.createdAt, existing.createdAt)
   } finally {
     fs.rmSync(isolated.root, { recursive: true, force: true })
   }
