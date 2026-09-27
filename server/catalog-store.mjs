@@ -85,9 +85,9 @@ const readCatalogJsonFromDisk = () => {
   }
 }
 
-const createCatalogArrayStream = (section) =>
+const createCatalogArrayStream = (section, filePath = catalogFile) =>
   chain([
-    fs.createReadStream(catalogFile, { encoding: 'utf8' }),
+    fs.createReadStream(filePath, { encoding: 'utf8' }),
     parser(),
     pick({ filter: section }),
     streamArray(),
@@ -99,9 +99,9 @@ const writeStreamChunk = async (stream, chunk) => {
   }
 }
 
-const readRawCategoriesStreaming = async () => {
+const readRawCategoriesStreaming = async (filePath = catalogFile) => {
   const categories = []
-  for await (const { value } of createCatalogArrayStream('categories')) {
+  for await (const { value } of createCatalogArrayStream('categories', filePath)) {
     categories.push(value)
   }
   return categories
@@ -203,6 +203,128 @@ const writeCategoryUpdateStreaming = async ({ productId, categoryId, updatedAt, 
 
     await fs.promises.rename(tempFile, catalogFile)
     return productCount
+  } catch (error) {
+    if (output) {
+      output.destroy()
+      try {
+        await finished(output)
+      } catch {
+        // The original stream error is reported below.
+      }
+    }
+    if (fileHandle) {
+      try {
+        await fileHandle.close()
+      } catch {
+        // The descriptor may already be closed after a stream failure.
+      }
+    }
+    try {
+      await fs.promises.unlink(tempFile)
+    } catch {
+      // The temporary file may not exist or may already have been renamed.
+    }
+    throw error
+  }
+}
+
+const validateStreamedProductUpsert = async ({ filePath, candidate, categories, productCount }) => {
+  const writtenCategories = await readRawCategoriesStreaming(filePath)
+  if (JSON.stringify(writtenCategories) !== JSON.stringify(categories)) {
+    throw new Error('Streamed product update changed catalog categories. Existing catalog was not modified.')
+  }
+
+  let validatedProductCount = 0
+  let candidateMatches = 0
+
+  for await (const { value: product } of createCatalogArrayStream('products', filePath)) {
+    validatedProductCount += 1
+    if (String(product?.id ?? '') === candidate.id) {
+      candidateMatches += 1
+      if (JSON.stringify(product) !== JSON.stringify(candidate)) {
+        throw new Error('Streamed product update validation failed. Existing catalog was not modified.')
+      }
+    }
+  }
+
+  if (validatedProductCount !== productCount || candidateMatches !== 1) {
+    throw new Error('Streamed catalog validation failed. Existing catalog was not modified.')
+  }
+}
+
+const writeProductUpsertStreaming = async ({ candidate, existingProductId, categories, sourceVersion }) => {
+  const tempFile = path.join(
+    path.dirname(catalogFile),
+    `.${path.basename(catalogFile)}.${process.pid}.${Date.now()}.${atomicWriteCounter += 1}.tmp`,
+  )
+  let fileHandle = null
+  let output = null
+
+  try {
+    fileHandle = await fs.promises.open(tempFile, 'wx')
+    output = fs.createWriteStream(tempFile, {
+      fd: fileHandle.fd,
+      autoClose: false,
+      encoding: 'utf8',
+    })
+
+    const serializedCategories = JSON.stringify(categories, null, 2).replaceAll('\n', '\n  ')
+    await writeStreamChunk(output, `{\n  "categories": ${serializedCategories},\n  "products": [`)
+    let sourceProductCount = 0
+    let writtenProductCount = 0
+    let targetMatches = 0
+
+    const writeProduct = async (product) => {
+      const serializedProduct = JSON.stringify(product, null, 2).replaceAll('\n', '\n    ')
+      await writeStreamChunk(output, `${writtenProductCount === 0 ? '\n' : ',\n'}    ${serializedProduct}`)
+      writtenProductCount += 1
+    }
+
+    if (!existingProductId) {
+      await writeProduct(candidate)
+    }
+
+    for await (const { value: product } of createCatalogArrayStream('products')) {
+      sourceProductCount += 1
+      const isTarget = String(product?.id ?? '') === candidate.id
+      if (isTarget) {
+        targetMatches += 1
+      }
+      await writeProduct(existingProductId && isTarget ? candidate : product)
+    }
+
+    const expectedTargetMatches = existingProductId ? 1 : 0
+    if (targetMatches !== expectedTargetMatches) {
+      throw new Error('Product was not found uniquely in the stored catalog. Existing catalog was not modified.')
+    }
+
+    const expectedProductCount = sourceProductCount + (existingProductId ? 0 : 1)
+    if (writtenProductCount !== expectedProductCount) {
+      throw new Error('Streamed product count validation failed. Existing catalog was not modified.')
+    }
+
+    await writeStreamChunk(output, '\n  ]\n}\n')
+    output.end()
+    await finished(output)
+    output = null
+    await fileHandle.sync()
+    await fileHandle.close()
+    fileHandle = null
+
+    await validateStreamedProductUpsert({
+      filePath: tempFile,
+      candidate,
+      categories,
+      productCount: writtenProductCount,
+    })
+
+    const currentVersion = await fs.promises.stat(catalogFile)
+    if (!isSameFileVersion(sourceVersion, currentVersion)) {
+      throw new Error('Catalog changed during product update. Existing catalog was not modified; retry the update.')
+    }
+
+    await fs.promises.rename(tempFile, catalogFile)
+    return writtenProductCount
   } catch (error) {
     if (output) {
       output.destroy()
@@ -536,32 +658,40 @@ export const updateProductCategory = (productId, categoryId) =>
     }
   })
 
-export const upsertProduct = (input) => {
-  const catalog = readCatalog()
-  const now = new Date().toISOString()
-  const existing = catalog.products.find((item) => item.id === input.id)
+export const upsertProduct = (input) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    const now = new Date().toISOString()
+    const existing = catalog.products.find((item) => item.id === input.id)
+    const candidate = normalizeProduct(
+      {
+        ...existing,
+        ...input,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        slug: existing?.slug ?? input.slug ?? input.name,
+      },
+      catalog.categories,
+      catalog.products,
+    )
+    const sourceVersion = await fs.promises.stat(catalogFile)
 
-  const candidate = normalizeProduct(
-    {
-      ...existing,
-      ...input,
-      createdAt: existing?.createdAt ?? now,
-      updatedAt: now,
-      slug: existing?.slug ?? input.slug ?? input.name,
-    },
-    catalog.categories,
-    catalog.products.filter((item) => item.id !== input.id),
-  )
+    await writeProductUpsertStreaming({
+      candidate,
+      existingProductId: existing?.id ?? null,
+      categories: catalog.categories,
+      sourceVersion,
+    })
 
-  const nextProducts = existing
-    ? catalog.products.map((item) => (item.id === existing.id ? candidate : item))
-    : [candidate, ...catalog.products]
+    const nextProducts = existing
+      ? catalog.products.map((item) => (item.id === existing.id ? candidate : item))
+      : [candidate, ...catalog.products]
 
-  return writeCatalog({
-    ...catalog,
-    products: nextProducts,
+    return rememberCatalog({
+      categories: catalog.categories,
+      products: nextProducts,
+    })
   })
-}
 
 export const deleteProduct = (productId) => {
   const catalog = readCatalog()

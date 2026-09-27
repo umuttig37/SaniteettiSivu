@@ -1862,7 +1862,7 @@ app.get('/media/product/:slug/:imageIndex', (req, res) => {
   res.type(media.contentType).send(media.buffer)
 })
 
-app.post('/api/admin/products', requireAdmin, (req, res) => {
+app.post('/api/admin/products', requireAdmin, async (req, res) => {
   const payload = normalizeIncomingProduct(req.body)
   const validationError = validateProductPayload(payload)
   if (validationError) {
@@ -1870,7 +1870,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
     return
   }
 
-  upsertProduct(payload)
+  await upsertProduct(payload)
   res.status(201).json(getPublicCatalogResponse(payload.id))
 })
 
@@ -1906,7 +1906,7 @@ app.patch('/api/admin/products/:productId/category', requireAdmin, async (req, r
   }
 })
 
-app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {
+app.put('/api/admin/products/:productId', requireAdmin, async (req, res) => {
   const payload = normalizeIncomingProduct(req.body, req.params.productId)
   const validationError = validateProductPayload(payload)
   if (validationError) {
@@ -1914,7 +1914,7 @@ app.put('/api/admin/products/:productId', requireAdmin, (req, res) => {
     return
   }
 
-  upsertProduct(payload)
+  await upsertProduct(payload)
   res.json(getPublicCatalogResponse(payload.id))
 })
 
