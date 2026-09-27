@@ -12,6 +12,7 @@
     "lint": "eslint .",
     "test": "node --test server/*.test.mjs",
     "preview:delivery-note": "node scripts/create-delivery-note-preview.mjs",
+    "preview:receipt": "node scripts/create-receipt-preview.mjs",
     "preview": "vite preview"
   },
   "dependencies": {

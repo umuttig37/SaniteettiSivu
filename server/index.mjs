@@ -71,6 +71,8 @@ import {
 import { getSelectedUnitLabel, resolveCustomerUnitPrice } from './unit-pricing.mjs'
 import { renderGoogleMerchantXml } from './merchant-feed.mjs'
 import { createDeliveryNotePdf, getDeliveryNoteFilename } from './delivery-note.mjs'
+import { createReceiptAttachment } from './receipt.mjs'
+import { forceGuestCardCheckout } from './checkout-guards.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -965,6 +967,7 @@ const getMailText = (lang) => {
       questions: 'If you have any questions about your order, just reply to this email.',
       regards: 'Best regards',
       subjectConfirm: 'Order confirmation',
+      receiptAttachment: 'Your payment receipt is attached to this email as a PDF.',
       subjectNew: 'New order',
       subjectShipped: 'Your order is on the way',
       subjectWelcome: 'Your account request was received',
@@ -1012,6 +1015,7 @@ const getMailText = (lang) => {
     questions: 'Jos sinulla on kysyttävää tilauksesta, vastaathan tähän viestiin.',
     regards: 'Ystävällisin terveisin',
     subjectConfirm: 'Tilausvahvistus',
+    receiptAttachment: 'Maksukuitti on t\u00e4m\u00e4n viestin PDF-liitteen\u00e4.',
     subjectNew: 'Uusi tilaus',
     subjectShipped: 'Tilauksesi on matkalla',
     subjectWelcome: 'Tilitietosi vastaanotettiin',
@@ -1083,7 +1087,7 @@ const formatOrderAddress = (address, zip, city) =>
     .filter(Boolean)
     .join(', ')
 
-const customerOrderHtml = (order) => {
+const customerOrderHtml = (order, receiptAttached = false) => {
   const lang = getOrderLang(order)
   const t = getMailText(lang)
   return `
@@ -1091,6 +1095,7 @@ const customerOrderHtml = (order) => {
   <h2 style="margin:0 0 8px;">${t.thanks}</h2>
   <p style="margin:0 0 10px;">${t.orderNumber} <strong>${order.id}</strong>.</p>
   <p style="margin:0 0 6px;"><strong>${t.paymentMethod}:</strong> ${getPaymentMethodLabel(order, lang)}</p>
+  ${receiptAttached ? `<p style="margin:0 0 10px;">${t.receiptAttachment}</p>` : ''}
   ${order.customer.deliveryDate ? `<p style="margin:0 0 6px;"><strong>${t.deliveryDate}:</strong> ${escapeHtml(formatDeliveryDate(order.customer.deliveryDate, lang))}</p>` : ''}
   <table style="border-collapse:collapse;width:100%;max-width:680px;">
     <thead>
@@ -1289,9 +1294,10 @@ const sendCustomerApprovedEmail = async (customer) =>
     `customer-approved:${customer.email}`,
   )
 
-const sendOrderEmails = async (order) => {
+const sendOrderEmails = async (order, { attachReceipt = false } = {}) => {
   const lang = getOrderLang(order)
   const t = getMailText(lang)
+  const receiptAttachment = attachReceipt ? await createReceiptAttachment(order) : null
 
   return sendMailBatch(
     [
@@ -1299,7 +1305,12 @@ const sendOrderEmails = async (order) => {
         from: mailFrom,
         to: order.customer.email,
         subject: `${t.subjectConfirm} ${order.id}`,
-        html: customerOrderHtml(order),
+        html: customerOrderHtml(order, Boolean(receiptAttachment)),
+        ...(receiptAttachment
+          ? {
+              attachments: [receiptAttachment],
+            }
+          : {}),
       },
       {
         from: mailFrom,
@@ -1507,7 +1518,7 @@ const finalizePaytrailOrder = async (req, source = 'redirect') => {
 
   let mailResult = { ok: true, message: '' }
   if (!alreadyConfirmed && order.paymentStatus === 'paid') {
-    mailResult = await sendOrderEmails(order)
+    mailResult = await sendOrderEmails(order, { attachReceipt: true })
     if (mailResult.ok) {
       order.confirmationEmailSentAt = now
       writeOrders(orders)
@@ -2178,7 +2189,8 @@ app.post('/api/checkout/paytrail/guest/start', async (req, res) => {
     }
     const guestCustomer = normalizeGuestCustomerInput(req.body)
     const items = getCatalogOrderItems(req.body?.items)
-    const checkout = normalizeCheckoutInput(req.body)
+    const normalizedCheckout = normalizeCheckoutInput(req.body)
+    const checkout = forceGuestCardCheckout(normalizedCheckout, guestCustomer.companyName)
     const lang = 'fi'
 
     if (items.length === 0) {

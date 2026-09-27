@@ -3486,6 +3486,15 @@ function App() {
       const payload = {
         lang,
         ...checkoutForm,
+        ...(isGuestCheckout
+          ? {
+              billingCompany: '',
+              billingAddress: '',
+              billingZip: '',
+              billingCity: '',
+              eInvoiceAddress: '',
+            }
+          : {}),
         paymentMethod: selectedPaymentMethod,
         items: cartItems.map((item) => ({
           productId: item.product.id,
@@ -5981,8 +5990,8 @@ function App() {
                   <h2>{lang === 'fi' ? 'Näin tilaaminen toimii' : 'How ordering works'}</h2>
                   <p className="muted">
                     {lang === 'fi'
-                      ? 'Voit luoda yritystilin lasku- ja korttimaksuja varten tai jatkaa ilman tili\u00E4 suoraan korttimaksuun.'
-                      : 'Create a company account for invoice and card payments, or continue without an account directly to card payment.'}
+                        ? 'Voit kirjautua yritystilille tilataksesi laskulla tai verkkolaskulla. Voit myös jatkaa ilman rekisteröitymistä ja maksaa tilauksen suoraan kortilla.'
+                        : 'Sign in with a company account to order by invoice or e-invoice. You can also continue without registering and pay directly by card.'}
                   </p>
                   <div className="account-grid">
                     <div>
@@ -6126,8 +6135,8 @@ function App() {
                   <div className="account-note">
                     <p className="muted">
                       {lang === 'fi'
-                        ? 'Voit kirjautua yritystilille tai jatkaa rekister\u00F6itym\u00E4tt\u00E4 suoraan korttimaksuun.'
-                        : 'Sign in with your company account or continue directly to card payment without registering.'}
+                        ? 'Voit kirjautua yritystilille tilataksesi laskulla tai verkkolaskulla. Voit myös jatkaa ilman rekisteröitymistä ja maksaa tilauksen suoraan kortilla.'
+                        : 'Sign in with a company account to order by invoice or e-invoice. You can also continue without registering and pay directly by card.'}
                     </p>
                     <div className="auth-actions">
                       <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
@@ -6181,8 +6190,8 @@ function App() {
                 <h2>{lang === 'fi' ? 'Kirjaudu jatkaaksesi kassalle' : 'Sign in to continue to checkout'}</h2>
                 <p className="muted">
                   {lang === 'fi'
-                    ? 'Voit kirjautua yritystilille tai jatkaa rekister\u00F6itym\u00E4tt\u00E4 suoraan korttimaksuun.'
-                    : 'Sign in with your company account or continue directly to card payment without registering.'}
+                    ? 'Voit kirjautua yritystilille tilataksesi laskulla tai verkkolaskulla. Voit myös jatkaa ilman rekisteröitymistä ja maksaa tilauksen suoraan kortilla.'
+                    : 'Sign in with a company account to order by invoice or e-invoice. You can also continue without registering and pay directly by card.'}
                 </p>
                 <div className="auth-actions">
                   <button className="primary" type="button" onClick={() => goToAuth('login', '/kassa')}>
@@ -6285,7 +6294,7 @@ function App() {
                           </div>
                         </div>
 
-                        <div className="checkout-form-block">
+                        {!isGuestCheckout && <div className="checkout-form-block">
                           <div className="checkout-form-block-head">
                             <h2>{lang === 'fi' ? 'Laskutustiedot' : 'Billing details'}</h2>
                             <span className="checkout-form-hint">
@@ -6325,7 +6334,7 @@ function App() {
                               <input value={checkoutForm.billingCity} onChange={(event) => updateForm('billingCity', event.target.value)} />
                             </div>
                           </div>
-                        </div>
+                        </div>}
 
                         <div className="field">
                           <label>{t.form.notes}</label>
@@ -6368,7 +6377,11 @@ function App() {
                                 </div>
                                 <div className="payment-method-copy">
                                   <strong>{lang === 'fi' ? 'Korttimaksu' : 'Card payment'}</strong>
-                                  <span className="muted small">{lang === 'fi' ? 'Ohjaus Paytrail-maksuun' : 'Redirect to Paytrail payment'}</span>
+                                  <span className="muted small">
+                                    {isGuestCheckout
+                                      ? (lang === 'fi' ? 'Ilman yritystili\u00E4 k\u00E4ytett\u00E4viss\u00E4 vain korttimaksu' : 'Only card payment is available without a company account')
+                                      : (lang === 'fi' ? 'Ohjaus Paytrail-maksuun' : 'Redirect to Paytrail payment')}
+                                  </span>
                                   <div
                                     className="payment-brand-row"
                                     aria-label={lang === 'fi' ? 'Hyväksytyt kortit: Visa, Mastercard ja American Express' : 'Accepted cards: Visa, Mastercard and American Express'}
