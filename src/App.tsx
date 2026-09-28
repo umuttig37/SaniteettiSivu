@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
-import heroBgImage from './assets/hero-background.webp'
+import heroBgImage from './assets/hero-background-new.jpg'
 import paytrailBadge from './assets/paytrail-logo.png'
 import visaLogo from './assets/payment-brands/visa.svg'
 import mastercardLogo from './assets/payment-brands/mastercard-symbol.svg'

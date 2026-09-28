@@ -1173,7 +1173,7 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
           canonical: absoluteUrl(siteUrl, '/'),
           image: absoluteUrl(siteUrl, '/brand-logo.png'),
           structuredData: buildHomeStructuredData(siteUrl, catalog),
-          preloadImages: [getManifestAssetPath('src/assets/hero-background.webp')].filter(Boolean),
+          preloadImages: [getManifestAssetPath('src/assets/hero-background-new.jpg')].filter(Boolean),
         },
     initialState: { catalog: initialCatalog, route },
     ssrMarkup: utilityMeta
