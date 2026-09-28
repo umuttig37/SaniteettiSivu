@@ -17,6 +17,7 @@ data/orders.json
 data/catalog.json
 data/customers.json
 data/customer-prices.json
+data/password-reset-tokens.json
 
 
 

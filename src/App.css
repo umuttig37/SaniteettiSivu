@@ -670,6 +670,45 @@ html {
   gap: 1rem;
 }
 
+.password-auth-card {
+  max-width: 640px;
+}
+
+.auth-text-link {
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #174fbd;
+  font: inherit;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.auth-text-link:hover {
+  color: #0d3c94;
+}
+
+.auth-text-link:focus-visible {
+  outline: 3px solid rgba(36, 87, 220, 0.25);
+  outline-offset: 4px;
+  border-radius: 0.2rem;
+}
+
+.account-password-section {
+  display: grid;
+  gap: 0.9rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid var(--line);
+}
+
+.account-password-section h3,
+.account-password-section p {
+  margin: 0;
+}
+
 .auth-kicker {
   display: inline-flex;
   align-items: center;

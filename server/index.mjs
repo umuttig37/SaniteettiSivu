@@ -49,10 +49,20 @@ import {
   readCustomers,
   toAdminCustomer,
   toPublicCustomer,
+  changeCustomerPassword,
+  updateCustomerPassword,
   updateCustomerAddresses,
   updateCustomerProfile,
   verifyPassword,
 } from './customer-store.mjs'
+import {
+  consumePasswordResetToken,
+  createPasswordResetToken,
+  ensurePasswordResetStore,
+  revokePasswordResetToken,
+  revokePasswordResetTokensForCustomer,
+  validatePasswordResetToken,
+} from './password-reset-store.mjs'
 import {
   collectCheckoutParams,
   getPaytrailConfig,
@@ -113,7 +123,16 @@ const adminPass = readFirstEnvValue(process.env, ['ADMIN_PASS', 'ADMIN_PASSWORD'
 const siteUrlEnv = getConfiguredSiteUrl(process.env)
 const publicSiteUrlEnv = getPublicSiteUrlFromEnv(process.env)
 const paytrailSiteUrlEnv = getConfiguredPaytrailSiteUrl(process.env) || publicSiteUrlEnv
-const customerPortalUrl = siteUrlEnv || publicSiteUrlEnv || 'https://suomenpaperitukku.fi'
+const canonicalCustomerPortalUrl = 'https://suomenpaperitukku.fi'
+const customerPortalUrl = (() => {
+  if (!isPublicHttpsUrl(siteUrlEnv)) {
+    return canonicalCustomerPortalUrl
+  }
+  const hostname = new URL(siteUrlEnv).hostname.toLowerCase()
+  return hostname === 'suomenpaperitukku.fi' || hostname === 'www.suomenpaperitukku.fi'
+    ? siteUrlEnv
+    : canonicalCustomerPortalUrl
+})()
 const preferredHost = siteUrlEnv ? new URL(siteUrlEnv).host.toLowerCase() : ''
 const adminSessionCookieName = 'spt_admin_session'
 const adminSessionMaxAgeMs = 1000 * 60 * 60 * 12
@@ -121,6 +140,7 @@ const customerSessionCookieName = 'spt_customer_session'
 const customerSessionMaxAgeMs = 1000 * 60 * 60 * 24 * 30
 const adminSessions = new Map()
 const customerSessions = new Map()
+const passwordResetRateBuckets = new Map()
 const shippingOrdersInProgress = new Set()
 const paytrailConfig = getPaytrailConfig(process.env)
 const paytrailConfigErrorMessage =
@@ -131,6 +151,9 @@ const shippingFee = 15
 const freeShippingThreshold = 300
 const vatMultiplier = 1.255
 const siteTimeZone = 'Europe/Helsinki'
+const passwordResetResponseMessage = 'Jos sähköpostiosoitteella löytyy tili, lähetimme ohjeet salasanan vaihtamiseen.'
+const passwordResetTokenErrorMessage = 'Salasanan vaihtolinkki on virheellinen tai vanhentunut.'
+const passwordResetRateWindowMs = 15 * 60 * 1000
 
 if (!smtpUser || !smtpPass) {
   console.warn('[mail] SMTP credentials are missing, so welcome and order emails are disabled. Set SMTP_USER/SMTP_PASS or aliases such as SMTP_USERNAME/SMTP_PASSWORD.')
@@ -222,6 +245,26 @@ const getSpaRouteFromRequest = (req, catalog) => {
       guestCheckout: false,
       authMode,
       nextPath,
+      paytrailResult: null,
+    }
+  }
+
+  if (pathname === '/tili/unohditko-salasanasi') {
+    return {
+      type: 'forgot-password',
+      guestCheckout: false,
+      authMode: 'login',
+      nextPath: null,
+      paytrailResult: null,
+    }
+  }
+
+  if (pathname === '/tili/vaihda-salasana') {
+    return {
+      type: 'reset-password',
+      guestCheckout: false,
+      authMode: 'login',
+      nextPath: null,
       paytrailResult: null,
     }
   }
@@ -474,6 +517,38 @@ const getOrderTotals = (items) => {
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
 
 const isValidEmail = (value) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizeEmail(value))
+
+const delay = (milliseconds) => new Promise((resolve) => setTimeout(resolve, Math.max(0, milliseconds)))
+
+const consumePasswordResetRateBucket = (key, limit, now = Date.now()) => {
+  const activeAttempts = (passwordResetRateBuckets.get(key) ?? []).filter(
+    (attemptedAt) => attemptedAt > now - passwordResetRateWindowMs,
+  )
+  const limited = activeAttempts.length >= limit
+  if (!limited) {
+    activeAttempts.push(now)
+  }
+  passwordResetRateBuckets.set(key, activeAttempts)
+
+  if (passwordResetRateBuckets.size > 2_000) {
+    for (const [bucketKey, attempts] of passwordResetRateBuckets.entries()) {
+      const active = attempts.filter((attemptedAt) => attemptedAt > now - passwordResetRateWindowMs)
+      if (active.length > 0) {
+        passwordResetRateBuckets.set(bucketKey, active)
+      } else {
+        passwordResetRateBuckets.delete(bucketKey)
+      }
+    }
+  }
+
+  return limited
+}
+
+const isPasswordResetRateLimited = (req, email) => {
+  const ipKey = `ip:${crypto.createHash('sha256').update(String(req.ip ?? '')).digest('hex')}`
+  const emailKey = `email:${crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex')}`
+  return consumePasswordResetRateBucket(ipKey, 10) || consumePasswordResetRateBucket(emailKey, 3)
+}
 
 const normalizePostalCode = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 5)
 
@@ -1216,6 +1291,40 @@ const customerApprovedHtml = (customer) => {
 `
 }
 
+const passwordResetHtml = (resetUrl) => `
+<div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+  <h2 style="margin:0 0 12px;">Vaihda Suomen Paperitukun tilisi salasana</h2>
+  <p style="margin:0 0 12px;">Moikka!</p>
+  <p style="margin:0 0 12px;">Saimme pyynnön vaihtaa Suomen Paperitukun asiakastilisi salasanan.</p>
+  <p style="margin:0 0 18px;">
+    <a href="${escapeHtml(resetUrl)}" style="display:inline-block;padding:11px 18px;border-radius:999px;background:#2457dc;color:#fff;text-decoration:none;font-weight:700;">Vaihda salasana</a>
+  </p>
+  <p style="margin:0 0 10px;">Linkki on voimassa 60 minuuttia ja toimii vain kerran.</p>
+  <p style="margin:0;">Jos et pyytänyt salasanan vaihtoa, sinun ei tarvitse tehdä mitään.</p>
+  ${emailFooter('fi')}
+</div>
+`
+
+const sendPasswordResetEmail = async (customer, token) => {
+  const resetUrl = new URL('/tili/vaihda-salasana', customerPortalUrl)
+  resetUrl.searchParams.set('token', token)
+
+  try {
+    const transporter = createTransporter()
+    await transporter.sendMail({
+      from: mailFrom,
+      to: customer.email,
+      subject: 'Vaihda Suomen Paperitukun tilisi salasana',
+      html: passwordResetHtml(resetUrl.toString()),
+    })
+    return true
+  } catch (error) {
+    const errorCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'SMTP_ERROR'
+    console.error(`[mail] Password reset email failed (${errorCode}).`)
+    return false
+  }
+}
+
 const shippedHtml = (order) => {
   const lang = getOrderLang(order)
   const t = getMailText(lang)
@@ -1536,6 +1645,7 @@ ensureCatalogStore()
 ensureOrdersStore()
 ensureCustomerStore()
 ensureCustomerPriceStore()
+ensurePasswordResetStore()
 
 app.use(express.static(publicDir, { index: false, setHeaders: setStaticAssetHeaders }))
 app.use(express.static(distDir, { index: false, setHeaders: setStaticAssetHeaders }))
@@ -1647,6 +1757,121 @@ app.post('/api/customer/login', (req, res) => {
     ok: true,
     customer: toPublicCustomer(customer),
   })
+})
+
+const processPasswordResetRequest = async (email) => {
+  try {
+    const customer = getCustomerByEmail(email)
+    if (customer) {
+      const token = await createPasswordResetToken(customer.id)
+      const sent = await sendPasswordResetEmail(customer, token)
+      if (!sent) {
+        await revokePasswordResetToken(token)
+      }
+    }
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    console.error(`[password-reset] Reset request failed (${errorName}).`)
+  }
+}
+
+app.post('/api/customer/password-reset/request', async (req, res) => {
+  const startedAt = Date.now()
+  const email = normalizeEmail(req.body?.email)
+  const rateLimited = isPasswordResetRateLimited(req, email)
+
+  if (!rateLimited && isValidEmail(email)) {
+    // Keep the public response time independent of account existence and SMTP latency.
+    void processPasswordResetRequest(email)
+  }
+
+  await delay(350 - (Date.now() - startedAt))
+  res.json({ ok: true, message: passwordResetResponseMessage })
+})
+
+app.get('/api/customer/password-reset/validate', (req, res) => {
+  const token = String(req.query?.token ?? '').trim()
+  try {
+    const match = /^[A-Za-z0-9_-]{40,100}$/.test(token) ? validatePasswordResetToken(token) : null
+    if (!match || !getCustomerById(match.customerId)) {
+      res.status(400).json({ valid: false, message: passwordResetTokenErrorMessage })
+      return
+    }
+
+    res.json({ valid: true })
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    console.error(`[password-reset] Token validation failed (${errorName}).`)
+    res.status(500).json({ valid: false, message: 'Salasanan vaihtolinkin tarkistaminen epäonnistui. Yritä hetken kuluttua uudelleen.' })
+  }
+})
+
+app.post('/api/customer/password-reset/confirm', async (req, res) => {
+  const token = String(req.body?.token ?? '').trim()
+  const password = String(req.body?.password ?? '')
+  const passwordConfirm = String(req.body?.passwordConfirm ?? '')
+
+  if (password !== passwordConfirm) {
+    res.status(400).json({ message: 'Passwords do not match.' })
+    return
+  }
+  if (password.length < 8) {
+    res.status(400).json({ message: 'Password must be at least 8 characters long.' })
+    return
+  }
+  if (!/^[A-Za-z0-9_-]{40,100}$/.test(token)) {
+    res.status(400).json({ message: passwordResetTokenErrorMessage })
+    return
+  }
+
+  try {
+    const consumed = await consumePasswordResetToken(token)
+    if (!consumed) {
+      res.status(400).json({ message: passwordResetTokenErrorMessage })
+      return
+    }
+
+    const customer = await updateCustomerPassword(consumed.customerId, password)
+    if (!customer) {
+      res.status(400).json({ message: passwordResetTokenErrorMessage })
+      return
+    }
+    res.json({ ok: true, message: 'Salasana vaihdettu onnistuneesti.' })
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    console.error(`[password-reset] Password update failed (${errorName}).`)
+    res.status(500).json({ message: 'Salasanan vaihtaminen epäonnistui. Pyydä uusi palautuslinkki ja yritä uudelleen.' })
+  }
+})
+
+app.post('/api/customer/password/change', requireCustomer, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword ?? '')
+  const password = String(req.body?.password ?? '')
+  const passwordConfirm = String(req.body?.passwordConfirm ?? '')
+
+  if (password !== passwordConfirm) {
+    res.status(400).json({ message: 'Passwords do not match.' })
+    return
+  }
+  if (password.length < 8) {
+    res.status(400).json({ message: 'Password must be at least 8 characters long.' })
+    return
+  }
+
+  try {
+    const customer = await changeCustomerPassword(req.customer.id, currentPassword, password)
+    if (!customer) {
+      res.status(400).json({ message: 'Current password is incorrect.' })
+      return
+    }
+
+    await revokePasswordResetTokensForCustomer(customer.id)
+    res.json({ ok: true, message: 'Salasana vaihdettu onnistuneesti.' })
+  } catch (error) {
+    const errorName = error instanceof Error ? error.name : 'UnknownError'
+    console.error(`[password-reset] Logged-in password change failed (${errorName}).`)
+    res.status(500).json({ message: 'Salasanan vaihtaminen epäonnistui. Yritä hetken kuluttua uudelleen.' })
+  }
 })
 
 app.post('/api/customer/logout', (req, res) => {

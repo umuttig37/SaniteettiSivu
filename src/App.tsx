@@ -149,6 +149,15 @@ type RegisterForm = {
   password: string
 }
 
+type PasswordResetForm = {
+  password: string
+  passwordConfirm: string
+}
+
+type PasswordChangeForm = PasswordResetForm & {
+  currentPassword: string
+}
+
 type CheckoutForm = {
   company: string
   contact: string
@@ -186,7 +195,7 @@ type CatalogPayload = {
 }
 
 type RouteState = {
-  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'paytrail-return' | 'terms'
+  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'forgot-password' | 'reset-password' | 'paytrail-return' | 'terms'
   slug: string | null
   categorySlug: string | null
   searchQuery: string | null
@@ -195,6 +204,7 @@ type RouteState = {
   nextPath: string | null
   paytrailResult: 'success' | 'cancel' | null
   guestCheckout: boolean
+  resetToken: string | null
 }
 
 type CheckoutSuccessState = {
@@ -1319,6 +1329,8 @@ const localizeAuthMessage = (message: string | undefined, lang: Lang) => {
     'Business ID must be valid and in the format 1234567-8.': 'Anna kelvollinen y-tunnus muodossa 1234567-8.',
     'Enter a valid email address.': 'Anna kelvollinen s\u00E4hk\u00F6postiosoite.',
     'Password must be at least 8 characters long.': 'Salasanassa tulee olla v\u00E4hint\u00E4\u00E4n 8 merkki\u00E4.',
+    'Passwords do not match.': 'Salasanat eiv\u00E4t t\u00E4sm\u00E4\u00E4.',
+    'Current password is incorrect.': 'Nykyinen salasana ei ole oikein.',
     'An account with this email already exists.': 'T\u00E4ll\u00E4 s\u00E4hk\u00F6postiosoitteella on jo olemassa tili.',
     'Authentication required.': 'Kirjautuminen vaaditaan.',
     'Account pending approval.': 'Tilisi odottaa viel\u00E4 yll\u00E4pidon hyv\u00E4ksynt\u00E4\u00E4. Saat s\u00E4hk\u00F6postin, kun tili on aktivoitu.',
@@ -1394,6 +1406,7 @@ const getRouteFromUrl = (): RouteState => {
       nextPath: null,
       paytrailResult: null,
       guestCheckout: false,
+      resetToken: null,
     }
   }
   const url = new URL(window.location.href)
@@ -1411,6 +1424,10 @@ const getRouteFromUrl = (): RouteState => {
     type = 'checkout'
   } else if (pathname === '/tili') {
     type = 'auth'
+  } else if (pathname === '/tili/unohditko-salasanasi') {
+    type = 'forgot-password'
+  } else if (pathname === '/tili/vaihda-salasana') {
+    type = 'reset-password'
   } else if (pathname === '/ehdot') {
     type = 'terms'
   } else if (paytrailMatch) {
@@ -1427,6 +1444,7 @@ const getRouteFromUrl = (): RouteState => {
     nextPath: url.searchParams.get('next'),
     paytrailResult: paytrailMatch ? (paytrailMatch[1] as 'success' | 'cancel') : null,
     guestCheckout,
+    resetToken: type === 'reset-password' ? url.searchParams.get('token') : null,
   }
 }
 
@@ -2374,6 +2392,20 @@ function App() {
     eInvoiceAddress: '',
     password: '',
   })
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('')
+  const [passwordResetForm, setPasswordResetForm] = useState<PasswordResetForm>({ password: '', passwordConfirm: '' })
+  const [passwordChangeForm, setPasswordChangeForm] = useState<PasswordChangeForm>({
+    currentPassword: '',
+    password: '',
+    passwordConfirm: '',
+  })
+  const [passwordResetLoading, setPasswordResetLoading] = useState(false)
+  const [passwordResetError, setPasswordResetError] = useState('')
+  const [passwordResetNotice, setPasswordResetNotice] = useState('')
+  const [resetTokenStatus, setResetTokenStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid'>('idle')
+  const [passwordChangeLoading, setPasswordChangeLoading] = useState(false)
+  const [passwordChangeError, setPasswordChangeError] = useState('')
+  const [passwordChangeNotice, setPasswordChangeNotice] = useState('')
   const [productQuery, setProductQuery] = useState(() => initialRouteState.searchQuery ?? '')
   const [activeCategory, setActiveCategory] = useState(initialCategoryId ?? 'all')
   const [currentPage, setCurrentPage] = useState(1)
@@ -2796,6 +2828,40 @@ function App() {
   }, [isGuestCheckout])
 
   useEffect(() => {
+    if (routeState.type !== 'reset-password') {
+      setResetTokenStatus('idle')
+      return
+    }
+
+    const token = routeState.resetToken?.trim() ?? ''
+    if (!token) {
+      setResetTokenStatus('invalid')
+      return
+    }
+
+    let cancelled = false
+    setResetTokenStatus('checking')
+    setPasswordResetError('')
+    void fetch(`/api/customer/password-reset/validate?token=${encodeURIComponent(token)}`, {
+      credentials: 'include',
+    })
+      .then((response) => {
+        if (!cancelled) {
+          setResetTokenStatus(response.ok ? 'valid' : 'invalid')
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setResetTokenStatus('invalid')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [routeState.resetToken, routeState.type])
+
+  useEffect(() => {
     if (!formError || routeState.type !== 'checkout') {
       return
     }
@@ -2985,6 +3051,22 @@ function App() {
           : (lang === 'fi' ? 'Kirjaudu | Suomen Paperitukku' : 'Sign in | Suomen Paperitukku'),
         lang === 'fi' ? 'Luo yritystili tai kirjaudu sisään tilausta varten.' : 'Create a company account or sign in to order.',
         '/tili',
+      )
+      return
+    }
+    if (routeState.type === 'forgot-password') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Unohditko salasanasi? | Suomen Paperitukku' : 'Forgot your password? | Suomen Paperitukku',
+        lang === 'fi' ? 'Pyydä turvallinen linkki salasanan vaihtamiseen.' : 'Request a secure link to change your password.',
+        '/tili/unohditko-salasanasi',
+      )
+      return
+    }
+    if (routeState.type === 'reset-password') {
+      applyUtilitySeo(
+        lang === 'fi' ? 'Vaihda salasana | Suomen Paperitukku' : 'Change password | Suomen Paperitukku',
+        lang === 'fi' ? 'Aseta uusi salasana asiakastilillesi.' : 'Set a new password for your account.',
+        '/tili/vaihda-salasana',
       )
       return
     }
@@ -3669,6 +3751,122 @@ function App() {
       setAuthError(lang === 'fi' ? 'Tilin luonti ep\u00E4onnistui.' : 'Account creation failed.')
     } finally {
       setAuthLoading(false)
+    }
+  }
+
+  const handleForgotPassword = async () => {
+    if (!isValidEmail(forgotPasswordEmail)) {
+      setPasswordResetError(lang === 'fi' ? 'Anna kelvollinen s\u00E4hk\u00F6postiosoite.' : 'Enter a valid email address.')
+      return
+    }
+
+    setPasswordResetLoading(true)
+    setPasswordResetError('')
+    setPasswordResetNotice('')
+    try {
+      const response = await fetch('/api/customer/password-reset/request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotPasswordEmail.trim() }),
+      })
+      const payload = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        setPasswordResetError(lang === 'fi' ? 'Palautuslinkin l\u00E4hett\u00E4minen ep\u00E4onnistui. Yrit\u00E4 hetken kuluttua uudelleen.' : 'Could not send the reset link. Please try again later.')
+        return
+      }
+      setPasswordResetNotice(
+        payload.message ?? (lang === 'fi'
+          ? 'Jos s\u00E4hk\u00F6postiosoitteella l\u00F6ytyy tili, l\u00E4hetimme ohjeet salasanan vaihtamiseen.'
+          : 'If an account exists for this email, we sent password reset instructions.'),
+      )
+    } catch {
+      setPasswordResetError(lang === 'fi' ? 'Palautuslinkin l\u00E4hett\u00E4minen ep\u00E4onnistui. Yrit\u00E4 hetken kuluttua uudelleen.' : 'Could not send the reset link. Please try again later.')
+    } finally {
+      setPasswordResetLoading(false)
+    }
+  }
+
+  const handlePasswordReset = async () => {
+    if (passwordResetForm.password !== passwordResetForm.passwordConfirm) {
+      setPasswordResetError(lang === 'fi' ? 'Salasanat eiv\u00E4t t\u00E4sm\u00E4\u00E4.' : 'Passwords do not match.')
+      return
+    }
+    if (passwordResetForm.password.length < 8) {
+      setPasswordResetError(lang === 'fi' ? 'Salasanassa tulee olla v\u00E4hint\u00E4\u00E4n 8 merkki\u00E4.' : 'Password must be at least 8 characters long.')
+      return
+    }
+
+    setPasswordResetLoading(true)
+    setPasswordResetError('')
+    try {
+      const response = await fetch('/api/customer/password-reset/confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: routeState.resetToken,
+          password: passwordResetForm.password,
+          passwordConfirm: passwordResetForm.passwordConfirm,
+        }),
+      })
+      const payload = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        setPasswordResetError(localizeAuthMessage(payload.message, lang) ?? (lang === 'fi' ? 'Salasanan vaihtaminen ep\u00E4onnistui.' : 'Password change failed.'))
+        if (response.status === 400 && payload.message?.includes('linkki')) {
+          setResetTokenStatus('invalid')
+        }
+        return
+      }
+
+      setPasswordResetNotice(payload.message ?? (lang === 'fi' ? 'Salasana vaihdettu onnistuneesti.' : 'Password changed successfully.'))
+      setPasswordResetForm({ password: '', passwordConfirm: '' })
+      setResetTokenStatus('idle')
+    } catch {
+      setPasswordResetError(lang === 'fi' ? 'Salasanan vaihtaminen ep\u00E4onnistui.' : 'Password change failed.')
+    } finally {
+      setPasswordResetLoading(false)
+    }
+  }
+
+  const handleLoggedInPasswordChange = async () => {
+    if (!passwordChangeForm.currentPassword) {
+      setPasswordChangeError(lang === 'fi' ? 'Anna nykyinen salasanasi.' : 'Enter your current password.')
+      return
+    }
+    if (passwordChangeForm.password !== passwordChangeForm.passwordConfirm) {
+      setPasswordChangeError(lang === 'fi' ? 'Salasanat eiv\u00E4t t\u00E4sm\u00E4\u00E4.' : 'Passwords do not match.')
+      return
+    }
+    if (passwordChangeForm.password.length < 8) {
+      setPasswordChangeError(lang === 'fi' ? 'Salasanassa tulee olla v\u00E4hint\u00E4\u00E4n 8 merkki\u00E4.' : 'Password must be at least 8 characters long.')
+      return
+    }
+
+    setPasswordChangeLoading(true)
+    setPasswordChangeError('')
+    setPasswordChangeNotice('')
+    try {
+      const response = await fetch('/api/customer/password/change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          currentPassword: passwordChangeForm.currentPassword,
+          password: passwordChangeForm.password,
+          passwordConfirm: passwordChangeForm.passwordConfirm,
+        }),
+      })
+      const payload = (await response.json()) as { message?: string }
+      if (!response.ok) {
+        setPasswordChangeError(localizeAuthMessage(payload.message, lang) ?? (lang === 'fi' ? 'Salasanan vaihtaminen ep\u00E4onnistui.' : 'Password change failed.'))
+        return
+      }
+
+      setPasswordChangeNotice(payload.message ?? (lang === 'fi' ? 'Salasana vaihdettu onnistuneesti.' : 'Password changed successfully.'))
+      setPasswordChangeForm({ currentPassword: '', password: '', passwordConfirm: '' })
+    } catch {
+      setPasswordChangeError(lang === 'fi' ? 'Salasanan vaihtaminen ep\u00E4onnistui.' : 'Password change failed.')
+    } finally {
+      setPasswordChangeLoading(false)
     }
   }
 
@@ -5802,6 +6000,124 @@ function App() {
               </div>
             )}
           </section>
+        ) : routeState.type === 'forgot-password' ? (
+          <section className="section utility-page auth-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{lang === 'fi' ? 'Unohditko salasanasi?' : 'Forgot your password?'}</h1>
+                <p className="muted">
+                  {lang === 'fi'
+                    ? 'Sy\u00F6t\u00E4 tilillesi liitetty s\u00E4hk\u00F6postiosoite. L\u00E4het\u00E4mme sinulle linkin, jolla voit asettaa uuden salasanan.'
+                    : 'Enter the email address connected to your account. We will send you a link to set a new password.'}
+                </p>
+              </div>
+            </div>
+            <div className="auth-shell">
+              <div className="card auth-card password-auth-card">
+                {passwordResetNotice && <div className="success" role="status">{passwordResetNotice}</div>}
+                {passwordResetError && <div className="error" role="alert">{passwordResetError}</div>}
+                <form
+                  className="checkout-form checkout-form-wide"
+                  onSubmit={(event) => {
+                    event.preventDefault()
+                    void handleForgotPassword()
+                  }}
+                >
+                  <div className="field">
+                    <label htmlFor="forgot-password-email">{lang === 'fi' ? 'S\u00E4hk\u00F6posti' : 'Email'}</label>
+                    <input
+                      id="forgot-password-email"
+                      type="email"
+                      autoComplete="email"
+                      value={forgotPasswordEmail}
+                      onChange={(event) => setForgotPasswordEmail(event.target.value)}
+                    />
+                  </div>
+                  <button className="primary" type="submit" disabled={passwordResetLoading}>
+                    {passwordResetLoading
+                      ? (lang === 'fi' ? 'L\u00E4hetet\u00E4\u00E4n...' : 'Sending...')
+                      : (lang === 'fi' ? 'L\u00E4het\u00E4 palautuslinkki' : 'Send reset link')}
+                  </button>
+                </form>
+                <button className="auth-text-link" type="button" onClick={() => goToAuth('login', null)}>
+                  {lang === 'fi' ? 'Takaisin kirjautumiseen' : 'Back to sign in'}
+                </button>
+              </div>
+            </div>
+          </section>
+        ) : routeState.type === 'reset-password' ? (
+          <section className="section utility-page auth-page">
+            <div className="utility-page-head">
+              <div>
+                <h1>{lang === 'fi' ? 'Vaihda salasana' : 'Change password'}</h1>
+                <p className="muted">
+                  {lang === 'fi' ? 'Aseta asiakastilillesi uusi salasana.' : 'Set a new password for your customer account.'}
+                </p>
+              </div>
+            </div>
+            <div className="auth-shell">
+              <div className="card auth-card password-auth-card">
+                {resetTokenStatus === 'checking' ? (
+                  <p className="muted" role="status">{lang === 'fi' ? 'Tarkistetaan vaihtolinkki\u00E4...' : 'Checking reset link...'}</p>
+                ) : passwordResetNotice ? (
+                  <>
+                    <div className="success" role="status">{passwordResetNotice}</div>
+                    <button className="primary" type="button" onClick={() => goToAuth('login', null)}>
+                      {lang === 'fi' ? 'Kirjaudu sis\u00E4\u00E4n' : 'Sign in'}
+                    </button>
+                  </>
+                ) : resetTokenStatus === 'invalid' ? (
+                  <>
+                    <div className="error" role="alert">
+                      {lang === 'fi' ? 'Salasanan vaihtolinkki on virheellinen tai vanhentunut.' : 'The password reset link is invalid or has expired.'}
+                    </div>
+                    <button className="primary" type="button" onClick={() => navigateTo('/tili/unohditko-salasanasi')}>
+                      {lang === 'fi' ? 'Pyyd\u00E4 uusi palautuslinkki' : 'Request a new reset link'}
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    {passwordResetError && <div className="error" role="alert">{passwordResetError}</div>}
+                    <form
+                      className="checkout-form checkout-form-wide"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void handlePasswordReset()
+                      }}
+                    >
+                      <div className="field">
+                        <label htmlFor="reset-password">{lang === 'fi' ? 'Uusi salasana' : 'New password'}</label>
+                        <input
+                          id="reset-password"
+                          type="password"
+                          autoComplete="new-password"
+                          minLength={8}
+                          value={passwordResetForm.password}
+                          onChange={(event) => setPasswordResetForm((prev) => ({ ...prev, password: event.target.value }))}
+                        />
+                      </div>
+                      <div className="field">
+                        <label htmlFor="reset-password-confirm">{lang === 'fi' ? 'Uusi salasana uudelleen' : 'Repeat new password'}</label>
+                        <input
+                          id="reset-password-confirm"
+                          type="password"
+                          autoComplete="new-password"
+                          minLength={8}
+                          value={passwordResetForm.passwordConfirm}
+                          onChange={(event) => setPasswordResetForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))}
+                        />
+                      </div>
+                      <button className="primary" type="submit" disabled={passwordResetLoading}>
+                        {passwordResetLoading
+                          ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
+                          : (lang === 'fi' ? 'Tallenna uusi salasana' : 'Save new password')}
+                      </button>
+                    </form>
+                  </>
+                )}
+              </div>
+            </div>
+          </section>
         ) : routeState.type === 'auth' ? (
           <section className="section utility-page auth-page">
             <div className="utility-page-head">
@@ -5838,6 +6154,63 @@ function App() {
                       <span className="muted small">{lang === 'fi' ? 'Puhelin' : 'Phone'}</span>
                       <strong>{customerProfile.phone}</strong>
                     </div>
+                  </div>
+                  <div className="account-password-section">
+                    <div>
+                      <h3>{lang === 'fi' ? 'Vaihda salasana' : 'Change password'}</h3>
+                      <p className="muted small">
+                        {lang === 'fi' ? 'Vahvista nykyinen salasanasi ja aseta uusi salasana.' : 'Confirm your current password and set a new one.'}
+                      </p>
+                    </div>
+                    {passwordChangeNotice && <div className="success" role="status">{passwordChangeNotice}</div>}
+                    {passwordChangeError && <div className="error" role="alert">{passwordChangeError}</div>}
+                    <form
+                      className="checkout-form checkout-form-wide"
+                      onSubmit={(event) => {
+                        event.preventDefault()
+                        void handleLoggedInPasswordChange()
+                      }}
+                    >
+                      <div className="field">
+                        <label htmlFor="current-password">{lang === 'fi' ? 'Nykyinen salasana' : 'Current password'}</label>
+                        <input
+                          id="current-password"
+                          type="password"
+                          autoComplete="current-password"
+                          value={passwordChangeForm.currentPassword}
+                          onChange={(event) => setPasswordChangeForm((prev) => ({ ...prev, currentPassword: event.target.value }))}
+                        />
+                      </div>
+                      <div className="form-row">
+                        <div className="field">
+                          <label htmlFor="account-new-password">{lang === 'fi' ? 'Uusi salasana' : 'New password'}</label>
+                          <input
+                            id="account-new-password"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            value={passwordChangeForm.password}
+                            onChange={(event) => setPasswordChangeForm((prev) => ({ ...prev, password: event.target.value }))}
+                          />
+                        </div>
+                        <div className="field">
+                          <label htmlFor="account-new-password-confirm">{lang === 'fi' ? 'Uusi salasana uudelleen' : 'Repeat new password'}</label>
+                          <input
+                            id="account-new-password-confirm"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={8}
+                            value={passwordChangeForm.passwordConfirm}
+                            onChange={(event) => setPasswordChangeForm((prev) => ({ ...prev, passwordConfirm: event.target.value }))}
+                          />
+                        </div>
+                      </div>
+                      <button className="primary" type="submit" disabled={passwordChangeLoading}>
+                        {passwordChangeLoading
+                          ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
+                          : (lang === 'fi' ? 'Tallenna uusi salasana' : 'Save new password')}
+                      </button>
+                    </form>
                   </div>
                   <div className="auth-actions">
                     <button className="primary" type="button" onClick={goToCheckout}>
@@ -5899,6 +6272,19 @@ function App() {
                       <button className="primary" type="submit" disabled={authLoading}>
                         {authLoading ? (lang === 'fi' ? 'Kirjaudutaan...' : 'Signing in...') : (lang === 'fi' ? 'Kirjaudu sis\u00E4\u00E4n' : 'Sign in')}
                       </button>
+                      <a
+                        className="auth-text-link"
+                        href="/tili/unohditko-salasanasi"
+                        onClick={(event) => {
+                          event.preventDefault()
+                          setPasswordResetError('')
+                          setPasswordResetNotice('')
+                          navigateTo('/tili/unohditko-salasanasi')
+                          window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                      >
+                        {lang === 'fi' ? 'Unohditko salasanasi?' : 'Forgot your password?'}
+                      </a>
                     </form>
                   ) : (
                     <form

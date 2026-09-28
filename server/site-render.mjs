@@ -1031,6 +1031,20 @@ const getUtilityPageMeta = (siteUrl, route) => {
         description: 'Luo yritystili tai kirjaudu sisään tilausta varten.',
         canonical: absoluteUrl(siteUrl, '/tili'),
       }
+    case 'forgot-password':
+      return {
+        title: 'Unohditko salasanasi? | Suomen Paperitukku',
+        description: 'Pyydä turvallinen linkki Suomen Paperitukun asiakastilin salasanan vaihtamiseen.',
+        canonical: absoluteUrl(siteUrl, '/tili/unohditko-salasanasi'),
+        robots: 'noindex,nofollow,noarchive',
+      }
+    case 'reset-password':
+      return {
+        title: 'Vaihda salasana | Suomen Paperitukku',
+        description: 'Aseta uusi salasana Suomen Paperitukun asiakastilille.',
+        canonical: absoluteUrl(siteUrl, '/tili/vaihda-salasana'),
+        robots: 'noindex,nofollow,noarchive',
+      }
     case 'terms':
       return {
         title: 'Tilaus- ja toimitusehdot | Suomen Paperitukku',
@@ -1065,6 +1079,12 @@ const renderUtilityMarkup = (route) => {
   } else if (route.type === 'auth') {
     title = route.authMode === 'register' ? 'Rekisteröidy' : 'Kirjaudu'
     description = 'Ladataan asiakastiliä...'
+  } else if (route.type === 'forgot-password') {
+    title = 'Unohditko salasanasi?'
+    description = 'Ladataan salasanan palautusta...'
+  } else if (route.type === 'reset-password') {
+    title = 'Vaihda salasana'
+    description = 'Tarkistetaan salasanan vaihtolinkkiä...'
   } else if (route.type === 'terms') {
     title = 'Tilaus- ja toimitusehdot'
     description = 'Ladataan ehtoja...'

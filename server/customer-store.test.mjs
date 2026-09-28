@@ -104,3 +104,42 @@ test('admin customer update changes only the selected profile fields and updated
     fs.rmSync(isolated.root, { recursive: true, force: true })
   }
 })
+
+test('password changes use the existing hash and preserve every other raw customer field', async () => {
+  const isolated = await createIsolatedStore([])
+  const oldPassword = 'VanhaSalasana123'
+  const newPassword = 'UusiSalasana456'
+  const digest = isolated.store.createPasswordDigest(oldPassword)
+  const customer = {
+    ...baseCustomer,
+    eInvoiceAddress: '003712345678',
+    passwordHash: digest.hash,
+    passwordSalt: digest.salt,
+    legacySetting: { preserve: true },
+  }
+  const untouched = { ...customer, id: 'customer-2', email: 'toinen@example.test' }
+  fs.writeFileSync(isolated.customersPath, JSON.stringify([customer, untouched], null, 2), 'utf8')
+
+  try {
+    assert.equal(isolated.store.verifyPassword(oldPassword, isolated.store.getCustomerById(customer.id)), true)
+    assert.equal(await isolated.store.changeCustomerPassword(customer.id, 'wrong-password', newPassword), null)
+
+    const updated = await isolated.store.changeCustomerPassword(customer.id, oldPassword, newPassword)
+    assert.ok(updated)
+    assert.equal(updated.id, customer.id)
+    assert.equal(isolated.store.verifyPassword(oldPassword, updated), false)
+    assert.equal(isolated.store.verifyPassword(newPassword, updated), true)
+
+    const stored = JSON.parse(fs.readFileSync(isolated.customersPath, 'utf8'))
+    const storedCustomer = stored.find((item) => item.id === customer.id)
+    const { passwordHash: beforeHash, passwordSalt: beforeSalt, ...beforeStable } = customer
+    const { passwordHash: afterHash, passwordSalt: afterSalt, ...afterStable } = storedCustomer
+    assert.notEqual(afterHash, beforeHash)
+    assert.notEqual(afterSalt, beforeSalt)
+    assert.deepEqual(afterStable, beforeStable)
+    assert.deepEqual(stored.find((item) => item.id === untouched.id), untouched)
+    assert.equal(fs.readdirSync(path.dirname(isolated.customersPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})

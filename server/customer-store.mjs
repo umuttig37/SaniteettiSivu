@@ -9,6 +9,8 @@ const customersFile = path.join(dataDir, 'customers.json')
 
 let customerCache = null
 let customerCacheMtimeMs = null
+let customerPasswordUpdateQueue = Promise.resolve()
+let atomicWriteCounter = 0
 
 const ensureDataDir = () => {
   if (!fs.existsSync(dataDir)) {
@@ -27,6 +29,54 @@ export const ensureCustomerStore = () => {
 
 const normalizeEmail = (value) => String(value ?? '').trim().toLowerCase()
 const normalizeEInvoiceAddress = (value) => String(value ?? '').trim().slice(0, 100)
+
+const isSameFileVersion = (before, after) =>
+  before.size === after.size &&
+  before.mtimeMs === after.mtimeMs &&
+  (!before.ino || !after.ino || before.ino === after.ino)
+
+const queueCustomerPasswordUpdate = (operation) => {
+  const result = customerPasswordUpdateQueue.then(operation, operation)
+  customerPasswordUpdateQueue = result.catch(() => undefined)
+  return result
+}
+
+const writeRawCustomersAtomic = async (customers, sourceVersion) => {
+  const tempFile = path.join(
+    path.dirname(customersFile),
+    `.${path.basename(customersFile)}.${process.pid}.${Date.now()}.${atomicWriteCounter += 1}.tmp`,
+  )
+  let fileHandle = null
+
+  try {
+    fileHandle = await fs.promises.open(tempFile, 'wx')
+    await fileHandle.writeFile(JSON.stringify(customers, null, 2), 'utf8')
+    await fileHandle.sync()
+    await fileHandle.close()
+    fileHandle = null
+
+    const currentVersion = fs.statSync(customersFile)
+    if (!isSameFileVersion(sourceVersion, currentVersion)) {
+      throw new Error('Customer data changed during password update. Existing customer data was not modified; retry the update.')
+    }
+
+    fs.renameSync(tempFile, customersFile)
+  } catch (error) {
+    if (fileHandle) {
+      try {
+        await fileHandle.close()
+      } catch {
+        // The descriptor may already be closed after a write failure.
+      }
+    }
+    try {
+      fs.unlinkSync(tempFile)
+    } catch {
+      // The temporary file may not exist or may already have been renamed.
+    }
+    throw error
+  }
+}
 
 export const normalizeBusinessId = (value) => {
   const cleaned = String(value ?? '')
@@ -183,6 +233,50 @@ export const verifyPassword = (password, customer) => {
   const nextDigest = crypto.scryptSync(String(password ?? ''), customer.passwordSalt, 64).toString('hex')
   return safeCompareHex(nextDigest, customer.passwordHash)
 }
+
+const replaceCustomerPassword = (customerId, newPassword, currentPassword = null) =>
+  queueCustomerPasswordUpdate(async () => {
+    ensureCustomerStore()
+    const normalizedCustomerId = String(customerId ?? '').trim()
+    if (!normalizedCustomerId) {
+      return null
+    }
+
+    const sourceVersion = fs.statSync(customersFile)
+    const parsed = JSON.parse(fs.readFileSync(customersFile, 'utf8'))
+    if (!Array.isArray(parsed)) {
+      throw new Error('Customer data is invalid. Existing customer data was not modified.')
+    }
+
+    const targetIndex = parsed.findIndex((customer) => String(customer?.id ?? '').trim() === normalizedCustomerId)
+    if (targetIndex < 0) {
+      return null
+    }
+
+    const existingCustomer = normalizeCustomer(parsed[targetIndex])
+    if (currentPassword !== null && !verifyPassword(currentPassword, existingCustomer)) {
+      return null
+    }
+
+    const { salt, hash } = createPasswordDigest(newPassword)
+    const nextCustomers = parsed.slice()
+    nextCustomers[targetIndex] = {
+      ...parsed[targetIndex],
+      passwordHash: hash,
+      passwordSalt: salt,
+    }
+
+    await writeRawCustomersAtomic(nextCustomers, sourceVersion)
+    const normalizedCustomers = nextCustomers.map(normalizeCustomer)
+    rememberCustomers(normalizedCustomers)
+    return normalizedCustomers[targetIndex]
+  })
+
+export const updateCustomerPassword = (customerId, newPassword) =>
+  replaceCustomerPassword(customerId, newPassword)
+
+export const changeCustomerPassword = (customerId, currentPassword, newPassword) =>
+  replaceCustomerPassword(customerId, newPassword, String(currentPassword ?? ''))
 
 export const createCustomer = (input) => {
   const email = normalizeEmail(input?.email)
