@@ -3113,6 +3113,26 @@ html {
     padding: 0.55rem 0.6rem 0.45rem;
   }
 
+  .hero {
+    min-height: 440px;
+    padding-top: 1.5rem;
+    padding-bottom: 1.5rem;
+    justify-content: flex-end;
+    background:
+      linear-gradient(180deg, rgba(5, 20, 43, 0.02) 0%, rgba(5, 20, 43, 0.12) 34%, rgba(7, 25, 52, 0.78) 62%, rgba(7, 23, 48, 0.96) 100%),
+      var(--hero-bg) 70% center / cover no-repeat;
+  }
+
+  .hero h1 {
+    font-size: clamp(1.85rem, 8vw, 2.25rem);
+    line-height: 1.08;
+  }
+
+  .hero p {
+    font-size: 0.96rem;
+    line-height: 1.48;
+  }
+
   .delivery-area {
     min-height: 225px;
     padding: 1.2rem;
