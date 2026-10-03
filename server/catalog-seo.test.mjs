@@ -21,6 +21,9 @@ const createProduct = (overrides) => ({
   image: '/product.svg',
   images: ['/product.svg'],
   description: 'Existing description',
+  featured: false,
+  featuredRank: 999,
+  optionGroups: [],
   seoTitle: 'Existing SEO title',
   metaDescription: 'Existing meta description',
   searchKeywords: ['existing', 'product'],
@@ -57,6 +60,29 @@ const createIsolatedStore = async (catalogContent) => {
   return { root, catalogPath, store: await import(moduleUrl) }
 }
 
+const listStructuralDifferences = (before, after, currentPath = '') => {
+  if (Object.is(before, after)) {
+    return []
+  }
+  if (Array.isArray(before) && Array.isArray(after)) {
+    const differences = []
+    const length = Math.max(before.length, after.length)
+    for (let index = 0; index < length; index += 1) {
+      differences.push(...listStructuralDifferences(before[index], after[index], `${currentPath}[${index}]`))
+    }
+    return differences
+  }
+  if (before && after && typeof before === 'object' && typeof after === 'object') {
+    const differences = []
+    const keys = new Set([...Object.keys(before), ...Object.keys(after)])
+    for (const key of keys) {
+      differences.push(...listStructuralDifferences(before[key], after[key], currentPath ? `${currentPath}.${key}` : key))
+    }
+    return differences
+  }
+  return [currentPath]
+}
+
 test('category-only update changes only category and updatedAt on one stored product', async () => {
   const fixture = createCatalog()
   const isolated = await createIsolatedStore(JSON.stringify(fixture, null, 2))
@@ -81,6 +107,336 @@ test('category-only update changes only category and updatedAt on one stored pro
     assert.equal(new Set(after.products.map((product) => product.id)).size, after.products.length)
     assert.equal(result.product.id, 'product-main')
     assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('category metadata updates preserve every stored product value', async () => {
+  const fixture = createCatalog()
+  fixture.products[0] = {
+    ...fixture.products[0],
+    image: `data:image/png;base64,${'A'.repeat(256_000)}`,
+    images: [`data:image/png;base64,${'A'.repeat(256_000)}`],
+    ean: '6412345678901',
+    gtin: '6412345678901',
+    mpn: 'MANUFACTURER-123',
+    brand: 'Test Brand',
+    manufacturer: 'Test Manufacturer',
+    customSupplierField: { retained: true, code: 'SUPPLIER-1' },
+  }
+  const isolated = await createIsolatedStore(JSON.stringify(fixture, null, 2))
+
+  try {
+    const before = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    await isolated.store.addCategory({
+      id: 'new-parent',
+      nameFi: 'Uusi paakategoria',
+      nameEn: 'New parent category',
+    })
+    await isolated.store.addCategory({
+      id: 'new-child',
+      nameFi: 'Uusi alakategoria',
+      nameEn: 'New subcategory',
+      parentId: 'new-parent',
+    })
+    await isolated.store.updateCategory('new-child', {
+      nameFi: 'Paivitetty alakategoria',
+      nameEn: 'Updated subcategory',
+      parentId: 'new-parent',
+    })
+
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.deepEqual(after.products, before.products)
+    assert.equal(after.products.length, before.products.length)
+    assert.equal(after.categories.some((category) => category.id === 'new-parent'), true)
+    assert.equal(after.categories.some((category) => category.id === 'new-child' && category.parentId === 'new-parent'), true)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('category metadata and product writes share one queue without data loss', async () => {
+  const isolated = await createIsolatedStore(JSON.stringify(createCatalog(), null, 2))
+
+  try {
+    const product = isolated.store.readCatalog().products.find((item) => item.id === 'product-main')
+    await Promise.all([
+      isolated.store.addCategory({ id: 'queued-category', nameFi: 'Jonotettu', nameEn: 'Queued' }),
+      isolated.store.upsertProduct({ ...product, description: 'Queued product edit' }),
+    ])
+
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.equal(after.categories.some((category) => category.id === 'queued-category'), true)
+    assert.equal(after.products.find((item) => item.id === product.id).description, 'Queued product edit')
+    assert.equal(after.products.length, 3)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('a failed streamed category metadata write never replaces the existing catalog', async () => {
+  const fixture = createCatalog()
+  fixture.products[0].image = `data:image/png;base64,${'A'.repeat(4_000_000)}`
+  fixture.products[0].images = [fixture.products[0].image]
+  const originalContent = JSON.stringify(fixture)
+  const isolated = await createIsolatedStore(originalContent)
+
+  try {
+    const updatePromise = isolated.store.addCategory({
+      id: 'must-not-commit',
+      nameFi: 'Ei saa tallentua',
+      nameEn: 'Must not commit',
+    })
+    let temporaryFileObserved = false
+
+    for (let attempt = 0; attempt < 2_000; attempt += 1) {
+      if (fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp'))) {
+        temporaryFileObserved = true
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+
+    assert.equal(temporaryFileObserved, true)
+    fs.appendFileSync(isolated.catalogPath, ' ')
+    await assert.rejects(updatePromise, /Catalog changed during streamed update/)
+    assert.equal(fs.readFileSync(isolated.catalogPath, 'utf8'), `${originalContent} `)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('streamed product and category deletion preserve unrelated catalog data', async () => {
+  const fixture = createCatalog()
+  fixture.products[0].customSupplierField = { retained: true }
+  const isolated = await createIsolatedStore(JSON.stringify(fixture, null, 2))
+
+  try {
+    const beforeProductDelete = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    await isolated.store.deleteProduct('product-transition')
+    const afterProductDelete = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.equal(afterProductDelete.products.some((product) => product.id === 'product-transition'), false)
+    assert.deepEqual(
+      afterProductDelete.products,
+      beforeProductDelete.products.filter((product) => product.id !== 'product-transition'),
+    )
+
+    const beforeCategoryDelete = structuredClone(afterProductDelete)
+    await isolated.store.deleteCategory('child')
+    const afterCategoryDelete = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const beforeMovedProduct = beforeCategoryDelete.products.find((product) => product.id === 'product-child')
+    const afterMovedProduct = afterCategoryDelete.products.find((product) => product.id === 'product-child')
+    const { category: beforeCategory, updatedAt: beforeUpdatedAt, ...beforeStable } = beforeMovedProduct
+    const { category: afterCategory, updatedAt: afterUpdatedAt, ...afterStable } = afterMovedProduct
+
+    assert.equal(beforeCategory, 'child')
+    assert.equal(afterCategory, 'muut')
+    assert.notEqual(afterUpdatedAt, beforeUpdatedAt)
+    assert.deepEqual(afterStable, beforeStable)
+    assert.deepEqual(
+      afterCategoryDelete.products.filter((product) => product.id !== 'product-child'),
+      beforeCategoryDelete.products.filter((product) => product.id !== 'product-child'),
+    )
+    assert.equal(afterCategoryDelete.categories.some((category) => category.id === 'child'), false)
+    assert.equal(fs.readdirSync(path.dirname(isolated.catalogPath)).some((name) => name.endsWith('.tmp')), false)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('streaming catalog paths preserve JSON semantics for complex product fields', async () => {
+  const fixture = createCatalog()
+  fixture.products[0] = createProduct({
+    id: 'complex-product',
+    slug: 'complex-product',
+    sku: 'COMPLEX-1',
+    name: 'Aanitesti "lainaus" \u{1F600}',
+    description: `Ensimmainen rivi\nToinen rivi \\ polku ja "lainaus" ${'\u00e4'.repeat(20_000)}`,
+    price: 12.34,
+    stock: 0,
+    featured: false,
+    unitNote: '',
+    image: 'https://example.test/images/matto%20kuva.jpg?x=1&y=2',
+    images: [
+      'https://example.test/images/matto%20kuva.jpg?x=1&y=2',
+      'https://example.test/images/toinen-kuva.png',
+    ],
+    searchKeywords: ['aakkoset', 'lainaus "testi"', 'emoji-\u{1F600}', 'polku\\testi'],
+    optionGroups: [
+      {
+        id: 'nested-group',
+        name: 'Sisakkainen ryhma',
+        values: [
+          { id: 'value-1', label: 'Arvo 1', detail: 'Rivi\n"lainaus"', price: 1.25 },
+          { id: 'value-2', label: 'Arvo 2', price: 0 },
+        ],
+      },
+    ],
+    nullableField: null,
+    booleanField: true,
+    numericField: -123.456,
+    arrayField: [null, true, false, 0, ''],
+    nestedField: { quote: '"', slash: '\\', unicode: 'Aani \u{1F600}', empty: '' },
+  })
+  const isolated = await createIsolatedStore(JSON.stringify(fixture, null, 2))
+
+  try {
+    const before = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const cached = isolated.store.readCatalog().products.find((product) => product.id === 'complex-product')
+    assert.equal(cached.name, fixture.products[0].name)
+    assert.equal(cached.description, fixture.products[0].description)
+    assert.deepEqual(cached.searchKeywords, fixture.products[0].searchKeywords)
+    assert.deepEqual(JSON.parse(JSON.stringify(cached.optionGroups)), fixture.products[0].optionGroups)
+
+    await isolated.store.addCategory({ id: 'json-semantics', nameFi: 'JSON-semantiikka', nameEn: 'JSON semantics' })
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.deepEqual(after.products, before.products)
+    assert.equal(listStructuralDifferences(before.products, after.products).length, 0)
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('targeted product updates have no unexpected field changes', async () => {
+  const isolated = await createIsolatedStore(JSON.stringify(createCatalog(), null, 2))
+
+  try {
+    const categoryBefore = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    await isolated.store.updateProductCategory('product-main', 'child')
+    const categoryAfter = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const categoryBeforeTarget = categoryBefore.products.find((product) => product.id === 'product-main')
+    const categoryAfterTarget = categoryAfter.products.find((product) => product.id === 'product-main')
+    assert.deepEqual(
+      listStructuralDifferences(categoryBeforeTarget, categoryAfterTarget).sort(),
+      ['category', 'updatedAt'],
+    )
+    assert.deepEqual(
+      categoryAfter.products.filter((product) => product.id !== 'product-main'),
+      categoryBefore.products.filter((product) => product.id !== 'product-main'),
+    )
+
+    const productBefore = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const cachedProduct = isolated.store.readCatalog().products.find((product) => product.id === 'product-child')
+    await isolated.store.upsertProduct({ ...cachedProduct, description: 'Only this description should change' })
+    const productAfter = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    const productBeforeTarget = productBefore.products.find((product) => product.id === 'product-child')
+    const productAfterTarget = productAfter.products.find((product) => product.id === 'product-child')
+    assert.deepEqual(
+      listStructuralDifferences(productBeforeTarget, productAfterTarget).sort(),
+      ['description', 'updatedAt'],
+    )
+    assert.deepEqual(
+      productAfter.products.filter((product) => product.id !== 'product-child'),
+      productBefore.products.filter((product) => product.id !== 'product-child'),
+    )
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+})
+
+test('queued catalog writes retain every accepted change and recover after failure', async () => {
+  const isolated = await createIsolatedStore(JSON.stringify(createCatalog(), null, 2))
+
+  try {
+    await Promise.all([
+      isolated.store.addCategory({ id: 'queue-parent', nameFi: 'Queue parent', nameEn: 'Queue parent' }),
+      isolated.store.addCategory({
+        id: 'queue-child',
+        nameFi: 'Queue child',
+        nameEn: 'Queue child',
+        parentId: 'queue-parent',
+      }),
+    ])
+
+    const product = isolated.store.readCatalog().products.find((item) => item.id === 'product-main')
+    await Promise.all([
+      isolated.store.addCategory({ id: 'queue-extra', nameFi: 'Queue extra', nameEn: 'Queue extra' }),
+      isolated.store.upsertProduct({ ...product, description: 'Concurrent queued edit' }),
+    ])
+
+    const productChild = isolated.store.readCatalog().products.find((item) => item.id === 'product-child')
+    await Promise.all([
+      isolated.store.addCategory({ id: 'rapid-1', nameFi: 'Rapid one', nameEn: 'Rapid one' }),
+      isolated.store.addCategory({ id: 'rapid-2', nameFi: 'Rapid two', nameEn: 'Rapid two' }),
+      isolated.store.updateCategory('main', { nameFi: 'Main updated', nameEn: 'Main updated', parentId: '' }),
+      isolated.store.upsertProduct({ ...productChild, description: 'Rapid queued edit' }),
+      isolated.store.updateProductCategory('product-main', 'child'),
+    ])
+
+    const after = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    for (const categoryId of ['queue-parent', 'queue-child', 'queue-extra', 'rapid-1', 'rapid-2']) {
+      assert.equal(after.categories.some((category) => category.id === categoryId), true)
+    }
+    assert.equal(after.categories.find((category) => category.id === 'queue-child').parentId, 'queue-parent')
+    assert.equal(after.categories.find((category) => category.id === 'main').nameFi, 'Main updated')
+    assert.equal(after.products.find((item) => item.id === 'product-main').description, 'Concurrent queued edit')
+    assert.equal(after.products.find((item) => item.id === 'product-main').category, 'child')
+    assert.equal(after.products.find((item) => item.id === 'product-child').description, 'Rapid queued edit')
+    assert.equal(after.products.length, 3)
+    assert.doesNotThrow(() => JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8')))
+  } finally {
+    fs.rmSync(isolated.root, { recursive: true, force: true })
+  }
+
+  const duplicateFixture = createCatalog()
+  duplicateFixture.products.push(createProduct({ id: 'product-main', slug: 'duplicate-id', sku: 'DUPLICATE-ID' }))
+  const recoveryStore = await createIsolatedStore(JSON.stringify(duplicateFixture, null, 2))
+
+  try {
+    const failedWrite = recoveryStore.store.updateProductCategory('product-main', 'child')
+    const followingWrite = recoveryStore.store.addCategory({
+      id: 'after-failure',
+      nameFi: 'After failure',
+      nameEn: 'After failure',
+    })
+    await assert.rejects(failedWrite, /not found uniquely/)
+    await followingWrite
+    const afterRecovery = JSON.parse(fs.readFileSync(recoveryStore.catalogPath, 'utf8'))
+    assert.equal(afterRecovery.categories.some((category) => category.id === 'after-failure'), true)
+    assert.equal(afterRecovery.products.length, duplicateFixture.products.length)
+  } finally {
+    fs.rmSync(recoveryStore.root, { recursive: true, force: true })
+  }
+})
+
+test('readers see only a complete catalog while a streamed write is running', async () => {
+  const fixture = createCatalog()
+  fixture.products[0].image = `data:image/png;base64,${'A'.repeat(8_000_000)}`
+  fixture.products[0].images = [fixture.products[0].image]
+  const isolated = await createIsolatedStore(JSON.stringify(fixture))
+
+  try {
+    let settled = false
+    const writePromise = isolated.store
+      .addCategory({ id: 'atomic-reader-test', nameFi: 'Atomic reader', nameEn: 'Atomic reader' })
+      .finally(() => {
+        settled = true
+      })
+    let validReads = 0
+    let oldReads = 0
+    let newReads = 0
+
+    while (!settled && validReads < 100) {
+      const observed = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+      validReads += 1
+      if (observed.categories.some((category) => category.id === 'atomic-reader-test')) {
+        newReads += 1
+      } else {
+        oldReads += 1
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1))
+    }
+
+    await writePromise
+    const finalCatalog = JSON.parse(fs.readFileSync(isolated.catalogPath, 'utf8'))
+    assert.equal(finalCatalog.categories.some((category) => category.id === 'atomic-reader-test'), true)
+    assert.ok(validReads > 0)
+    assert.equal(validReads, oldReads + newReads)
+    assert.equal(finalCatalog.products.length, fixture.products.length)
   } finally {
     fs.rmSync(isolated.root, { recursive: true, force: true })
   }

@@ -2143,12 +2143,12 @@ app.put('/api/admin/products/:productId', requireAdmin, async (req, res) => {
   res.json(getPublicCatalogResponse(payload.id))
 })
 
-app.delete('/api/admin/products/:productId', requireAdmin, (req, res) => {
-  deleteProduct(req.params.productId)
+app.delete('/api/admin/products/:productId', requireAdmin, async (req, res) => {
+  await deleteProduct(req.params.productId)
   res.json(getPublicCatalogResponse())
 })
 
-app.post('/api/admin/categories', requireAdmin, (req, res) => {
+app.post('/api/admin/categories', requireAdmin, async (req, res) => {
   const nameFi = String(req.body?.nameFi ?? '').trim()
   const nameEn = String(req.body?.nameEn ?? '').trim() || nameFi
   const parentId = String(req.body?.parentId ?? '').trim()
@@ -2165,7 +2165,7 @@ app.post('/api/admin/categories', requireAdmin, (req, res) => {
   }
 
   const previousCategoryIds = new Set(currentCatalog.categories.map((category) => category.id))
-  const updatedCatalog = addCategory({ nameFi, nameEn, id: nameFi, parentId })
+  const updatedCatalog = await addCategory({ nameFi, nameEn, id: nameFi, parentId })
   const category = updatedCatalog.categories.find((item) => !previousCategoryIds.has(item.id))
 
   if (!category) {
@@ -2176,7 +2176,7 @@ app.post('/api/admin/categories', requireAdmin, (req, res) => {
   res.status(201).json({ ...getPublicCatalogResponse(), category })
 })
 
-app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
+app.delete('/api/admin/categories/:categoryId', requireAdmin, async (req, res) => {
   if (req.params.categoryId === 'muut') {
     res.status(400).json({ message: 'Fallback category cannot be deleted.' })
     return
@@ -2185,11 +2185,11 @@ app.delete('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
     res.status(409).json({ message: 'Move or delete subcategories before deleting their parent category.' })
     return
   }
-  deleteCategory(req.params.categoryId)
+  await deleteCategory(req.params.categoryId)
   res.json(getPublicCatalogResponse())
 })
 
-app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
+app.put('/api/admin/categories/:categoryId', requireAdmin, async (req, res) => {
   const nameFi = String(req.body?.nameFi ?? '').trim()
   const nameEn = String(req.body?.nameEn ?? nameFi).trim()
   const parentId = String(req.body?.parentId ?? '').trim()
@@ -2214,13 +2214,13 @@ app.put('/api/admin/categories/:categoryId', requireAdmin, (req, res) => {
     return
   }
 
-  updateCategory(req.params.categoryId, { nameFi, nameEn, parentId })
+  await updateCategory(req.params.categoryId, { nameFi, nameEn, parentId })
   res.json(getPublicCatalogResponse())
 })
 
-app.post('/api/admin/categories/reorder', requireAdmin, (req, res) => {
+app.post('/api/admin/categories/reorder', requireAdmin, async (req, res) => {
   const order = Array.isArray(req.body?.order) ? req.body.order : []
-  reorderCategories(order)
+  await reorderCategories(order)
   res.json(getPublicCatalogResponse())
 })
 

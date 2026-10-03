@@ -1,7 +1,9 @@
 import fs from 'node:fs'
+import crypto from 'node:crypto'
 import path from 'node:path'
 import { once } from 'node:events'
 import { finished } from 'node:stream/promises'
+import { StringDecoder } from 'node:string_decoder'
 import { fileURLToPath } from 'node:url'
 import chain from 'stream-chain'
 import { parser } from 'stream-json'
@@ -43,6 +45,237 @@ const repairText = (value) =>
 
 const readJson = (filePath) => JSON.parse(fs.readFileSync(filePath, 'utf8'))
 
+const createSyncJsonReader = (filePath) => {
+  const fileDescriptor = fs.openSync(filePath, 'r')
+  const decoder = new StringDecoder('utf8')
+  const readBuffer = Buffer.allocUnsafe(64 * 1024)
+  let text = ''
+  let offset = 0
+  let ended = false
+
+  const fill = () => {
+    while (offset >= text.length && !ended) {
+      const bytesRead = fs.readSync(fileDescriptor, readBuffer, 0, readBuffer.length, null)
+      if (bytesRead === 0) {
+        text = decoder.end()
+        offset = 0
+        ended = true
+      } else {
+        text = decoder.write(readBuffer.subarray(0, bytesRead))
+        offset = 0
+      }
+    }
+  }
+
+  return {
+    close: () => fs.closeSync(fileDescriptor),
+    next: () => {
+      fill()
+      if (offset >= text.length) {
+        return null
+      }
+      const character = text[offset]
+      offset += 1
+      return character
+    },
+    peek: () => {
+      fill()
+      return offset < text.length ? text[offset] : null
+    },
+  }
+}
+
+const skipWhitespace = (reader) => {
+  while (/\s/.test(reader.peek() ?? '')) {
+    reader.next()
+  }
+}
+
+const expectCharacter = (reader, expected) => {
+  skipWhitespace(reader)
+  const actual = reader.next()
+  if (actual !== expected) {
+    throw new SyntaxError(`Expected ${expected} but found ${actual ?? 'end of file'}`)
+  }
+}
+
+const readJsonStringRaw = (reader) => {
+  if (reader.next() !== '"') {
+    throw new SyntaxError('Expected a JSON string')
+  }
+
+  let raw = '"'
+  let escaped = false
+  while (true) {
+    const character = reader.next()
+    if (character === null) {
+      throw new SyntaxError('Unexpected end of JSON string')
+    }
+    raw += character
+    if (escaped) {
+      escaped = false
+    } else if (character === '\\') {
+      escaped = true
+    } else if (character === '"') {
+      return raw
+    }
+  }
+}
+
+const consumeCompositeJsonValue = (reader, firstCharacter, collect) => {
+  const closingCharacters = [firstCharacter === '{' ? '}' : ']']
+  let raw = collect ? firstCharacter : ''
+  let inString = false
+  let escaped = false
+
+  while (closingCharacters.length > 0) {
+    const character = reader.next()
+    if (character === null) {
+      throw new SyntaxError('Unexpected end of JSON value')
+    }
+    if (collect) {
+      raw += character
+    }
+
+    if (inString) {
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === '"') {
+        inString = false
+      }
+      continue
+    }
+
+    if (character === '"') {
+      inString = true
+    } else if (character === '{') {
+      closingCharacters.push('}')
+    } else if (character === '[') {
+      closingCharacters.push(']')
+    } else if (character === '}' || character === ']') {
+      const expected = closingCharacters.pop()
+      if (character !== expected) {
+        throw new SyntaxError(`Expected ${expected} but found ${character}`)
+      }
+    }
+  }
+
+  return raw
+}
+
+const consumeJsonValue = (reader, collect = true) => {
+  skipWhitespace(reader)
+  const firstCharacter = reader.next()
+  if (firstCharacter === null) {
+    throw new SyntaxError('Unexpected end of JSON value')
+  }
+  if (firstCharacter === '"') {
+    let raw = '"'
+    let escaped = false
+    while (true) {
+      const character = reader.next()
+      if (character === null) {
+        throw new SyntaxError('Unexpected end of JSON string')
+      }
+      if (collect) {
+        raw += character
+      }
+      if (escaped) {
+        escaped = false
+      } else if (character === '\\') {
+        escaped = true
+      } else if (character === '"') {
+        return collect ? raw : ''
+      }
+    }
+  }
+  if (firstCharacter === '{' || firstCharacter === '[') {
+    return consumeCompositeJsonValue(reader, firstCharacter, collect)
+  }
+
+  let raw = collect ? firstCharacter : ''
+  while (true) {
+    const character = reader.peek()
+    if (character === null || character === ',' || character === ']' || character === '}' || /\s/.test(character)) {
+      return raw
+    }
+    const nextCharacter = reader.next()
+    if (collect) {
+      raw += nextCharacter
+    }
+  }
+}
+
+const readJsonArrayItemsSync = (filePath, section, onItem) => {
+  const reader = createSyncJsonReader(filePath)
+  let sectionFound = false
+
+  try {
+    expectCharacter(reader, '{')
+    skipWhitespace(reader)
+    if (reader.peek() === '}') {
+      reader.next()
+    } else {
+      while (true) {
+        skipWhitespace(reader)
+        if (reader.peek() !== '"') {
+          throw new SyntaxError('Expected a JSON object key')
+        }
+        const key = JSON.parse(readJsonStringRaw(reader))
+        expectCharacter(reader, ':')
+
+        if (key === section) {
+          if (sectionFound) {
+            throw new SyntaxError(`Duplicate ${section} section in catalog`)
+          }
+          sectionFound = true
+          expectCharacter(reader, '[')
+          skipWhitespace(reader)
+          if (reader.peek() === ']') {
+            reader.next()
+          } else {
+            while (true) {
+              const rawItem = consumeJsonValue(reader)
+              onItem(JSON.parse(rawItem))
+              skipWhitespace(reader)
+              const delimiter = reader.next()
+              if (delimiter === ']') {
+                break
+              }
+              if (delimiter !== ',') {
+                throw new SyntaxError(`Expected , or ] but found ${delimiter ?? 'end of file'}`)
+              }
+            }
+          }
+        } else {
+          consumeJsonValue(reader, false)
+        }
+
+        skipWhitespace(reader)
+        const delimiter = reader.next()
+        if (delimiter === '}') {
+          break
+        }
+        if (delimiter !== ',') {
+          throw new SyntaxError(`Expected , or } but found ${delimiter ?? 'end of file'}`)
+        }
+      }
+    }
+
+    skipWhitespace(reader)
+    if (reader.peek() !== null) {
+      throw new SyntaxError('Unexpected data after catalog JSON')
+    }
+    if (!sectionFound) {
+      throw new SyntaxError(`Catalog is missing the ${section} section`)
+    }
+  } finally {
+    reader.close()
+  }
+}
+
 const writeJsonAtomic = (filePath, value) => {
   const tempFile = path.join(
     path.dirname(filePath),
@@ -76,15 +309,6 @@ const ensureDataDir = () => {
   }
 }
 
-const readCatalogJsonFromDisk = () => {
-  try {
-    return readJson(catalogFile)
-  } catch (error) {
-    console.error(`[catalog] Failed to read ${catalogFile}. Existing catalog was not modified.`, error)
-    throw error
-  }
-}
-
 const createCatalogArrayStream = (section, filePath = catalogFile) =>
   chain([
     fs.createReadStream(filePath, { encoding: 'utf8' }),
@@ -105,6 +329,111 @@ const readRawCategoriesStreaming = async (filePath = catalogFile) => {
     categories.push(value)
   }
   return categories
+}
+
+const createProductDigest = () => crypto.createHash('sha256')
+
+const updateProductDigest = (digest, serializedProduct) => {
+  digest.update(serializedProduct)
+  digest.update('\n')
+}
+
+const validateStreamedCatalogWrite = async ({ filePath, categories, productCount, productDigest }) => {
+  const writtenCategories = await readRawCategoriesStreaming(filePath)
+  if (JSON.stringify(writtenCategories) !== JSON.stringify(categories)) {
+    throw new Error('Streamed catalog update changed categories unexpectedly. Existing catalog was not modified.')
+  }
+
+  const validationDigest = createProductDigest()
+  let validatedProductCount = 0
+  for await (const { value: product } of createCatalogArrayStream('products', filePath)) {
+    updateProductDigest(validationDigest, JSON.stringify(product, null, 2))
+    validatedProductCount += 1
+  }
+
+  if (validatedProductCount !== productCount || validationDigest.digest('hex') !== productDigest) {
+    throw new Error('Streamed catalog product validation failed. Existing catalog was not modified.')
+  }
+}
+
+const writeCatalogStreaming = async ({ categories, transformProduct = (product) => product, sourceVersion }) => {
+  const tempFile = path.join(
+    path.dirname(catalogFile),
+    `.${path.basename(catalogFile)}.${process.pid}.${Date.now()}.${atomicWriteCounter += 1}.tmp`,
+  )
+  let fileHandle = null
+  let output = null
+
+  try {
+    fileHandle = await fs.promises.open(tempFile, 'wx')
+    output = fs.createWriteStream(tempFile, {
+      fd: fileHandle.fd,
+      autoClose: false,
+      encoding: 'utf8',
+    })
+
+    const serializedCategories = JSON.stringify(categories, null, 2).replaceAll('\n', '\n  ')
+    await writeStreamChunk(output, `{\n  "categories": ${serializedCategories},\n  "products": [`)
+    const productDigest = createProductDigest()
+    let productCount = 0
+
+    for await (const { value: product } of createCatalogArrayStream('products')) {
+      const nextProduct = transformProduct(product)
+      if (nextProduct === null) {
+        continue
+      }
+      const serializedProduct = JSON.stringify(nextProduct, null, 2)
+      updateProductDigest(productDigest, serializedProduct)
+      const indentedProduct = serializedProduct.replaceAll('\n', '\n    ')
+      await writeStreamChunk(output, `${productCount === 0 ? '\n' : ',\n'}    ${indentedProduct}`)
+      productCount += 1
+    }
+
+    await writeStreamChunk(output, '\n  ]\n}\n')
+    output.end()
+    await finished(output)
+    output = null
+    await fileHandle.sync()
+    await fileHandle.close()
+    fileHandle = null
+
+    await validateStreamedCatalogWrite({
+      filePath: tempFile,
+      categories,
+      productCount,
+      productDigest: productDigest.digest('hex'),
+    })
+
+    const currentVersion = await fs.promises.stat(catalogFile)
+    if (!isSameFileVersion(sourceVersion, currentVersion)) {
+      throw new Error('Catalog changed during streamed update. Existing catalog was not modified; retry the update.')
+    }
+
+    await fs.promises.rename(tempFile, catalogFile)
+    return productCount
+  } catch (error) {
+    if (output) {
+      output.destroy()
+      try {
+        await finished(output)
+      } catch {
+        // The original stream error is reported below.
+      }
+    }
+    if (fileHandle) {
+      try {
+        await fileHandle.close()
+      } catch {
+        // The descriptor may already be closed after a stream failure.
+      }
+    }
+    try {
+      await fs.promises.unlink(tempFile)
+    } catch {
+      // The temporary file may not exist or may already have been renamed.
+    }
+    throw error
+  }
 }
 
 const validateStreamedCategoryUpdate = async ({ filePath, productId, categoryId, updatedAt, productCount }) => {
@@ -477,6 +806,27 @@ const normalizeCategory = (category) => {
   }
 }
 
+const normalizeCategories = (rawCategories) => {
+  const normalizedCategories =
+    Array.isArray(rawCategories) && rawCategories.length > 0
+      ? rawCategories.map(normalizeCategory)
+      : fallbackCatalog.categories.map(normalizeCategory)
+
+  if (!normalizedCategories.some((item) => item.id === 'muut')) {
+    normalizedCategories.push(normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' }))
+  }
+
+  const categoryMap = new Map(normalizedCategories.map((item) => [item.id, item]))
+  return normalizedCategories.map((category) => {
+    const parent = category.parentId ? categoryMap.get(category.parentId) : null
+    const validParent = category.id !== 'muut' && parent && parent.id !== category.id && !parent.parentId
+    return {
+      ...category,
+      parentId: validParent ? parent.id : undefined,
+    }
+  })
+}
+
 const normalizeOptionGroups = (groups) =>
   Array.isArray(groups)
     ? groups
@@ -554,24 +904,7 @@ const normalizeProduct = (product, categories, products) => {
 }
 
 const normalizeCatalog = (catalog) => {
-  const normalizedCategories =
-    Array.isArray(catalog?.categories) && catalog.categories.length > 0
-      ? catalog.categories.map(normalizeCategory)
-      : fallbackCatalog.categories.map(normalizeCategory)
-
-  if (!normalizedCategories.some((item) => item.id === 'muut')) {
-    normalizedCategories.push(normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' }))
-  }
-
-  const categoryMap = new Map(normalizedCategories.map((item) => [item.id, item]))
-  const categories = normalizedCategories.map((category) => {
-    const parent = category.parentId ? categoryMap.get(category.parentId) : null
-    const validParent = category.id !== 'muut' && parent && parent.id !== category.id && !parent.parentId
-    return {
-      ...category,
-      parentId: validParent ? parent.id : undefined,
-    }
-  })
+  const categories = normalizeCategories(catalog?.categories)
 
   const products = []
   for (const rawProduct of Array.isArray(catalog?.products) ? catalog.products : []) {
@@ -584,6 +917,25 @@ const normalizeCatalog = (catalog) => {
   return { categories, products }
 }
 
+const readCatalogJsonFromDisk = () => {
+  try {
+    const rawCategories = []
+    readJsonArrayItemsSync(catalogFile, 'categories', (category) => rawCategories.push(category))
+    const categories = normalizeCategories(rawCategories)
+    const products = []
+    readJsonArrayItemsSync(catalogFile, 'products', (rawProduct) => {
+      const normalized = normalizeProduct(rawProduct, categories, products)
+      if (normalized.name && normalized.sku) {
+        products.push(normalized)
+      }
+    })
+    return { categories, products }
+  } catch (error) {
+    console.error(`[catalog] Failed to read ${catalogFile}. Existing catalog was not modified.`, error)
+    throw error
+  }
+}
+
 export const ensureCatalogStore = () => {
   ensureDataDir()
 
@@ -594,7 +946,7 @@ export const ensureCatalogStore = () => {
   }
 
   try {
-    return rememberCatalog(normalizeCatalog(readCatalogJsonFromDisk()))
+    return rememberCatalog(readCatalogJsonFromDisk())
   } catch (error) {
     throw new Error('Catalog could not be read. No catalog data was written.', { cause: error })
   }
@@ -607,13 +959,6 @@ export const readCatalog = () => {
   }
 
   return ensureCatalogStore()
-}
-
-export const writeCatalog = (catalog) => {
-  readCatalog()
-  const normalized = normalizeCatalog(catalog)
-  writeJsonAtomic(catalogFile, normalized)
-  return rememberCatalog(normalized)
 }
 
 export const updateProductCategory = (productId, categoryId) =>
@@ -693,134 +1038,157 @@ export const upsertProduct = (input) =>
     })
   })
 
-export const deleteProduct = (productId) => {
-  const catalog = readCatalog()
-  return writeCatalog({
-    ...catalog,
-    products: catalog.products.filter((item) => item.id !== productId),
-  })
-}
-
-export const addCategory = (input) => {
-  const catalog = readCatalog()
-  const normalized = normalizeCategory(input)
-  const normalizedNameFi = normalized.nameFi.toLocaleLowerCase('fi')
-  const normalizedNameEn = normalized.nameEn.toLocaleLowerCase('en')
-
-  if (
-    catalog.categories.some(
-      (item) =>
-        item.nameFi.toLocaleLowerCase('fi') === normalizedNameFi ||
-        item.nameEn.toLocaleLowerCase('en') === normalizedNameEn,
-    )
-  ) {
-    return catalog
-  }
-
-  const uniqueSlug = ensureUniqueSlug(normalized.slug, catalog.categories)
-  const parent = normalized.parentId ? catalog.categories.find((item) => item.id === normalized.parentId && !item.parentId) : null
-  const category = {
-    ...normalized,
-    id: uniqueSlug,
-    slug: uniqueSlug,
-    parentId: parent?.id,
-  }
-
-  const nextCategories = [...catalog.categories]
-  const fallbackIndex = nextCategories.findIndex((item) => item.id === 'muut')
-
-  if (fallbackIndex >= 0) {
-    nextCategories.splice(fallbackIndex, 0, category)
-  } else {
-    nextCategories.push(category)
-  }
-
-  return writeCatalog({
-    ...catalog,
-    categories: nextCategories,
-  })
-}
-
-export const deleteCategory = (categoryId) => {
-  const catalog = readCatalog()
-  if (catalog.categories.some((item) => item.parentId === categoryId)) {
-    return catalog
-  }
-
-  const nextCategories = catalog.categories.filter((item) => item.id !== categoryId)
-  const safeCategories = nextCategories.some((item) => item.id === 'muut')
-    ? nextCategories
-    : [...nextCategories, normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' })]
-
-  const nextProducts = catalog.products.map((item) =>
-    item.category === categoryId ? { ...item, category: 'muut', updatedAt: new Date().toISOString() } : item,
-  )
-
-  return writeCatalog({
-    categories: safeCategories,
-    products: nextProducts,
-  })
-}
-
-export const updateCategory = (categoryId, input) => {
-  const catalog = readCatalog()
-  const currentCategory = catalog.categories.find((item) => item.id === categoryId)
-  const nameFi = repairText(input?.nameFi).trim()
-  const nameEn = repairText(input?.nameEn ?? nameFi).trim()
-
-  if (!currentCategory || !nameFi || !nameEn) {
-    return catalog
-  }
-
-  const hasParentId = Object.prototype.hasOwnProperty.call(input ?? {}, 'parentId')
-  const requestedParentId = hasParentId ? slugify(input?.parentId ?? '') || undefined : currentCategory.parentId
-  const hasChildren = catalog.categories.some((item) => item.parentId === categoryId)
-  const parent = requestedParentId && !hasChildren
-    ? catalog.categories.find((item) => item.id === requestedParentId && item.id !== categoryId && !item.parentId)
-    : null
-  const parentId = categoryId === 'muut' ? undefined : parent?.id
-
-  const nextCategories = catalog.categories.map((item) =>
-    item.id === categoryId
-      ? {
-          ...item,
-          nameFi,
-          nameEn,
-          parentId,
-        }
-      : item,
-  )
-
-  return writeCatalog({
-    ...catalog,
-    categories: nextCategories,
-  })
-}
-
-export const reorderCategories = (orderedIds) => {
-  const catalog = readCatalog()
-  const categoriesById = new Map(catalog.categories.map((item) => [item.id, item]))
-  const nextCategories = []
-
-  for (const categoryId of Array.isArray(orderedIds) ? orderedIds : []) {
-    const match = categoriesById.get(String(categoryId))
-    if (!match) {
-      continue
+export const deleteProduct = (productId) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    const normalizedProductId = String(productId ?? '').trim()
+    if (!catalog.products.some((item) => item.id === normalizedProductId)) {
+      return catalog
     }
 
-    nextCategories.push(match)
-    categoriesById.delete(match.id)
-  }
+    const sourceVersion = await fs.promises.stat(catalogFile)
+    await writeCatalogStreaming({
+      categories: catalog.categories,
+      sourceVersion,
+      transformProduct: (product) => (String(product?.id ?? '') === normalizedProductId ? null : product),
+    })
 
-  for (const leftover of categoriesById.values()) {
-    nextCategories.push(leftover)
-  }
-
-  return writeCatalog({
-    ...catalog,
-    categories: nextCategories,
+    return rememberCatalog({
+      categories: catalog.categories,
+      products: catalog.products.filter((item) => item.id !== normalizedProductId),
+    })
   })
-}
+
+export const addCategory = (input) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    const normalized = normalizeCategory(input)
+    const normalizedNameFi = normalized.nameFi.toLocaleLowerCase('fi')
+    const normalizedNameEn = normalized.nameEn.toLocaleLowerCase('en')
+
+    if (
+      catalog.categories.some(
+        (item) =>
+          item.nameFi.toLocaleLowerCase('fi') === normalizedNameFi ||
+          item.nameEn.toLocaleLowerCase('en') === normalizedNameEn,
+      )
+    ) {
+      return catalog
+    }
+
+    const uniqueSlug = ensureUniqueSlug(normalized.slug, catalog.categories)
+    const parent = normalized.parentId
+      ? catalog.categories.find((item) => item.id === normalized.parentId && !item.parentId)
+      : null
+    const category = {
+      ...normalized,
+      id: uniqueSlug,
+      slug: uniqueSlug,
+      parentId: parent?.id,
+    }
+
+    const nextCategories = [...catalog.categories]
+    const fallbackIndex = nextCategories.findIndex((item) => item.id === 'muut')
+
+    if (fallbackIndex >= 0) {
+      nextCategories.splice(fallbackIndex, 0, category)
+    } else {
+      nextCategories.push(category)
+    }
+
+    const sourceVersion = await fs.promises.stat(catalogFile)
+    await writeCatalogStreaming({ categories: nextCategories, sourceVersion })
+    return rememberCatalog({ categories: nextCategories, products: catalog.products })
+  })
+
+export const deleteCategory = (categoryId) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    if (catalog.categories.some((item) => item.parentId === categoryId)) {
+      return catalog
+    }
+
+    const nextCategories = catalog.categories.filter((item) => item.id !== categoryId)
+    const safeCategories = nextCategories.some((item) => item.id === 'muut')
+      ? nextCategories
+      : [...nextCategories, normalizeCategory({ id: 'muut', nameFi: 'Muut', nameEn: 'Other' })]
+    const updatedAt = new Date().toISOString()
+    const sourceVersion = await fs.promises.stat(catalogFile)
+
+    await writeCatalogStreaming({
+      categories: safeCategories,
+      sourceVersion,
+      transformProduct: (product) =>
+        product?.category === categoryId ? { ...product, category: 'muut', updatedAt } : product,
+    })
+
+    return rememberCatalog({
+      categories: safeCategories,
+      products: catalog.products.map((item) =>
+        item.category === categoryId ? { ...item, category: 'muut', updatedAt } : item,
+      ),
+    })
+  })
+
+export const updateCategory = (categoryId, input) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    const currentCategory = catalog.categories.find((item) => item.id === categoryId)
+    const nameFi = repairText(input?.nameFi).trim()
+    const nameEn = repairText(input?.nameEn ?? nameFi).trim()
+
+    if (!currentCategory || !nameFi || !nameEn) {
+      return catalog
+    }
+
+    const hasParentId = Object.prototype.hasOwnProperty.call(input ?? {}, 'parentId')
+    const requestedParentId = hasParentId ? slugify(input?.parentId ?? '') || undefined : currentCategory.parentId
+    const hasChildren = catalog.categories.some((item) => item.parentId === categoryId)
+    const parent = requestedParentId && !hasChildren
+      ? catalog.categories.find((item) => item.id === requestedParentId && item.id !== categoryId && !item.parentId)
+      : null
+    const parentId = categoryId === 'muut' ? undefined : parent?.id
+
+    const nextCategories = catalog.categories.map((item) =>
+      item.id === categoryId
+        ? {
+            ...item,
+            nameFi,
+            nameEn,
+            parentId,
+          }
+        : item,
+    )
+
+    const sourceVersion = await fs.promises.stat(catalogFile)
+    await writeCatalogStreaming({ categories: nextCategories, sourceVersion })
+    return rememberCatalog({ categories: nextCategories, products: catalog.products })
+  })
+
+export const reorderCategories = (orderedIds) =>
+  queueCategoryUpdate(async () => {
+    const catalog = readCatalog()
+    const categoriesById = new Map(catalog.categories.map((item) => [item.id, item]))
+    const nextCategories = []
+
+    for (const categoryId of Array.isArray(orderedIds) ? orderedIds : []) {
+      const match = categoriesById.get(String(categoryId))
+      if (!match) {
+        continue
+      }
+
+      nextCategories.push(match)
+      categoriesById.delete(match.id)
+    }
+
+    for (const leftover of categoriesById.values()) {
+      nextCategories.push(leftover)
+    }
+
+    const sourceVersion = await fs.promises.stat(catalogFile)
+    await writeCatalogStreaming({ categories: nextCategories, sourceVersion })
+    return rememberCatalog({ categories: nextCategories, products: catalog.products })
+  })
 
 export const getProductBySlug = (slug) => readCatalog().products.find((item) => item.slug === slug) ?? null
 
