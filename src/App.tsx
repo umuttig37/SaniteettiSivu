@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSPropert
 import './App.css'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/hero-background-new.jpg'
+import invoiceComparisonImage from './assets/invoice-comparison-savings.png'
 import paytrailBadge from './assets/paytrail-logo.png'
 import visaLogo from './assets/payment-brands/visa.svg'
 import mastercardLogo from './assets/payment-brands/mastercard-symbol.svg'
@@ -307,6 +308,26 @@ type AdminCustomerPrice = {
   price: number
   createdAt: string
   updatedAt: string
+}
+
+type InvoiceComparisonStatus = 'new' | 'processing' | 'offer_sent' | 'done'
+
+type AdminInvoiceComparison = {
+  id: string
+  createdAt: string
+  updatedAt: string
+  company: string
+  contactName: string
+  email: string
+  phone: string
+  message: string
+  status: InvoiceComparisonStatus
+  internalNote: string
+  attachment: {
+    originalName: string
+    mimeType: string
+    size: number
+  }
 }
 
 const svgData = (label: string, color: string) => {
@@ -2472,6 +2493,11 @@ function App() {
   const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [adminOrdersError, setAdminOrdersError] = useState('')
+  const [adminInvoiceComparisons, setAdminInvoiceComparisons] = useState<AdminInvoiceComparison[]>([])
+  const [adminInvoiceComparisonsLoading, setAdminInvoiceComparisonsLoading] = useState(false)
+  const [adminInvoiceComparisonsError, setAdminInvoiceComparisonsError] = useState('')
+  const [adminInvoiceComparisonsNotice, setAdminInvoiceComparisonsNotice] = useState('')
+  const [adminInvoiceComparisonSavingId, setAdminInvoiceComparisonSavingId] = useState<string | null>(null)
   const [adminCustomers, setAdminCustomers] = useState<AdminCustomer[]>([])
   const [adminCustomersLoading, setAdminCustomersLoading] = useState(false)
   const [adminCustomersError, setAdminCustomersError] = useState('')
@@ -3108,6 +3134,7 @@ function App() {
   useEffect(() => {
     if (isAdminPage && adminAuthed) {
       void loadAdminOrders()
+      void loadAdminInvoiceComparisons()
       void loadAdminCustomers()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3923,6 +3950,10 @@ function App() {
     setAdminAuthed(false)
     setAdminSessionLoading(false)
     setAdminOrders([])
+    setAdminInvoiceComparisons([])
+    setAdminInvoiceComparisonsError('')
+    setAdminInvoiceComparisonsNotice('')
+    setAdminInvoiceComparisonSavingId(null)
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
@@ -3984,6 +4015,10 @@ function App() {
     setIsAdminPage(false)
     setAdminOrders([])
     setAdminOrdersError('')
+    setAdminInvoiceComparisons([])
+    setAdminInvoiceComparisonsError('')
+    setAdminInvoiceComparisonsNotice('')
+    setAdminInvoiceComparisonSavingId(null)
     setAdminCustomers([])
     setAdminCustomersError('')
     setAdminCustomersNotice('')
@@ -4023,6 +4058,71 @@ function App() {
       setAdminOrdersError(lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.')
     } finally {
       setAdminOrdersLoading(false)
+    }
+  }
+
+  const loadAdminInvoiceComparisons = async () => {
+    setAdminInvoiceComparisonsLoading(true)
+    setAdminInvoiceComparisonsError('')
+    try {
+      const response = await adminFetch('/api/admin/invoice-comparisons')
+      const payload = (await response.json()) as { requests?: AdminInvoiceComparison[]; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminInvoiceComparisonsError(payload.message ?? 'Laskuvertailujen haku epäonnistui.')
+        return
+      }
+      setAdminInvoiceComparisons(Array.isArray(payload.requests) ? payload.requests : [])
+    } catch {
+      setAdminInvoiceComparisonsError('Laskuvertailujen haku epäonnistui.')
+    } finally {
+      setAdminInvoiceComparisonsLoading(false)
+    }
+  }
+
+  const updateAdminInvoiceComparisonDraft = (
+    requestId: string,
+    changes: Partial<Pick<AdminInvoiceComparison, 'status' | 'internalNote'>>,
+  ) => {
+    setAdminInvoiceComparisons((current) => current.map((request) => (
+      request.id === requestId ? { ...request, ...changes } : request
+    )))
+    setAdminInvoiceComparisonsNotice('')
+  }
+
+  const saveAdminInvoiceComparison = async (request: AdminInvoiceComparison) => {
+    setAdminInvoiceComparisonSavingId(request.id)
+    setAdminInvoiceComparisonsError('')
+    setAdminInvoiceComparisonsNotice('')
+    try {
+      const response = await adminFetch(`/api/admin/invoice-comparisons/${encodeURIComponent(request.id)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          status: request.status,
+          internalNote: request.internalNote,
+        }),
+      })
+      const payload = (await response.json()) as { request?: AdminInvoiceComparison; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.request) {
+        setAdminInvoiceComparisonsError(payload.message ?? 'Laskuvertailun tallennus epäonnistui.')
+        return
+      }
+      setAdminInvoiceComparisons((current) => current.map((item) => (
+        item.id === request.id ? payload.request as AdminInvoiceComparison : item
+      )))
+      setAdminInvoiceComparisonsNotice('Laskuvertailu tallennettu.')
+    } catch {
+      setAdminInvoiceComparisonsError('Laskuvertailun tallennus epäonnistui.')
+    } finally {
+      setAdminInvoiceComparisonSavingId(null)
     }
   }
 
@@ -5702,6 +5802,113 @@ function App() {
                     )}
                   </div>
 
+                  <div className="admin-invoice-comparisons">
+                    <div className="admin-orders-head">
+                      <div className="admin-section-title">
+                        <h3>Laskuvertailut</h3>
+                        <span className="muted small">Uusimmat pyynnöt näkyvät ylimpänä.</span>
+                      </div>
+                      <button
+                        className="ghost tiny"
+                        type="button"
+                        onClick={() => void loadAdminInvoiceComparisons()}
+                        disabled={adminInvoiceComparisonsLoading}
+                      >
+                        Päivitä
+                      </button>
+                    </div>
+                    {adminInvoiceComparisonsNotice && <div className="success">{adminInvoiceComparisonsNotice}</div>}
+                    {adminInvoiceComparisonsError && <div className="error">{adminInvoiceComparisonsError}</div>}
+                    {adminInvoiceComparisonsLoading ? (
+                      <p className="muted">Haetaan laskuvertailuja...</p>
+                    ) : adminInvoiceComparisons.length === 0 ? (
+                      <p className="muted">Ei laskuvertailupyyntöjä vielä.</p>
+                    ) : (
+                      <div className="admin-invoice-comparison-list">
+                        {adminInvoiceComparisons.map((request) => (
+                          <article className="admin-invoice-comparison-card" key={request.id}>
+                            <div className="admin-order-top">
+                              <div>
+                                <strong>{request.company}</strong>
+                                <p className="muted small">{formatDateTime(request.createdAt, lang)}</p>
+                              </div>
+                              <span className={`invoice-comparison-badge is-${request.status}`}>
+                                {request.status === 'new'
+                                  ? 'Uusi'
+                                  : request.status === 'processing'
+                                    ? 'Käsittelyssä'
+                                    : request.status === 'offer_sent'
+                                      ? 'Tarjous lähetetty'
+                                      : 'Valmis'}
+                              </span>
+                            </div>
+
+                            <div className="admin-invoice-comparison-details">
+                              <p><strong>Yhteyshenkilö:</strong> {request.contactName}</p>
+                              <p><strong>Sähköposti:</strong> <a href={`mailto:${request.email}`}>{request.email}</a></p>
+                              <p><strong>Puhelin:</strong> {request.phone || '-'}</p>
+                              <p><strong>Tiedosto:</strong> {request.attachment.originalName} ({(request.attachment.size / (1024 * 1024)).toFixed(2)} Mt)</p>
+                            </div>
+                            {request.message && (
+                              <div className="admin-invoice-comparison-message">
+                                <strong>Viesti</strong>
+                                <p>{request.message}</p>
+                              </div>
+                            )}
+
+                            <div className="admin-invoice-comparison-controls">
+                              <label>
+                                <span>Status</span>
+                                <select
+                                  value={request.status}
+                                  onChange={(event) => updateAdminInvoiceComparisonDraft(request.id, {
+                                    status: event.target.value as InvoiceComparisonStatus,
+                                  })}
+                                >
+                                  <option value="new">Uusi</option>
+                                  <option value="processing">Käsittelyssä</option>
+                                  <option value="offer_sent">Tarjous lähetetty</option>
+                                  <option value="done">Valmis</option>
+                                </select>
+                              </label>
+                              <label className="admin-invoice-comparison-note">
+                                <span>Sisäinen muistiinpano</span>
+                                <textarea
+                                  rows={3}
+                                  maxLength={5000}
+                                  value={request.internalNote}
+                                  onChange={(event) => updateAdminInvoiceComparisonDraft(request.id, {
+                                    internalNote: event.target.value,
+                                  })}
+                                  placeholder="Näkyy vain adminissa"
+                                />
+                              </label>
+                            </div>
+
+                            <div className="admin-invoice-comparison-actions">
+                              <a
+                                className="ghost tiny"
+                                href={`/api/admin/invoice-comparisons/${encodeURIComponent(request.id)}/file`}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                Avaa lasku
+                              </a>
+                              <button
+                                className="primary tiny"
+                                type="button"
+                                disabled={adminInvoiceComparisonSavingId === request.id}
+                                onClick={() => void saveAdminInvoiceComparison(request)}
+                              >
+                                {adminInvoiceComparisonSavingId === request.id ? 'Tallennetaan...' : 'Tallenna'}
+                              </button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
                   <div className="admin-customer-prices" id="admin-customer-prices">
                     <div className="admin-orders-head">
                       <div className="admin-section-title">
@@ -7190,6 +7397,32 @@ function App() {
         </section>
 
         {utilityHighlights}
+
+        <aside className="section invoice-comparison-home-slot" aria-labelledby="invoice-comparison-home-title">
+          <div className="invoice-comparison-home-card">
+            <img
+              className="invoice-comparison-home-image"
+              src={invoiceComparisonImage}
+              alt="Lähetä yrityksesi lasku Suomen Paperitukulle"
+              loading="lazy"
+            />
+            <div className="invoice-comparison-home-copy">
+              <span>{lang === 'fi' ? 'Laskuvertailu yrityksille' : 'Invoice comparison for businesses'}</span>
+              <h2 id="invoice-comparison-home-title">
+                {lang === 'fi' ? 'Yrityksesi maksaa turhaan liikaa' : 'Your business is paying too much'}
+              </h2>
+              <p>
+                {lang === 'fi'
+                  ? 'Lähetä nykyinen laskusi, ja lupaamme merkittävästi edullisemman tarjouksen samoista tuotteista!'
+                  : 'Send us your current invoice and we promise a significantly more affordable offer for the same products.'}
+              </p>
+              <small>{lang === 'fi' ? 'Ilmainen vertailu. Ei sido mihinkään.' : 'Free comparison. No commitment.'}</small>
+            </div>
+            <a className="invoice-comparison-home-link" href="/laheta-laskusi">
+              {lang === 'fi' ? 'Lähetä lasku' : 'Send invoice'}
+            </a>
+          </div>
+        </aside>
 
         <section className="section mobile-store-tools" aria-label={lang === 'fi' ? 'Mobiilin kauppatyökalut' : 'Mobile store tools'}>
           <div className="mobile-store-tools-shell">

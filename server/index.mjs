@@ -83,6 +83,15 @@ import { renderGoogleMerchantXml } from './merchant-feed.mjs'
 import { createDeliveryNotePdf, getDeliveryNoteFilename } from './delivery-note.mjs'
 import { createReceiptAttachment } from './receipt.mjs'
 import { forceGuestCardCheckout } from './checkout-guards.mjs'
+import {
+  InvoiceComparisonError,
+  MAX_INVOICE_FILE_BYTES,
+  createInvoiceComparisonStore,
+  receiveInvoiceComparisonUpload,
+  serializeInvoiceComparisonForAdmin,
+} from './invoice-comparison-store.mjs'
+import { renderInvoiceComparisonPage } from './invoice-comparison-page.mjs'
+import { createInvoiceComparisonMailMessages } from './invoice-comparison-mail.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -107,6 +116,10 @@ const dataDir = path.resolve(projectRoot, 'data')
 const ordersFile = path.join(dataDir, 'orders.json')
 const publicDir = path.join(projectRoot, 'public')
 const distDir = path.join(projectRoot, 'dist')
+const invoiceComparisonDataDir = path.resolve(
+  projectRoot,
+  String(process.env.INVOICE_COMPARISON_DATA_DIR ?? 'data/invoice-comparisons').trim(),
+)
 
 const smtpUser = readFirstEnvValue(process.env, ['SMTP_USER', 'SMTP_USERNAME', 'MAIL_USER', 'MAIL_USERNAME', 'GMAIL_USER'])
 const smtpPass = readFirstEnvValue(process.env, ['SMTP_PASS', 'SMTP_PASSWORD', 'MAIL_PASS', 'MAIL_PASSWORD', 'GMAIL_APP_PASSWORD', 'GMAIL_PASS'])
@@ -116,6 +129,8 @@ const smtpPort = Number.parseInt(readFirstEnvValue(process.env, ['SMTP_PORT', 'M
 const smtpSecureEnv = readFirstEnvValue(process.env, ['SMTP_SECURE', 'MAIL_SECURE']).toLowerCase()
 const mailFrom = readFirstEnvValue(process.env, ['MAIL_FROM', 'SMTP_FROM']) || 'Suomen Paperitukku <info@suomenpaperitukku.fi>'
 const ownerNotificationEmail = readFirstEnvValue(process.env, ['MAIL_TO', 'OWNER_EMAIL', 'ORDER_NOTIFICATION_EMAIL']) || 'umut.uygur30@gmail.com'
+const invoiceComparisonNotificationEmail =
+  readFirstEnvValue(process.env, ['INVOICE_COMPARISON_NOTIFICATION_EMAIL']) || ownerNotificationEmail
 const fallbackOwnerEmail = 'umut.uygur30@gmail.com'
 const ownerNotificationRecipients = Array.from(new Set([ownerNotificationEmail.trim(), fallbackOwnerEmail].filter(Boolean)))
 const adminUser = readFirstEnvValue(process.env, ['ADMIN_USER', 'ADMIN_USERNAME', 'ADMIN_EMAIL'])
@@ -141,7 +156,9 @@ const customerSessionMaxAgeMs = 1000 * 60 * 60 * 24 * 30
 const adminSessions = new Map()
 const customerSessions = new Map()
 const passwordResetRateBuckets = new Map()
+const invoiceComparisonRateBuckets = new Map()
 const shippingOrdersInProgress = new Set()
+const invoiceComparisonStore = createInvoiceComparisonStore({ rootDir: invoiceComparisonDataDir })
 const paytrailConfig = getPaytrailConfig(process.env)
 const paytrailConfigErrorMessage =
   'Paytrail is not configured on the server. Set PAYTRAIL_ACCOUNT_ID (or PAYTRAIL_MERCHANT_ID) and PAYTRAIL_SECRET.'
@@ -154,6 +171,8 @@ const siteTimeZone = 'Europe/Helsinki'
 const passwordResetResponseMessage = 'Jos sähköpostiosoitteella löytyy tili, lähetimme ohjeet salasanan vaihtamiseen.'
 const passwordResetTokenErrorMessage = 'Salasanan vaihtolinkki on virheellinen tai vanhentunut.'
 const passwordResetRateWindowMs = 15 * 60 * 1000
+const invoiceComparisonRateWindowMs = 60 * 60 * 1000
+const invoiceComparisonRateMax = 5
 
 if (!smtpUser || !smtpPass) {
   console.warn('[mail] SMTP credentials are missing, so welcome and order emails are disabled. Set SMTP_USER/SMTP_PASS or aliases such as SMTP_USERNAME/SMTP_PASSWORD.')
@@ -548,6 +567,31 @@ const isPasswordResetRateLimited = (req, email) => {
   const ipKey = `ip:${crypto.createHash('sha256').update(String(req.ip ?? '')).digest('hex')}`
   const emailKey = `email:${crypto.createHash('sha256').update(normalizeEmail(email)).digest('hex')}`
   return consumePasswordResetRateBucket(ipKey, 10) || consumePasswordResetRateBucket(emailKey, 3)
+}
+
+const isInvoiceComparisonRateLimited = (req, now = Date.now()) => {
+  const key = crypto.createHash('sha256').update(String(req.ip ?? '')).digest('hex')
+  const activeAttempts = (invoiceComparisonRateBuckets.get(key) ?? []).filter(
+    (attemptedAt) => attemptedAt > now - invoiceComparisonRateWindowMs,
+  )
+  const limited = activeAttempts.length >= invoiceComparisonRateMax
+  if (!limited) {
+    activeAttempts.push(now)
+  }
+  invoiceComparisonRateBuckets.set(key, activeAttempts)
+
+  if (invoiceComparisonRateBuckets.size > 2_000) {
+    for (const [bucketKey, attempts] of invoiceComparisonRateBuckets.entries()) {
+      const active = attempts.filter((attemptedAt) => attemptedAt > now - invoiceComparisonRateWindowMs)
+      if (active.length > 0) {
+        invoiceComparisonRateBuckets.set(bucketKey, active)
+      } else {
+        invoiceComparisonRateBuckets.delete(bucketKey)
+      }
+    }
+  }
+
+  return limited
 }
 
 const normalizePostalCode = (value) => String(value ?? '').replace(/\D/g, '').slice(0, 5)
@@ -1432,6 +1476,31 @@ const sendOrderEmails = async (order, { attachReceipt = false } = {}) => {
   )
 }
 
+const sendInvoiceComparisonEmails = async (record) => {
+  try {
+    const attachment = await invoiceComparisonStore.getAttachment(record.id)
+    if (!attachment) {
+      return { ok: false, message: 'Stored invoice attachment was not found.' }
+    }
+
+    return sendMailBatch(
+      createInvoiceComparisonMailMessages({
+        record,
+        attachmentPath: attachment.filePath,
+        from: mailFrom,
+        notificationEmail: invoiceComparisonNotificationEmail,
+      }),
+      `invoice-comparison:${record.id}`,
+    )
+  } catch (error) {
+    console.error(`[mail] invoice-comparison:${record.id} failed before send`, error)
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Failed to prepare invoice comparison email',
+    }
+  }
+}
+
 const normalizeIncomingProduct = (body, productId = null) => {
   const existingProduct = productId ? readCatalog().products.find((item) => item.id === productId) ?? null : null
   const searchKeywords = Array.isArray(body.searchKeywords)
@@ -1646,6 +1715,7 @@ ensureOrdersStore()
 ensureCustomerStore()
 ensureCustomerPriceStore()
 ensurePasswordResetStore()
+await invoiceComparisonStore.ensure()
 
 app.use(express.static(publicDir, { index: false, setHeaders: setStaticAssetHeaders }))
 app.use(express.static(distDir, { index: false, setHeaders: setStaticAssetHeaders }))
@@ -1885,6 +1955,49 @@ app.post('/api/customer/logout', (req, res) => {
   res.json({ ok: true })
 })
 
+app.post('/api/invoice-comparisons', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+
+  if (isInvoiceComparisonRateLimited(req)) {
+    res.status(429).json({ message: 'Lähetyksiä on tehty liian monta. Yritä myöhemmin uudelleen.' })
+    return
+  }
+
+  const declaredLength = Number(req.headers['content-length'] ?? 0)
+  if (Number.isFinite(declaredLength) && declaredLength > MAX_INVOICE_FILE_BYTES + 128 * 1024) {
+    res.status(413).json({ message: 'Laskutiedosto saa olla enintään 10 Mt.' })
+    return
+  }
+
+  let receivedUpload = null
+  try {
+    receivedUpload = await receiveInvoiceComparisonUpload(req, {
+      uploadsDir: invoiceComparisonStore.uploadsDir,
+    })
+    const record = await invoiceComparisonStore.create(receivedUpload.fields, receivedUpload.attachment)
+    receivedUpload = null
+    const mailResult = await sendInvoiceComparisonEmails(record)
+    res.status(201).json({
+      ok: true,
+      mailWarning: !mailResult.ok,
+      message: 'Kiitos! Käymme laskusi läpi ja palaamme sinulle mahdollisimman pian paremman tarjouksen kanssa.',
+    })
+  } catch (error) {
+    if (receivedUpload?.attachment?.storedName) {
+      await invoiceComparisonStore.removeAttachment(receivedUpload.attachment.storedName)
+    }
+    const status = error instanceof InvoiceComparisonError ? error.status : 500
+    if (status >= 500) {
+      console.error(`[invoice-comparison] Request failed (${error instanceof Error ? error.name : 'UnknownError'}).`)
+    }
+    res.status(status).json({
+      message: error instanceof InvoiceComparisonError
+        ? error.message
+        : 'Laskun lähetys epäonnistui. Yritä hetken kuluttua uudelleen.',
+    })
+  }
+})
+
 app.get('/api/admin/session', (req, res) => {
   const session = getAdminSession(req)
   if (!session) {
@@ -1926,6 +2039,67 @@ app.post('/api/admin/logout', (req, res) => {
 
   res.setHeader('Set-Cookie', clearSessionCookie(req, adminSessionCookieName))
   res.json({ ok: true })
+})
+
+app.get('/api/admin/invoice-comparisons', requireAdmin, async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  try {
+    const requests = await invoiceComparisonStore.list()
+    res.json({ requests: requests.map(serializeInvoiceComparisonForAdmin) })
+  } catch (error) {
+    console.error(`[invoice-comparison] Admin list failed (${error instanceof Error ? error.name : 'UnknownError'}).`)
+    res.status(500).json({ message: 'Laskuvertailujen haku epäonnistui.' })
+  }
+})
+
+app.patch('/api/admin/invoice-comparisons/:requestId', requireAdmin, async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  try {
+    const record = await invoiceComparisonStore.update(req.params.requestId, {
+      status: req.body?.status,
+      internalNote: req.body?.internalNote,
+    })
+    if (!record) {
+      res.status(404).json({ message: 'Laskuvertailua ei löytynyt.' })
+      return
+    }
+    res.json({ ok: true, request: serializeInvoiceComparisonForAdmin(record) })
+  } catch (error) {
+    const status = error instanceof InvoiceComparisonError ? error.status : 500
+    res.status(status).json({
+      message: error instanceof InvoiceComparisonError ? error.message : 'Laskuvertailun tallennus epäonnistui.',
+    })
+  }
+})
+
+app.get('/api/admin/invoice-comparisons/:requestId/file', requireAdmin, async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  try {
+    const attachment = await invoiceComparisonStore.getAttachment(req.params.requestId)
+    if (!attachment) {
+      res.status(404).json({ message: 'Laskutiedostoa ei löytynyt.' })
+      return
+    }
+
+    const originalName = attachment.record.attachment.originalName || 'lasku'
+    res.type(attachment.record.attachment.mimeType)
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(originalName)}`)
+    const stream = fs.createReadStream(attachment.filePath)
+    stream.once('error', () => {
+      if (!res.headersSent) {
+        res.status(500).json({ message: 'Laskutiedoston avaaminen epäonnistui.' })
+      } else {
+        res.destroy()
+      }
+    })
+    stream.pipe(res)
+  } catch (error) {
+    console.error(`[invoice-comparison] Admin file open failed (${error instanceof Error ? error.name : 'UnknownError'}).`)
+    if (!res.headersSent) {
+      res.status(500).json({ message: 'Laskutiedoston avaaminen epäonnistui.' })
+    }
+  }
 })
 
 app.get('/api/admin/customers', requireAdmin, (req, res) => {
@@ -2726,6 +2900,11 @@ app.get('/tuote/:slug', (req, res) => {
       related,
     }),
   )
+})
+
+app.get('/laheta-laskusi', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache')
+  res.type('html').send(renderInvoiceComparisonPage({ siteUrl: getSiteUrl(req) }))
 })
 
 app.get(/^(?!\/api\/|\/robots\.txt$|\/sitemap\.xml$|\/og\/).*/, (req, res) => {
