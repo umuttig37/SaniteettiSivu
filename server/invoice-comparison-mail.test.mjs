@@ -35,7 +35,12 @@ test('invoice comparison creates exactly one customer confirmation and one inter
     path: 'C:\\private\\uploads\\random.pdf',
     contentType: 'application/pdf',
   }])
-  assert.match(messages[0].subject, /vastaanotettu/i)
+  assert.equal(messages[0].subject, 'Laskusi on vastaanotettu | Suomen Paperitukku')
+  assert.match(messages[0].html, /Hei Testi!/)
+  assert.match(messages[0].html, /Lasku vastaanotettu/)
+  assert.match(messages[0].html, /Tavoitteemme on pienent&auml;&auml; yrityksesi nykyisi&auml; hankintakuluja merkitt&auml;v&auml;sti\./)
+  assert.match(messages[0].html, /Vertailu on t&auml;ysin ilmainen eik&auml; sido mihink&auml;&auml;n\./)
+  assert.match(messages[0].html, /Jos tarvitsemme laskuun liittyen lis&auml;tietoja, olemme sinuun yhteydess&auml;\./)
   assert.match(messages[1].subject, /uusi laskuvertailupyyntö/i)
 })
 
