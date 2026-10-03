@@ -19,7 +19,7 @@ const fields = {
   message: 'Testiviesti',
 }
 
-const createMultipartRequest = ({ file, filename, mimeType }) => {
+const createMultipartRequest = ({ file, filename, mimeType, chunkSize = 0 }) => {
   const boundary = `----spt-${Date.now()}-${Math.random().toString(16).slice(2)}`
   const chunks = []
   for (const [name, value] of Object.entries(fields)) {
@@ -29,7 +29,11 @@ const createMultipartRequest = ({ file, filename, mimeType }) => {
   chunks.push(file)
   chunks.push(Buffer.from(`\r\n--${boundary}--\r\n`))
   const body = Buffer.concat(chunks)
-  const request = Readable.from(body)
+  const requestChunks = chunkSize > 0
+    ? Array.from({ length: Math.ceil(body.length / chunkSize) }, (_, index) =>
+        body.subarray(index * chunkSize, Math.min((index + 1) * chunkSize, body.length)))
+    : [body]
+  const request = Readable.from(requestChunks)
   request.headers = {
     'content-type': `multipart/form-data; boundary=${boundary}`,
     'content-length': String(body.length),
@@ -49,9 +53,14 @@ const withTempStore = async (callback) => {
 
 const validFiles = [
   { name: 'PDF', filename: 'lasku.pdf', mimeType: 'application/pdf', bytes: Buffer.from('%PDF-1.7\nmock') },
-  { name: 'JPG', filename: 'lasku.jpg', mimeType: 'image/jpeg', bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]) },
+  { name: 'iPhone camera JPEG', filename: 'image.jpg', mimeType: 'image/jpeg', bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]) },
+  { name: 'mobile JPEG with a generic MIME type', filename: 'image.jpg', mimeType: 'application/octet-stream', expectedMime: 'image/jpeg', bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]) },
+  { name: 'mobile PDF with a generic MIME type', filename: 'lasku.pdf', mimeType: 'application/octet-stream', expectedMime: 'application/pdf', bytes: Buffer.from('%PDF-1.7\nmobile') },
+  { name: 'mobile PDF with an alternate MIME type', filename: 'lasku.pdf', mimeType: 'application/x-pdf', bytes: Buffer.from('%PDF-1.7\nmobile-alias') },
+  { name: 'extensionless mobile JPEG', filename: 'image', mimeType: 'image/jpeg', expectedMime: 'image/jpeg', expectedExtension: '.jpg', bytes: Buffer.from([0xff, 0xd8, 0xff, 0xe1, 0x00, 0x10]) },
+  { name: 'iPhone HEIC whose provider reports a JPG filename', filename: 'image.jpg', mimeType: 'image/heic', expectedMime: 'image/heic', expectedExtension: '.heic', bytes: Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]) },
   { name: 'PNG', filename: 'lasku.png', mimeType: 'image/png', bytes: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00]) },
-  { name: 'WebP', filename: 'lasku.webp', mimeType: 'image/webp', bytes: Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) },
+  { name: 'Android WebP', filename: 'image.webp', mimeType: 'image/webp', bytes: Buffer.from([0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50]) },
   { name: 'HEIC from a phone with a generic MIME type', filename: 'lasku.heic', mimeType: 'application/octet-stream', expectedMime: 'image/heic', bytes: Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]) },
   { name: 'HEIF', filename: 'lasku.heif', mimeType: 'image/heif', bytes: Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x69, 0x66, 0x31]) },
   { name: 'AVIF', filename: 'lasku.avif', mimeType: 'image/avif', bytes: Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66]) },
@@ -74,6 +83,9 @@ for (const fixture of validFiles) {
       assert.equal(record.company, fields.company)
       assert.equal(record.status, 'new')
       assert.equal(attachment?.record.attachment.mimeType, fixture.expectedMime ?? fixture.mimeType)
+      if (fixture.expectedExtension) {
+        assert.equal(path.extname(attachment.record.attachment.storedName), fixture.expectedExtension)
+      }
       assert.deepEqual(await fs.promises.readFile(attachment.filePath), fixture.bytes)
     })
   })
@@ -90,6 +102,27 @@ test('upload accepts a file that is exactly 10 MiB', async () => {
     )
 
     assert.equal(upload.attachment.size, MAX_INVOICE_FILE_BYTES)
+    assert.equal((await fs.promises.stat(path.join(store.uploadsDir, upload.attachment.storedName))).size, MAX_INVOICE_FILE_BYTES)
+  })
+})
+
+test('a 10 MiB iPhone-style camera JPEG is accepted when uploaded in mobile-sized chunks', async () => {
+  await withTempStore(async (store) => {
+    await store.ensure()
+    const file = Buffer.alloc(MAX_INVOICE_FILE_BYTES, 0x61)
+    Buffer.from([0xff, 0xd8, 0xff, 0xe1]).copy(file)
+    const upload = await receiveInvoiceComparisonUpload(
+      createMultipartRequest({
+        file,
+        filename: 'image.jpg',
+        mimeType: 'image/jpeg',
+        chunkSize: 64 * 1024,
+      }),
+      { uploadsDir: store.uploadsDir },
+    )
+
+    assert.equal(upload.attachment.size, MAX_INVOICE_FILE_BYTES)
+    assert.equal(upload.attachment.mimeType, 'image/jpeg')
     assert.equal((await fs.promises.stat(path.join(store.uploadsDir, upload.attachment.storedName))).size, MAX_INVOICE_FILE_BYTES)
   })
 })

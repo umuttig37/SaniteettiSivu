@@ -85,7 +85,6 @@ import { createReceiptAttachment } from './receipt.mjs'
 import { forceGuestCardCheckout } from './checkout-guards.mjs'
 import {
   InvoiceComparisonError,
-  MAX_INVOICE_FILE_BYTES,
   createInvoiceComparisonStore,
   receiveInvoiceComparisonUpload,
   serializeInvoiceComparisonForAdmin,
@@ -1501,6 +1500,16 @@ const sendInvoiceComparisonEmails = async (record) => {
   }
 }
 
+const queueInvoiceComparisonEmails = (record) => {
+  setImmediate(() => {
+    void sendInvoiceComparisonEmails(record).then((result) => {
+      if (!result.ok) {
+        console.error(`[mail] invoice-comparison:${record.id} completed with errors.`)
+      }
+    })
+  })
+}
+
 const normalizeIncomingProduct = (body, productId = null) => {
   const existingProduct = productId ? readCatalog().products.find((item) => item.id === productId) ?? null : null
   const searchKeywords = Array.isArray(body.searchKeywords)
@@ -1963,12 +1972,6 @@ app.post('/api/invoice-comparisons', async (req, res) => {
     return
   }
 
-  const declaredLength = Number(req.headers['content-length'] ?? 0)
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_INVOICE_FILE_BYTES + 128 * 1024) {
-    res.status(413).json({ message: 'Laskutiedosto saa olla enintään 10 Mt.' })
-    return
-  }
-
   let receivedUpload = null
   try {
     receivedUpload = await receiveInvoiceComparisonUpload(req, {
@@ -1976,12 +1979,12 @@ app.post('/api/invoice-comparisons', async (req, res) => {
     })
     const record = await invoiceComparisonStore.create(receivedUpload.fields, receivedUpload.attachment)
     receivedUpload = null
-    const mailResult = await sendInvoiceComparisonEmails(record)
     res.status(201).json({
       ok: true,
-      mailWarning: !mailResult.ok,
+      mailQueued: true,
       message: 'Kiitos! Käymme laskusi läpi ja palaamme sinulle mahdollisimman pian paremman tarjouksen kanssa.',
     })
+    queueInvoiceComparisonEmails(record)
   } catch (error) {
     if (receivedUpload?.attachment?.storedName) {
       await invoiceComparisonStore.removeAttachment(receivedUpload.attachment.storedName)

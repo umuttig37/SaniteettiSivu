@@ -15,17 +15,17 @@ const hasIsoBaseMediaBrand = (bytes, brands) =>
 const acceptedTypes = [
   {
     extensions: ['.pdf'],
-    mimeTypes: ['application/pdf'],
+    mimeTypes: ['application/pdf', 'application/x-pdf'],
     signature: (bytes) => bytes.subarray(0, 5).toString('ascii') === '%PDF-',
   },
   {
     extensions: ['.jpg', '.jpeg'],
-    mimeTypes: ['image/jpeg', 'image/jpg'],
+    mimeTypes: ['image/jpeg', 'image/jpg', 'image/pjpeg'],
     signature: (bytes) => bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff,
   },
   {
     extensions: ['.png'],
-    mimeTypes: ['image/png'],
+    mimeTypes: ['image/png', 'image/x-png'],
     signature: (bytes) =>
       bytes.length >= 8
       && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
@@ -60,7 +60,7 @@ const acceptedTypes = [
   },
   {
     extensions: ['.tif', '.tiff'],
-    mimeTypes: ['image/tiff'],
+    mimeTypes: ['image/tiff', 'image/x-tiff'],
     signature: (bytes) =>
       bytes.length >= 4
       && (
@@ -121,12 +121,11 @@ const validateFields = (rawFields) => {
 const validateFile = ({ bytes, filename, mimeType, size }) => {
   const normalizedMime = String(mimeType ?? '').toLowerCase()
   const extension = path.extname(String(filename ?? '')).toLowerCase()
-  const expectedType = acceptedExtensions.get(extension)
   const detectedType = acceptedTypes.find((type) => type.signature(bytes))
   const genericMime = !normalizedMime || normalizedMime === 'application/octet-stream'
   const mimeMatches = genericMime || detectedType?.mimeTypes.includes(normalizedMime)
 
-  if (!expectedType || expectedType !== detectedType || !mimeMatches) {
+  if (!detectedType || !mimeMatches) {
     throw new InvoiceComparisonError('Laskun pitää olla PDF tai tuettu kuvatiedosto.')
   }
   if (size <= 0) {
@@ -138,7 +137,10 @@ const validateFile = ({ bytes, filename, mimeType, size }) => {
     : extension === '.heif'
       ? 'image/heif'
       : detectedType.mimeTypes[0]
-  return { mimeType: resolvedMime, extension }
+  const resolvedExtension = acceptedExtensions.get(extension) === detectedType
+    ? extension
+    : detectedType.extensions[0]
+  return { mimeType: resolvedMime, extension: resolvedExtension }
 }
 
 const writeJsonAtomically = async (filePath, value) => {

@@ -70,7 +70,10 @@
       form.reset()
       showStatus('Kiitos! Käymme laskusi läpi ja palaamme sinulle mahdollisimman pian paremman tarjouksen kanssa.', 'success')
     } catch (error) {
-      showStatus(error instanceof Error ? error.message : 'Lähetys epäonnistui. Yritä hetken kuluttua uudelleen.', 'error')
+      const message = error instanceof Error && error.name !== 'TypeError'
+        ? error.message
+        : 'Verkkoyhteys katkesi lähetyksen aikana. Tarkista yhteys ja yritä uudelleen.'
+      showStatus(message, 'error')
     } finally {
       submitButton.disabled = false
       submitButton.textContent = 'Lähetä lasku'
