@@ -1501,6 +1501,7 @@ html {
 .products-section {
   position: relative;
   max-width: 1720px;
+  min-width: 0;
 }
 
 .featured-section {
@@ -1664,6 +1665,7 @@ html {
   grid-template-columns: repeat(6, minmax(0, 1fr));
   justify-content: start;
   gap: 2.35rem 1.95rem;
+  min-width: 0;
 }
 
 @media (max-width: 1380px) {
@@ -1675,6 +1677,8 @@ html {
 
 .product-card {
   width: min(100%, 250px);
+  min-width: 0;
+  max-width: 100%;
   padding: 1rem;
   gap: 0.9rem;
   box-shadow: 0 6px 16px rgba(15, 23, 42, 0.06);
@@ -1706,11 +1710,13 @@ html {
 .product-body {
   display: grid;
   gap: 0.4rem;
+  min-width: 0;
 }
 
 .product-name {
   font-size: 0.98rem;
   line-height: 1.3;
+  overflow-wrap: anywhere;
 }
 
 .product-sku {
@@ -1754,6 +1760,7 @@ html {
 .price-block {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
 }
 
 .price-top {
@@ -1762,6 +1769,8 @@ html {
   gap: 0.32rem;
   flex-wrap: wrap;
   color: #4a93d8;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .price-main {
@@ -1775,6 +1784,15 @@ html {
   font-size: 0.92rem;
   font-weight: 700;
   line-height: 1.1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+@media (hover: none) {
+  .card:hover,
+  .product-card:hover {
+    transform: none;
+  }
 }
 
 .checkout {
@@ -3532,6 +3550,7 @@ html {
   display: grid;
   gap: 0.6rem;
   text-align: left;
+  min-width: 0;
 }
 
 .product-card-button {
@@ -3544,6 +3563,8 @@ html {
   cursor: pointer;
   color: inherit;
   width: 100%;
+  min-width: 0;
+  max-width: 100%;
   text-decoration: none;
 }
 
