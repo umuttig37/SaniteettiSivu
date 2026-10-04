@@ -66,7 +66,7 @@ export const renderInvoiceComparisonPage = ({ siteUrl }) => {
               <li><span>2</span> Vertailemme samat tai vastaavat tuotteet.</li>
               <li><span>3</span> Saat yrityksellesi selkeän tarjouksen.</li>
             </ol>
-            <p class="invoice-privacy-note">Lasku tallennetaan yksityisesti ja sitä käytetään vain tarjousvertailuun, jonka jälkeen se poistetaan.</p>
+            <p class="invoice-privacy-note">Tietosi ja laskusi käsitellään luottamuksellisesti. Laskua käytetään vain vertailun tekemiseen ja se poistetaan järjestelmästä automaattisesti käsittelyn jälkeen.</p>
           </div>
 
           <form class="invoice-form" id="invoice-comparison-form" enctype="multipart/form-data" novalidate>
