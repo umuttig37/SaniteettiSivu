@@ -5032,13 +5032,16 @@ function App() {
       </div>
     </section>
   )
+  const categoryCardCount = categoriesForFilters.length + 1
+  const categoryColumnCount = categoryCardCount <= 7 ? categoryCardCount : Math.ceil(categoryCardCount / 2)
+  const categoryMenuStyle = { '--category-columns': String(Math.min(7, categoryColumnCount)) } as CSSProperties
   const categoryMenu = (
     <div className="category-menu">
       <div className="category-menu-head">
         <h2>{lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}</h2>
         <span>{lang === 'fi' ? 'Valitse kategoria' : 'Choose a category'}</span>
       </div>
-      <nav className="category-grid" aria-label={lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}>
+      <nav className="category-grid" style={categoryMenuStyle} aria-label={lang === 'fi' ? 'Tuotekategoriat' : 'Product categories'}>
         <a className={`category-card ${activeCategory === 'all' ? 'active' : ''}`} href="/" onClick={(event) => { event.preventDefault(); selectCategory('all') }}>
           <strong>{lang === 'fi' ? 'Kaikki tuotteet' : 'All products'}</strong>
         </a>
