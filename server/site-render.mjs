@@ -1,6 +1,13 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  formatMatPrice,
+  getLowestMatPrice,
+  getMinimumPricesBySize,
+  matServiceConfig,
+  matServiceFaq,
+} from './mat-service.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
@@ -596,6 +603,41 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           <p>Suomen edullisimpia saniteettitarvikkeita laskulla?<br />Meilt&auml; mahdollista tilata helposti, nopeasti ja kilpailukykyisin hinnoin.</p>
         </section>
 
+        <section class="section home-service-grid" aria-label="Palvelut yrityksille">
+          <aside class="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
+            <div class="home-service-card-image invoice-comparison-home-image" role="img" aria-label="L&auml;het&auml; yrityksesi lasku Suomen Paperitukulle"></div>
+            <div class="home-service-card-body">
+              <div class="invoice-comparison-home-copy">
+                <span>Laskuvertailu yrityksille</span>
+                <h2 id="invoice-comparison-home-title">Yrityksesi maksaa turhaan liikaa</h2>
+                <p>L&auml;het&auml; nykyinen laskusi, ja lupaamme merkitt&auml;v&auml;sti edullisemman tarjouksen samoista tuotteista!</p>
+              </div>
+              <a class="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">L&auml;het&auml; lasku</a>
+            </div>
+          </aside>
+
+          <article class="home-service-card mat-service-home-card" aria-labelledby="home-mat-service-title">
+            <img class="home-service-card-image mat-service-home-image" src="/images/mattopalvelu/home-mat-service.png" alt="Harmaa vaihtomatto yrityksen sis&auml;&auml;nk&auml;ynniss&auml;" loading="lazy" />
+            <div class="home-service-card-body">
+              <div class="mat-service-home-topline">
+                <img class="mat-service-home-logo" src="/images/mattopalvelu/lindstrom-logo-hq.png" alt="Lindstr&ouml;m" width="128" height="26" />
+                <div class="mat-service-home-price-wrap">
+                  <strong class="mat-service-home-price">
+                    <svg class="mat-service-home-price-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1 0-2.8V4.5a1.5 1.5 0 0 1 1.5-1.5H11a2 2 0 0 1 1.4.6l8.2 7a2 2 0 0 1 0 2.8ZM7.5 7.5h.01" /></svg>
+                    <span>Alkaen <b>${formatMatPrice(getLowestMatPrice())} &euro;</b>/viikko</span>
+                  </strong>
+                  <svg class="mat-service-home-spark" viewBox="0 0 28 24" aria-hidden="true"><path d="M6 9 9.5 2M12 11.5 21 7.5M12.5 16 21.5 18.5" /></svg>
+                </div>
+              </div>
+              <div class="mat-service-home-copy">
+                <h2 id="home-mat-service-title">Lindstr&ouml;m-vaihtomatot yrityksille</h2>
+                <p>Puhtaat ja edustavat mattoratkaisut yrityksesi tiloihin. Joustavat vaihtoehdot ja vaivaton palvelu.</p>
+              </div>
+              <a class="home-service-card-link invoice-comparison-home-link" href="/vaihtomatot-yrityksille">Tutustu mattopalveluun</a>
+            </div>
+          </article>
+        </section>
+
         <section class="section" id="categories">
           <h2>Kategoriat</h2>
           <div class="category-grid">
@@ -779,13 +821,13 @@ const renderHead = ({ siteUrl, meta }) => {
     <meta property="og:type" content="${escapeHtml(meta.type ?? 'website')}" />
     <meta property="og:locale" content="fi_FI" />
     <meta property="og:site_name" content="Suomen Paperitukku" />
-    <meta property="og:title" content="${escapeHtml(meta.title)}" />
-    <meta property="og:description" content="${escapeHtml(meta.description)}" />
+    <meta property="og:title" content="${escapeHtml(meta.ogTitle ?? meta.title)}" />
+    <meta property="og:description" content="${escapeHtml(meta.ogDescription ?? meta.description)}" />
     <meta property="og:url" content="${escapeHtml(canonical)}" />
     <meta property="og:image" content="${escapeHtml(image)}" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="${escapeHtml(meta.title)}" />
-    <meta name="twitter:description" content="${escapeHtml(meta.description)}" />
+    <meta name="twitter:title" content="${escapeHtml(meta.ogTitle ?? meta.title)}" />
+    <meta name="twitter:description" content="${escapeHtml(meta.ogDescription ?? meta.description)}" />
     <meta name="twitter:image" content="${escapeHtml(image)}" />
     <meta name="twitter:url" content="${escapeHtml(canonical)}" />
     <link rel="canonical" href="${escapeHtml(canonical)}" />
@@ -1109,6 +1151,137 @@ const renderUtilityMarkup = (route) => {
   `
 }
 
+const renderMatServiceMarkup = () => {
+  const lowestPrice = formatMatPrice(getLowestMatPrice())
+  const quoteServiceTypes = matServiceConfig.services.industrial.enabled === false
+    ? 'designmaton'
+    : 'designmaton, teollisuusmaton'
+  const startingPrice = (interval) => formatMatPrice(Math.min(
+    ...matServiceConfig.sizes.map((size) => getMinimumPricesBySize(size)[interval]),
+  ))
+  const faqMarkup = matServiceFaq
+    .map((item) => `<details><summary>${escapeHtml(item.question)}</summary><p>${escapeHtml(item.answer)}</p></details>`)
+    .join('')
+
+  return `
+    <div class="page">
+      <header class="top">
+        <a class="brand" href="/" aria-label="Suomen Paperitukku etusivu">
+          <img src="/brand-logo.png" alt="Suomen Paperitukku logo" decoding="async" fetchpriority="high" />
+        </a>
+        <nav class="nav" aria-label="P&auml;&auml;navigaatio">
+          <a class="nav-button" href="/#categories">Kategoriat</a>
+          <a class="nav-button" href="/#products">Tuotteet</a>
+          <a class="nav-button header-contact-link" href="/#contact">Yhteystiedot</a>
+        </nav>
+      </header>
+      <main>
+        <div class="mat-service-page">
+          <nav class="mat-section mat-breadcrumbs" aria-label="Murupolku">
+            <a href="/">Etusivu</a><span aria-hidden="true">/</span><span>Palvelut</span><span aria-hidden="true">/</span><span>Lindstr&ouml;m-vaihtomatot yrityksille</span>
+          </nav>
+          <section class="mat-hero">
+            <img class="mat-hero-media" src="${escapeHtml(matServiceConfig.images.hero)}" alt="" fetchpriority="high" />
+            <div class="mat-hero-copy">
+              <span class="mat-eyebrow">Lindstr&ouml;m-mattovuokraus yrityksille</span>
+              <h1>Lindstr&ouml;m-vaihtomatot yrityksille</h1>
+              <p>Tilaa Lindstr&ouml;m-vaihtomatot yrityksellesi Suomen Paperitukun kautta. Valitse sopiva koko, v&auml;ri ja vaihtov&auml;li tai pyyd&auml; tarjous.</p>
+              <div class="mat-hero-actions">
+                <a class="primary" href="#mat-wizard">Laske hinta</a>
+                <a class="ghost" href="#mat-quote">Pyyd&auml; tarjous</a>
+              </div>
+            </div>
+            <div class="mat-hero-price"><span>Alkaen</span><strong>${lowestPrice} &euro;</strong><small>/ matto / viikko + alv</small></div>
+          </section>
+          <section class="mat-section mat-intro">
+            <span class="mat-eyebrow">${escapeHtml(matServiceConfig.marketingMessage)}</span>
+            <h2>Mattovuokraus helposti Suomen Paperitukulta</h2>
+            <p>Suomen Paperitukun Lindstr&ouml;m-vaihtomattopalvelu on helppo ratkaisu yrityksen sis&auml;&auml;nk&auml;yntien ja kulkuv&auml;ylien siisteyteen. Mattovuokrauksessa valitset yrityksellesi sopivan maton koon, v&auml;rin ja vaihtov&auml;lin. Palvelu sopii esimerkiksi toimistoihin, myym&auml;l&ouml;ihin, ravintoloihin, halleihin ja muihin toimitiloihin.</p>
+            <p>Vuokramatto v&auml;hent&auml;&auml; sis&auml;tiloihin kulkeutuvaa likaa ja helpottaa toimitilojen puhtaanapitoa. Lindstr&ouml;m-vaihtomatto vaihdetaan puhtaaseen sovitun vaihtov&auml;lin mukaisesti.</p>
+          </section>
+          <section class="mat-section mat-benefits" aria-label="Lindstr&ouml;m-vaihtomattopalvelun hy&ouml;dyt">
+            <article><span>&check;</span><div><h3>Puhtaat Lindstr&ouml;m-vaihtomatot</h3><p>Matot vaihdetaan puhtaisiin sovitun vaihtov&auml;lin mukaisesti.</p></div></article>
+            <article><span>&check;</span><div><h3>Ei omaa mattopesua</h3><p>Mattopalvelu v&auml;hent&auml;&auml; tarvetta huolehtia yrityksen mattojen pesusta itse.</p></div></article>
+            <article><span>&check;</span><div><h3>Valitse sopiva vaihtov&auml;li</h3><p>Valitse vaihto kerran kuukaudessa, kahdesti kuukaudessa tai viikoittain.</p></div></article>
+            <article><span>&check;</span><div><h3>Kilpailukykyinen yrityshinta</h3><p>Lindstr&ouml;m-vaihtomattopalvelu alkaen ${lowestPrice} &euro; / matto / viikko + alv.</p></div></article>
+          </section>
+          <section class="mat-section mat-price-section" id="mat-prices">
+            <div class="mat-section-heading"><span class="mat-eyebrow">Selke&auml; yrityshinnasto</span><h2>Lindstr&ouml;m-vaihtomattojen hinnat yrityksille</h2><p>Mattovuokrauksen hinta m&auml;&auml;r&auml;ytyy maton koon, v&auml;rin, vaihtov&auml;lin ja m&auml;&auml;r&auml;n perusteella. Valitse sopiva vaihtov&auml;li, niin me hoidamme mattojen pesun ja vaihdon puolestasi.</p></div>
+            <div class="mat-price-showcase">
+              <h3>Matot yrityksellesi alkaen ${lowestPrice} &euro;/viikko</h3>
+              <p>Selke&auml;t aloitushinnat eri vaihtov&auml;leille.</p>
+              <div class="mat-price-cards">
+                <article><h4>Kerran kuukaudessa</h4><span>Alkaen</span><strong>${startingPrice('monthly')} &euro;</strong><small>/ viikko</small><p>Kevyeen k&auml;ytt&ouml;&ouml;n</p></article>
+                <article><h4>2 kertaa kuukaudessa</h4><span>Alkaen</span><strong>${startingPrice('twiceMonthly')} &euro;</strong><small>/ viikko</small><p>Arjen varma valinta</p></article>
+                <article><h4>Joka viikko</h4><span>Alkaen</span><strong>${startingPrice('weekly')} &euro;</strong><small>/ viikko</small><p>Vilkkaisiin tiloihin</p></article>
+              </div>
+              <p class="mat-price-note">Hinnat alv 0 %.</p>
+              <a class="mat-price-cta" href="#mat-wizard"><span><strong>Laske yrityksellesi sopiva hinta</strong><small>Valitse koko, v&auml;ri ja vaihtov&auml;li alla olevasta laskurista.</small></span><span aria-hidden="true">&darr;</span></a>
+            </div>
+          </section>
+          <section class="mat-section mat-calculator" id="mat-wizard">
+            <div class="mat-section-heading"><span class="mat-eyebrow">Hintalaskuri ja tilauspyynt&ouml;</span><h2>Laske hinta helposti ja tilaa</h2><p>Valitse maton koko, v&auml;ri, vaihtov&auml;li ja m&auml;&auml;r&auml;. N&auml;et hinnan heti.</p></div>
+            <noscript><p>Hintalaskurin k&auml;ytt&ouml; vaatii JavaScriptin. Voit silti pyyt&auml;&auml; tarjouksen s&auml;hk&ouml;postitse osoitteesta <a href="mailto:info@suomenpaperitukku.fi">info@suomenpaperitukku.fi</a>.</p></noscript>
+          </section>
+          <section class="mat-section mat-how"><div class="mat-how-content"><h2>Miten mattovuokraus toimii?</h2><div class="mat-how-steps">
+            <article><span>1</span><h3>Valitse vaihtomatto</h3><p>Valitse yrityksellesi sopiva koko ja v&auml;ri.</p></article>
+            <article><span>2</span><h3>Valitse vaihtov&auml;li</h3><p>Valitse mattojen vaihto kerran kuukaudessa, kahdesti kuukaudessa tai joka viikko.</p></article>
+            <article><span>3</span><h3>L&auml;het&auml; pyynt&ouml;</h3><p>Vahvistamme palvelun saatavuuden ja aloituksen erikseen.</p></article>
+          </div></div><img src="${escapeHtml(matServiceConfig.images.hero)}" alt="Lindstr&ouml;m-designmatot yrityksen sis&auml;&auml;nk&auml;ynniss&auml;" loading="lazy" /></section>
+          <section class="mat-section mat-copy-section"><h2>Kuramatot yrityksille vuokrapalveluna</h2><p>Kuramatto auttaa pys&auml;ytt&auml;m&auml;&auml;n kosteutta ja likaa jo sis&auml;&auml;nk&auml;ynniss&auml;. Vuokrattava Lindstr&ouml;m-vaihtomatto sopii erityisesti yrityksen sis&auml;&auml;nk&auml;yntiin ja muihin vilkkaasti liikenn&ouml;ityihin tiloihin. Maton vaihtov&auml;li voidaan valita k&auml;ytt&ouml;kohteen ja likaantumisen mukaan.</p><a class="ghost" href="#mat-prices">Katso mattojen hinnat</a></section>
+          <section class="mat-section" id="mat-quote"><div class="mat-section-heading"><span class="mat-eyebrow">R&auml;&auml;t&auml;l&ouml;ity kokonaisuus</span><h2>Pyyd&auml; tarjous vaihtomatoista</h2><p>Tarvitsetko useita mattoja, ${escapeHtml(quoteServiceTypes)} tai yrityksellesi r&auml;&auml;t&auml;l&ouml;idyn mattopalvelun? L&auml;het&auml; tarjouspyynt&ouml;.</p></div><a class="primary" href="#mat-quote">Pyyd&auml; tarjous</a></section>
+          <section class="mat-section mat-faq"><div class="mat-section-heading"><span class="mat-eyebrow">Kysymyksi&auml; ja vastauksia</span><h2>Usein kysytty&auml; vaihtomatoista</h2></div><div class="mat-faq-list">${faqMarkup}</div></section>
+        </div>
+      </main>
+      <footer class="footer">
+        <div><strong>Suomen Paperitukku</strong><p>Asiakaspalvelu</p><p>+358 44 978 2446</p><p>info@suomenpaperitukku.fi</p></div>
+        <div class="footer-center"><p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p></div>
+        <div class="footer-meta"><p>3590057-8</p><p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p></div>
+      </footer>
+    </div>
+  `
+}
+
+const getMatServiceStructuredData = (siteUrl) => {
+  const canonical = absoluteUrl(siteUrl, matServiceConfig.path)
+  return [
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Etusivu', item: absoluteUrl(siteUrl, '/') },
+        { '@type': 'ListItem', position: 2, name: 'Palvelut' },
+        { '@type': 'ListItem', position: 3, name: 'Lindström-vaihtomatot yrityksille', item: canonical },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Service',
+      name: 'Lindström-vaihtomatot yrityksille',
+      alternateName: 'Mattovuokraus yrityksille',
+      description: 'Lindström-vaihtomattopalvelu ja mattovuokraus yrityksille.',
+      provider: { '@type': 'Organization', name: 'Suomen Paperitukku', url: absoluteUrl(siteUrl, '/') },
+      url: canonical,
+      offers: {
+        '@type': 'Offer',
+        price: getLowestMatPrice().toFixed(2),
+        priceCurrency: 'EUR',
+        url: canonical,
+        description: 'Alkaen-hinta per matto viikossa, alv 0 %.',
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: matServiceFaq.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
+    },
+  ]
+}
+
 const renderDocument = ({ siteUrl, meta, initialState, ssrMarkup = '' }) => {
   const rootAttributes = ssrMarkup ? ' data-booting="true"' : ''
 
@@ -1184,6 +1357,33 @@ export const renderSpaPage = ({ siteUrl, catalog, route = null }) => {
   })
 }
 
+export const renderMatServicePage = ({ siteUrl }) => {
+  const canonical = absoluteUrl(siteUrl, matServiceConfig.path)
+  const title = `Lindström-vaihtomatot yrityksille alk. ${formatMatPrice(getLowestMatPrice())} €/vk | Suomen Paperitukku`
+  const description = `Lindström-vaihtomatot ja mattovuokraus yrityksille alk. ${formatMatPrice(getLowestMatPrice())} €/vk + alv. Valitse koko ja vaihtoväli tai pyydä tarjous Suomen Paperitukulta.`
+
+  return renderDocument({
+    siteUrl,
+    meta: {
+      title,
+      description,
+      canonical,
+      robots: 'index,follow,max-image-preview:large',
+      type: 'website',
+      image: absoluteUrl(siteUrl, matServiceConfig.images.hero),
+      ogTitle: title,
+      ogDescription: `Helppo mattovuokraus yrityksille. Lindström-vaihtomatot alk. ${formatMatPrice(getLowestMatPrice())} €/vk + alv. Laske hinta tai pyydä tarjous.`,
+      structuredData: getMatServiceStructuredData(siteUrl),
+      preloadImages: [matServiceConfig.images.hero],
+    },
+    initialState: {
+      catalog: { categories: [], products: [] },
+      route: { type: 'mat-service' },
+    },
+    ssrMarkup: renderMatServiceMarkup(),
+  })
+}
+
 export const renderProductPage = ({ siteUrl, catalog, product, category, related }) =>
   renderDocument({
     siteUrl,
@@ -1233,6 +1433,9 @@ export const renderSitemapXml = ({ siteUrl, catalog }) => {
     {
       loc: absoluteUrl(siteUrl, '/'),
       lastmod: latestCatalogUpdate,
+    },
+    {
+      loc: absoluteUrl(siteUrl, matServiceConfig.path),
     },
     ...catalog.categories.map((category) => ({
       loc: absoluteUrl(siteUrl, getCategoryPath(category)),

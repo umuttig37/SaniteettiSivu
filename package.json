@@ -39,5 +39,11 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4"
+  },
+  "overrides": {
+    "body-parser": "2.3.0",
+    "path-to-regexp": "8.4.2",
+    "proxy-addr": "2.0.8",
+    "qs": "6.16.1"
   }
 }

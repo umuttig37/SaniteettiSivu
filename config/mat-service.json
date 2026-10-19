@@ -1,0 +1,188 @@
+{
+  "path": "/vaihtomatot-yrityksille",
+  "imageNote": "Lindström mat service images supplied by the customer or sourced from official Lindström pages.",
+  "images": {
+    "hero": "/images/mattopalvelu/standard-gray.jpg",
+    "service": "/images/mattopalvelu/industrial-1.jpg"
+  },
+  "services": {
+    "mat": {
+      "label": "Vaihtomatto",
+      "description": "Sisäänkäynteihin ja kulkuväylille. Pitää tilat siisteinä.",
+      "images": [
+        "/images/mattopalvelu/standard-gray.jpg",
+        "/images/mattopalvelu/standard-red.jpg"
+      ],
+      "sizeIds": ["85x150", "115x200", "115x240", "85x250", "150x250"]
+    },
+    "design": {
+      "label": "Designmatto",
+      "description": "Tyylikäs kuviollinen matto yrityksen tiloihin.",
+      "images": [
+        "/images/mattopalvelu/design-floral.jpg",
+        "/images/mattopalvelu/design-grid.jpg",
+        "/images/mattopalvelu/design-kael-red.jpg",
+        "/images/mattopalvelu/design-nima-beige.jpg",
+        "/images/mattopalvelu/design-red-swirl.jpg"
+      ],
+      "sizes": [
+        { "id": "85x150", "label": "85 x 150 cm", "intervalPrices": { "weekly": 13.80, "twiceMonthly": 9.20, "monthly": 6.10 } },
+        { "id": "115x200", "label": "115 x 200 cm", "intervalPrices": { "weekly": 19.90, "twiceMonthly": 12.15, "monthly": 8.99 } },
+        { "id": "115x240", "label": "115 x 240 cm", "intervalPrices": { "weekly": 24.55, "twiceMonthly": 14.90, "monthly": 10.35 } },
+        { "id": "115x300", "label": "115 x 300 cm", "intervalPrices": { "weekly": 22.55, "twiceMonthly": 12.75, "monthly": 11.95 } },
+        { "id": "150x200", "label": "150 x 200 cm", "intervalPrices": { "weekly": 26.75, "twiceMonthly": 17.20, "monthly": 12.25 } },
+        { "id": "150x250", "label": "150 x 250 cm", "intervalPrices": { "weekly": 30.55, "twiceMonthly": 18.95, "monthly": 13.90 } }
+      ],
+      "colors": [
+        { "id": "alva-blue", "label": "Alva Blue", "image": "/images/mattopalvelu/design-swatches/alva-blue-150x150.png" },
+        { "id": "alva-purple", "label": "Alva Purple", "image": "/images/mattopalvelu/design-swatches/alva-purple-150x150.png" },
+        { "id": "alva-red", "label": "Alva Red", "image": "/images/mattopalvelu/design-swatches/alva-red-150x150.png" },
+        { "id": "horizont-blue", "label": "Horizont Blue", "image": "/images/mattopalvelu/design-swatches/horizont-blue-150x150.png" },
+        { "id": "horizont-lavender", "label": "Horizont Lavender", "image": "/images/mattopalvelu/design-swatches/horizont-lavander-150x150.png" },
+        { "id": "horizont-peach", "label": "Horizont Peach", "image": "/images/mattopalvelu/design-swatches/horizont-peack-150x150.png" },
+        { "id": "horizont-red", "label": "Horizont Red", "image": "/images/mattopalvelu/design-swatches/horizont-red-150x150.png" },
+        { "id": "juno-brown", "label": "Juno Brown", "image": "/images/mattopalvelu/design-swatches/juno-brown-149x150.png" },
+        { "id": "juno-black", "label": "Juno Black", "image": "/images/mattopalvelu/design-swatches/juno-black-150x150.png" },
+        { "id": "juno-lime", "label": "Juno Lime", "image": "/images/mattopalvelu/design-swatches/juno-lime-119x150.png" },
+        { "id": "kael-brown", "label": "Kael Brown", "image": "/images/mattopalvelu/design-swatches/kael-brown-150x150.png" },
+        { "id": "kael-grey", "label": "Kael Grey", "image": "/images/mattopalvelu/design-swatches/kael-grey-150x150.png" },
+        { "id": "kael-red", "label": "Kael Red", "image": "/images/mattopalvelu/design-swatches/kael-red-150x150.png" },
+        { "id": "kael-beige", "label": "Kael Beige", "image": "/images/mattopalvelu/design-swatches/kael-beige-150x150.png" },
+        { "id": "kami-black", "label": "Kami Black", "image": "/images/mattopalvelu/design-swatches/kami-black-150x150.png" },
+        { "id": "kami-braun-grun", "label": "Kami Braun Grün", "image": "/images/mattopalvelu/design-swatches/kami-braun-grun-150x150.png" },
+        { "id": "mandala-blue", "label": "Mandala Blue", "image": "/images/mattopalvelu/design-swatches/mandala-blue-150x150.png" },
+        { "id": "mandala-grey", "label": "Mandala Grey", "image": "/images/mattopalvelu/design-swatches/mandala-grey-150x150.png" },
+        { "id": "mandala-light", "label": "Mandala Light", "image": "/images/mattopalvelu/design-swatches/mandala-light-150x150.png" },
+        { "id": "mandala-pink", "label": "Mandala Pink", "image": "/images/mattopalvelu/design-swatches/mandala-pink-150x150.png" },
+        { "id": "nima-beige", "label": "Nima Beige", "image": "/images/mattopalvelu/design-swatches/nima-beige-150x150.png" },
+        { "id": "nima-grey", "label": "Nima Grey", "image": "/images/mattopalvelu/design-swatches/nima-grey-150x150.png" },
+        { "id": "nima-red", "label": "Nima Red", "image": "/images/mattopalvelu/design-swatches/nima-red-150x150.png" },
+        { "id": "nona-beige", "label": "Nona Beige", "image": "/images/mattopalvelu/design-swatches/nona-beige-150x150.png" },
+        { "id": "nona-grey", "label": "Nona Grey", "image": "/images/mattopalvelu/design-swatches/nona-grey-150x150.png" },
+        { "id": "nona-red", "label": "Nona Red", "image": "/images/mattopalvelu/design-swatches/nona-red-150x150.png" },
+        { "id": "rosa-beige", "label": "Rosa Beige", "image": "/images/mattopalvelu/design-swatches/rosa-beige-150x150.png" },
+        { "id": "rosa-blue", "label": "Rosa Blue", "image": "/images/mattopalvelu/design-swatches/rosa-blue-150x150.png" },
+        { "id": "rosa-grey", "label": "Rosa Grey", "image": "/images/mattopalvelu/design-swatches/rosa-grey-150x150.png" },
+        { "id": "rudo-blue", "label": "Rudo Blue", "image": "/images/mattopalvelu/design-swatches/rudo-blue-150x150.png" },
+        { "id": "rudo-red", "label": "Rudo Red", "image": "/images/mattopalvelu/design-swatches/rudo-red-150x150.png" },
+        { "id": "sava-green", "label": "Sava Green", "image": "/images/mattopalvelu/design-swatches/sava-green-150x150.png" },
+        { "id": "sava-grey", "label": "Sava Grey", "image": "/images/mattopalvelu/design-swatches/sava-grey-150x150.png" },
+        { "id": "sava-red", "label": "Sava Red", "image": "/images/mattopalvelu/design-swatches/sava-red-150x150.png" },
+        { "id": "twist-copper", "label": "Twist Copper", "image": "/images/mattopalvelu/design-swatches/twist-green-150x150.png" },
+        { "id": "twist-green", "label": "Twist Green", "image": "/images/mattopalvelu/design-swatches/twist-green-150x150.png" },
+        { "id": "twist-grey", "label": "Twist Grey", "image": "/images/mattopalvelu/design-swatches/twist-grey-150x150.png" },
+        { "id": "twist-lavender", "label": "Twist Lavender", "image": "/images/mattopalvelu/design-swatches/twist-lavender-150x150.png" },
+        { "id": "vivi-blue", "label": "Vivi Blue", "image": "/images/mattopalvelu/design-swatches/vivi-blue-150x150.png" },
+        { "id": "vivi-grey", "label": "Vivi Grey", "image": "/images/mattopalvelu/design-swatches/vivi-grey-150x150.png" },
+        { "id": "vivi-red", "label": "Vivi Red", "image": "/images/mattopalvelu/design-swatches/vivi-red-150x150.png" }
+      ]
+    },
+    "industrial": {
+      "enabled": true,
+      "quoteOnly": true,
+      "label": "Teollisuusmatto",
+      "description": "Kestää kovaa kulutusta ja sitoo tehokkaasti likaa.",
+      "images": [
+        "/images/mattopalvelu/industrial-1.jpg",
+        "/images/mattopalvelu/industrial-2.jpg"
+      ],
+      "sizeIds": ["85x150", "115x200", "115x240"],
+      "intervalIds": ["weekly", "twiceMonthly"],
+      "colors": [
+        { "id": "industrial-dark", "label": "Tummanharmaa", "hex": "#343a40" }
+      ],
+      "unitWeeklyPrice": 0
+    }
+  },
+  "marketingMessage": "Sama toimittaja. Sama palvelu. Pienempi lasku.",
+  "serviceAreaText": "Mattopalvelun saatavuus tarkistetaan toimitusosoitteen perusteella.",
+  "faq": [
+    {
+      "question": "Mitä Lindström-vaihtomattopalvelu maksaa?",
+      "answer": "Lindström-vaihtomattopalvelun hinnat alkavat 1,99 eurosta per matto viikossa + alv. Hinta riippuu maton koosta, väristä, vaihtovälistä ja määrästä."
+    },
+    {
+      "question": "Mitä mattovuokraus tarkoittaa?",
+      "answer": "Mattovuokrauksessa yritys käyttää mattoja palveluna niiden ostamisen sijaan. Matot vaihdetaan puhtaisiin sovitun vaihtovälin mukaisesti."
+    },
+    {
+      "question": "Kuinka usein vaihtomatot voidaan vaihtaa?",
+      "answer": "Palvelussa voidaan valita mattojen vaihto kerran kuukaudessa, kahdesti kuukaudessa tai viikoittain saatavilla olevan palveluvaihtoehdon mukaan."
+    },
+    {
+      "question": "Minkä kokoisia vaihtomattoja on saatavana?",
+      "answer": "Normaalimatoissa saatavana on useita kokoja 85 × 150 cm matosta aina 150 × 250 cm kokoon asti. Saatavilla olevat värit riippuvat valitusta koosta."
+    },
+    {
+      "question": "Sopiiko vaihtomatto yrityksen sisäänkäyntiin?",
+      "answer": "Kyllä. Lindström-vaihtomatot sopivat esimerkiksi yritysten sisäänkäynteihin ja kulkuväylille, joissa halutaan vähentää lian ja kosteuden kulkeutumista sisätiloihin."
+    },
+    {
+      "question": "Voinko kilpailuttaa nykyisen mattopalveluni?",
+      "answer": "Kyllä. Voit lähettää Suomen Paperitukulle nykyisen Lindström-laskusi tai tarjouksesi. Käymme läpi matot, määrät ja vaihtovälit ja teemme vertailutarjouksen."
+    },
+    {
+      "question": "Voiko yritys tilata useita vaihtomattoja?",
+      "answer": "Kyllä. Hintalaskurissa voit valita mattojen määrän. Suuremmista kokonaisuuksista voit myös pyytää erillisen tarjouksen."
+    }
+  ],
+  "intervals": {
+    "weekly": "Joka viikko",
+    "twiceMonthly": "Kahdesti kuukaudessa",
+    "monthly": "Kerran kuukaudessa"
+  },
+  "colors": {
+    "red": { "label": "Punainen", "hex": "#8f2f35" },
+    "brown": { "label": "Ruskea", "hex": "#59423a" },
+    "gray": { "label": "Harmaa", "hex": "#777d82" },
+    "darkgray": { "label": "Tummanharmaa", "hex": "#343a40" }
+  },
+  "sizes": [
+    {
+      "id": "85x150",
+      "label": "85 x 150 cm",
+      "prices": {
+        "red": { "weekly": 7.30, "twiceMonthly": 4.35, "monthly": 2.39 },
+        "brown": { "weekly": 7.30, "twiceMonthly": 4.35, "monthly": 2.39 },
+        "gray": { "weekly": 6.90, "twiceMonthly": 3.50, "monthly": 1.99 },
+        "darkgray": { "weekly": 8.29, "twiceMonthly": 4.60, "monthly": 3.39 }
+      }
+    },
+    {
+      "id": "115x200",
+      "label": "115 x 200 cm",
+      "prices": {
+        "red": { "weekly": 11.90, "twiceMonthly": 6.96, "monthly": 3.99 },
+        "brown": { "weekly": 11.90, "twiceMonthly": 6.96, "monthly": 3.99 },
+        "gray": { "weekly": 9.90, "twiceMonthly": 5.96, "monthly": 3.39 },
+        "darkgray": { "weekly": 12.63, "twiceMonthly": 6.99, "monthly": 4.00 }
+      }
+    },
+    {
+      "id": "115x240",
+      "label": "115 x 240 cm",
+      "prices": {
+        "brown": { "weekly": 14.29, "twiceMonthly": 9.00, "monthly": 4.29 },
+        "gray": { "weekly": 10.05, "twiceMonthly": 7.10, "monthly": 3.79 },
+        "darkgray": { "weekly": 15.90, "twiceMonthly": 9.90, "monthly": 5.90 }
+      }
+    },
+    {
+      "id": "85x250",
+      "label": "85 x 250 cm",
+      "prices": {
+        "gray": { "weekly": 9.59, "twiceMonthly": 5.90, "monthly": 3.35 },
+        "darkgray": { "weekly": 12.63, "twiceMonthly": 6.99, "monthly": 4.00 }
+      }
+    },
+    {
+      "id": "150x250",
+      "label": "150 x 250 cm",
+      "prices": {
+        "brown": { "weekly": 19.90, "twiceMonthly": 14.89, "monthly": 7.29 },
+        "gray": { "weekly": 14.49, "twiceMonthly": 9.90, "monthly": 5.69 },
+        "darkgray": { "weekly": 22.10, "twiceMonthly": 17.89, "monthly": 8.29 }
+      }
+    }
+  ]
+}

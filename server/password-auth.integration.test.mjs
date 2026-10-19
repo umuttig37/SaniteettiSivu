@@ -57,8 +57,10 @@ test('password reset and logged-in password change preserve customer pricing, or
   fs.mkdirSync(testTempDir, { recursive: true })
   const root = fs.mkdtempSync(path.join(testTempDir, 'paperitukku-password-auth-test-'))
   const serverDir = path.join(root, 'server')
+  const configDir = path.join(root, 'config')
   const dataDir = path.join(root, 'data')
   fs.cpSync(__dirname, serverDir, { recursive: true })
+  fs.cpSync(path.resolve(__dirname, '..', 'config'), configDir, { recursive: true })
   fs.mkdirSync(dataDir)
 
   const oldPassword = 'VanhaSalasana123'

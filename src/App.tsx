@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
+import MatServicePage from './MatServicePage'
+import matServiceConfig from '../config/mat-service.json'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/hero-background-new.jpg'
 import invoiceComparisonImage from './assets/invoice-comparison-savings.png'
@@ -196,7 +198,7 @@ type CatalogPayload = {
 }
 
 type RouteState = {
-  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'forgot-password' | 'reset-password' | 'paytrail-return' | 'terms'
+  type: 'home' | 'product' | 'cart' | 'checkout' | 'auth' | 'forgot-password' | 'reset-password' | 'paytrail-return' | 'terms' | 'mat-service'
   slug: string | null
   categorySlug: string | null
   searchQuery: string | null
@@ -1451,6 +1453,8 @@ const getRouteFromUrl = (): RouteState => {
     type = 'reset-password'
   } else if (pathname === '/ehdot') {
     type = 'terms'
+  } else if (pathname === '/vaihtomatot-yrityksille') {
+    type = 'mat-service'
   } else if (paytrailMatch) {
     type = 'paytrail-return'
   }
@@ -2080,6 +2084,12 @@ const homeSeoTitle = 'Suomen Paperitukku \u2013 Käsi- ja wc-paperit sekä sanit
 const homeSeoDescription =
   'Suomen Paperitukku toimittaa käsipaperit, WC-paperit ja saniteettitarvikkeet yrityksille nopeasti ja edullisesti koko Suomeen. | Suomen Paperitukku'
 
+const getLowestMatServicePrice = () => Math.min(
+  ...matServiceConfig.sizes.flatMap((size) =>
+    Object.values(size.prices).flatMap((prices) => Object.values(prices).map(Number)),
+  ),
+)
+
 const applyHomeSeo = (products: Product[] = []) => {
   const siteUrl = getSiteUrl()
   const normalizedTitle = fixMojibake(homeSeoTitle)
@@ -2163,6 +2173,66 @@ const applyHomeSeo = (products: Product[] = []) => {
       '@type': 'ItemList',
       name: 'Suosittuja tuotteita',
       itemListElement: featuredProducts,
+    },
+  ])
+}
+
+const applyMatServiceSeo = () => {
+  const siteUrl = getSiteUrl()
+  const canonical = `${siteUrl}/vaihtomatot-yrityksille`
+  const lowestPrice = getLowestMatServicePrice().toLocaleString('fi-FI', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const title = `Lindström-vaihtomatot yrityksille alk. ${lowestPrice} €/vk | Suomen Paperitukku`
+  const description = `Lindström-vaihtomatot ja mattovuokraus yrityksille alk. ${lowestPrice} €/vk + alv. Valitse koko ja vaihtoväli tai pyydä tarjous Suomen Paperitukulta.`
+  const ogDescription = `Helppo mattovuokraus yrityksille. Lindström-vaihtomatot alk. ${lowestPrice} €/vk + alv. Laske hinta tai pyydä tarjous.`
+
+  document.title = title
+  upsertMeta('meta[name="description"]', { name: 'description', content: description })
+  upsertMeta('meta[name="robots"]', { name: 'robots', content: publicRobotsContent })
+  upsertMeta('meta[property="og:title"]', { property: 'og:title', content: title })
+  upsertMeta('meta[property="og:description"]', { property: 'og:description', content: ogDescription })
+  upsertMeta('meta[property="og:url"]', { property: 'og:url', content: canonical })
+  upsertMeta('meta[property="og:image"]', { property: 'og:image', content: `${siteUrl}${matServiceConfig.images.hero}` })
+  upsertMeta('meta[property="og:type"]', { property: 'og:type', content: 'website' })
+  upsertMeta('meta[name="twitter:card"]', { name: 'twitter:card', content: 'summary_large_image' })
+  upsertMeta('meta[name="twitter:title"]', { name: 'twitter:title', content: title })
+  upsertMeta('meta[name="twitter:description"]', { name: 'twitter:description', content: ogDescription })
+  upsertMeta('meta[name="twitter:image"]', { name: 'twitter:image', content: `${siteUrl}${matServiceConfig.images.hero}` })
+  upsertMeta('meta[name="twitter:url"]', { name: 'twitter:url', content: canonical })
+  upsertMeta('link[rel="canonical"]', { rel: 'canonical', href: canonical })
+  applyStructuredData([
+    {
+      '@context': 'https://schema.org',
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: 'Etusivu', item: `${siteUrl}/` },
+        { '@type': 'ListItem', position: 2, name: 'Palvelut' },
+        { '@type': 'ListItem', position: 3, name: 'Lindström-vaihtomatot yrityksille', item: canonical },
+      ],
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'Service',
+      name: 'Lindström-vaihtomatot yrityksille',
+      alternateName: 'Mattovuokraus yrityksille',
+      description: 'Lindström-vaihtomattopalvelu ja mattovuokraus yrityksille.',
+      provider: { '@type': 'Organization', name: 'Suomen Paperitukku', url: `${siteUrl}/` },
+      url: canonical,
+      offers: {
+        '@type': 'Offer',
+        price: getLowestMatServicePrice().toFixed(2),
+        priceCurrency: 'EUR',
+        url: canonical,
+        description: 'Alkaen-hinta per matto viikossa, alv 0 %.',
+      },
+    },
+    {
+      '@context': 'https://schema.org',
+      '@type': 'FAQPage',
+      mainEntity: matServiceConfig.faq.map((item) => ({
+        '@type': 'Question',
+        name: item.question,
+        acceptedAnswer: { '@type': 'Answer', text: item.answer },
+      })),
     },
   ])
 }
@@ -2659,6 +2729,10 @@ function App() {
   const minDeliveryDate = getEarliestDeliveryDate()
 
   useEffect(() => {
+    if (routeState.type === 'mat-service') {
+      setCatalogLoading(false)
+      return
+    }
     if (hasInitialCatalog) {
       setCatalogLoading(false)
       return
@@ -2695,7 +2769,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [hasInitialCatalog, initialCatalog.products.length])
+  }, [hasInitialCatalog, initialCatalog.products.length, routeState.type])
 
   useEffect(() => {
     if (typeof window === 'undefined') {
@@ -2764,7 +2838,7 @@ function App() {
   }, [])
 
   useEffect(() => {
-    if (customerSessionLoading) {
+    if (customerSessionLoading || routeState.type === 'mat-service') {
       return
     }
 
@@ -2792,7 +2866,7 @@ function App() {
     return () => {
       active = false
     }
-  }, [customerProfile?.id, customerSessionLoading])
+  }, [customerProfile?.id, customerSessionLoading, routeState.type])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -3044,6 +3118,10 @@ function App() {
   useEffect(() => {
     if (isAdminPage) {
       applyAdminSeo(lang, adminAuthed)
+      return
+    }
+    if (routeState.type === 'mat-service') {
+      applyMatServiceSeo()
       return
     }
     if (selectedProduct) {
@@ -3506,7 +3584,9 @@ function App() {
       return product ? { ...line, product } : null
     })
     .filter((item): item is CartLine & { product: Product } => Boolean(item))
-  const totalItems = cartItems.reduce((sum, item) => sum + item.quantity, 0)
+  const totalItems = routeState.type === 'mat-service'
+    ? Object.values(cart).reduce((sum, item) => sum + item.quantity, 0)
+    : cartItems.reduce((sum, item) => sum + item.quantity, 0)
   const subtotal = roundCurrency(cartItems.reduce((sum, item) => sum + getResolvedUnitPrice(item.product, item.selectedOptions) * item.quantity, 0))
   const shipping = totalItems === 0 ? 0 : deliveryCost(subtotal)
   const total = roundCurrency(subtotal + shipping)
@@ -5226,7 +5306,7 @@ function App() {
                   </div>
                   <button className={`ghost cart-pill ${totalItems > 0 ? 'has-items' : ''}`} type="button" onClick={goToCart}>
                     <span>{t.cartTitle}: {totalItems}</span>
-                    {totalItems > 0 && <strong>{formatPrice(subtotal, lang)} €</strong>}
+                    {totalItems > 0 && routeState.type !== 'mat-service' && <strong>{formatPrice(subtotal, lang)} €</strong>}
                   </button>
                 </div>
               </>
@@ -5270,7 +5350,9 @@ function App() {
       )}
 
       <main>
-        {isAdminPage ? (
+        {!isAdminPage && routeState.type === 'mat-service' ? (
+          <MatServicePage />
+        ) : isAdminPage ? (
           <section className="section admin-page">
             <div className="admin-page-head">
               <h1>{t.adminTitle}</h1>
@@ -7401,31 +7483,80 @@ function App() {
 
         {utilityHighlights}
 
-        <aside className="section invoice-comparison-home-slot" aria-labelledby="invoice-comparison-home-title">
-          <div className="invoice-comparison-home-card">
+        <section className="section home-service-grid" aria-label={lang === 'fi' ? 'Palvelut yrityksille' : 'Services for businesses'}>
+          <aside className="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
             <img
-              className="invoice-comparison-home-image"
+              className="home-service-card-image invoice-comparison-home-image"
               src={invoiceComparisonImage}
               alt="Lähetä yrityksesi lasku Suomen Paperitukulle"
               loading="lazy"
             />
-            <div className="invoice-comparison-home-copy">
-              <span>{lang === 'fi' ? 'Laskuvertailu yrityksille' : 'Invoice comparison for businesses'}</span>
-              <h2 id="invoice-comparison-home-title">
-                {lang === 'fi' ? 'Yrityksesi maksaa turhaan liikaa' : 'Your business is paying too much'}
-              </h2>
-              <p>
-                {lang === 'fi'
-                  ? 'Lähetä nykyinen laskusi, ja lupaamme merkittävästi edullisemman tarjouksen samoista tuotteista!'
-                  : 'Send us your current invoice and we promise a significantly more affordable offer for the same products.'}
-              </p>
-              <small>{lang === 'fi' ? 'Ilmainen vertailu. Ei sido mihinkään.' : 'Free comparison. No commitment.'}</small>
+            <div className="home-service-card-body">
+              <div className="invoice-comparison-home-copy">
+                <span>{lang === 'fi' ? 'Laskuvertailu yrityksille' : 'Invoice comparison for businesses'}</span>
+                <h2 id="invoice-comparison-home-title">
+                  {lang === 'fi' ? 'Yrityksesi maksaa turhaan liikaa' : 'Your business is paying too much'}
+                </h2>
+                <p>
+                  {lang === 'fi'
+                    ? 'Lähetä nykyinen laskusi, ja lupaamme merkittävästi edullisemman tarjouksen samoista tuotteista!'
+                    : 'Send us your current invoice and we promise a significantly more affordable offer for the same products.'}
+                </p>
+              </div>
+              <a className="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">
+                {lang === 'fi' ? 'Lähetä lasku' : 'Send invoice'}
+              </a>
             </div>
-            <a className="invoice-comparison-home-link" href="/laheta-laskusi">
-              {lang === 'fi' ? 'Lähetä lasku' : 'Send invoice'}
+          </aside>
+
+          <article className="home-service-card mat-service-home-card" aria-labelledby="home-mat-service-title">
+            <img
+              className="home-service-card-image mat-service-home-image"
+              src="/images/mattopalvelu/home-mat-service.png"
+              alt="Harmaa vaihtomatto yrityksen sisäänkäynnissä"
+              loading="lazy"
+            />
+            <div className="home-service-card-body">
+              <div className="mat-service-home-topline">
+                <img
+                  className="mat-service-home-logo"
+                  src="/images/mattopalvelu/lindstrom-logo-hq.png"
+                  alt="Lindström"
+                  width="128"
+                  height="26"
+                />
+                <div className="mat-service-home-price-wrap">
+                  <strong className="mat-service-home-price">
+                    <svg className="mat-service-home-price-icon" viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20.6 13.4 13.4 20.6a2 2 0 0 1-2.8 0l-7.2-7.2a2 2 0 0 1 0-2.8V4.5a1.5 1.5 0 0 1 1.5-1.5H11a2 2 0 0 1 1.4.6l8.2 7a2 2 0 0 1 0 2.8ZM7.5 7.5h.01" />
+                    </svg>
+                    <span>
+                      Alkaen <b>{getLowestMatServicePrice().toLocaleString('fi-FI', { minimumFractionDigits: 2 })} €</b>/viikko
+                    </span>
+                  </strong>
+                  <svg className="mat-service-home-spark" viewBox="0 0 28 24" aria-hidden="true">
+                    <path d="M6 9 9.5 2M12 11.5 21 7.5M12.5 16 21.5 18.5" />
+                  </svg>
+                </div>
+              </div>
+              <div className="mat-service-home-copy">
+                <h2 id="home-mat-service-title">Lindström-vaihtomatot yrityksille</h2>
+                <p>Puhtaat ja edustavat mattoratkaisut yrityksesi tiloihin. Joustavat vaihtoehdot ja vaivaton palvelu.</p>
+              </div>
+            <a
+              className="home-service-card-link invoice-comparison-home-link"
+              href="/vaihtomatot-yrityksille"
+              onClick={(event) => {
+                event.preventDefault()
+                navigateTo('/vaihtomatot-yrityksille')
+                window.scrollTo({ top: 0, behavior: 'smooth' })
+              }}
+            >
+              Tutustu mattopalveluun
             </a>
-          </div>
-        </aside>
+            </div>
+          </article>
+        </section>
 
         <section className="section mobile-store-tools" aria-label={lang === 'fi' ? 'Mobiilin kauppatyökalut' : 'Mobile store tools'}>
           <div className="mobile-store-tools-shell">

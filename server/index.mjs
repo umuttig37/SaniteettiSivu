@@ -29,6 +29,7 @@ import {
 } from './customer-price-store.mjs'
 import {
   getCategoryPath,
+  renderMatServicePage,
   renderProductOgSvg,
   renderProductPage,
   renderRobotsTxt,
@@ -91,6 +92,13 @@ import {
 } from './invoice-comparison-store.mjs'
 import { renderInvoiceComparisonPage } from './invoice-comparison-page.mjs'
 import { createInvoiceComparisonMailMessages } from './invoice-comparison-mail.mjs'
+import {
+  createMatOrderMailMessages,
+  decodePrivateAttachment,
+  formatMatPrice,
+  matServiceConfig,
+  resolveMatSelections,
+} from './mat-service.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
@@ -156,6 +164,7 @@ const adminSessions = new Map()
 const customerSessions = new Map()
 const passwordResetRateBuckets = new Map()
 const invoiceComparisonRateBuckets = new Map()
+const matServiceRateBuckets = new Map()
 const shippingOrdersInProgress = new Set()
 const invoiceComparisonStore = createInvoiceComparisonStore({ rootDir: invoiceComparisonDataDir })
 const paytrailConfig = getPaytrailConfig(process.env)
@@ -199,6 +208,7 @@ const setStaticAssetHeaders = (res, filePath) => {
   }
 }
 
+app.use('/api/mat-service', express.json({ limit: '15mb' }))
 app.use(express.json({ limit: '8mb' }))
 
 app.use((req, res, next) => {
@@ -1383,7 +1393,7 @@ const shippedHtml = (order) => {
 `
 }
 
-const sendMailBatch = async (messages, context = 'mail') => {
+const sendMailBatch = async (messages, context = 'mail', { redactRecipients = false } = {}) => {
   try {
     const transporter = createTransporter()
     const failures = []
@@ -1393,7 +1403,12 @@ const sendMailBatch = async (messages, context = 'mail') => {
         await transporter.sendMail(message)
       } catch (error) {
         failures.push(error instanceof Error ? error.message : 'Failed to send email')
-        console.error(`[mail] ${context} failed for ${message?.to ?? 'unknown recipient'}`, error)
+        if (redactRecipients) {
+          const errorCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'SMTP_ERROR'
+          console.error(`[mail] ${context} failed (${errorCode}).`)
+        } else {
+          console.error(`[mail] ${context} failed for ${message?.to ?? 'unknown recipient'}`, error)
+        }
       }
     }
 
@@ -1406,13 +1421,177 @@ const sendMailBatch = async (messages, context = 'mail') => {
 
     return { ok: true, message: '' }
   } catch (error) {
-    console.error(`[mail] ${context} failed`, error)
+    if (redactRecipients) {
+      const errorCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : 'SMTP_ERROR'
+      console.error(`[mail] ${context} failed (${errorCode}).`)
+    } else {
+      console.error(`[mail] ${context} failed`, error)
+    }
     return {
       ok: false,
       message: error instanceof Error ? error.message : 'Failed to send email',
     }
   }
 }
+
+const normalizeMatText = (value, maxLength = 500) => String(value ?? '').trim().slice(0, maxLength)
+
+const normalizeMatContact = (value = {}) => ({
+  firstName: normalizeMatText(value.firstName, 100),
+  lastName: normalizeMatText(value.lastName, 100),
+  locationName: normalizeMatText(value.locationName, 150),
+  company: normalizeMatText(value.company, 200),
+  businessId: normalizeBusinessId(value.businessId),
+  email: normalizeEmail(value.email),
+  phone: normalizeMatText(value.phone, 40),
+  address: normalizeMatText(value.address, 250),
+  postalCode: normalizeMatText(value.postalCode, 10),
+  city: normalizeMatText(value.city, 100),
+})
+
+const validateMatContact = (contact) => {
+  if (!contact.firstName || !contact.lastName || !contact.company || !contact.businessId || !contact.email || !contact.phone || !contact.address || !contact.postalCode || !contact.city) {
+    return 'Täytä kaikki pakolliset yhteystiedot.'
+  }
+  if (!isValidEmail(contact.email)) {
+    return 'Tarkista sähköpostiosoite.'
+  }
+  if (!isValidBusinessId(contact.businessId)) {
+    return 'Tarkista Y-tunnus.'
+  }
+  if (!/^\d{5}$/.test(contact.postalCode)) {
+    return 'Postinumeron pitää sisältää 5 numeroa.'
+  }
+  if (!isValidPhone(contact.phone)) {
+    return 'Tarkista puhelinnumero.'
+  }
+  return ''
+}
+
+const getNextIsoWeek = () => {
+  const now = new Date()
+  const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()))
+  date.setUTCDate(date.getUTCDate() + 7)
+  const day = date.getUTCDay() || 7
+  date.setUTCDate(date.getUTCDate() + 4 - day)
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1))
+  const week = Math.ceil((((date.getTime() - yearStart.getTime()) / 86400000) + 1) / 7)
+  return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`
+}
+
+const isMatServiceRateLimited = (req, kind) => {
+  const now = Date.now()
+  const windowMs = 60 * 60 * 1000
+  const key = crypto
+    .createHash('sha256')
+    .update(`${kind}:${String(req.ip ?? '')}`)
+    .digest('hex')
+  const attempts = (matServiceRateBuckets.get(key) ?? []).filter((attemptedAt) => attemptedAt > now - windowMs)
+  if (attempts.length >= 8) {
+    matServiceRateBuckets.set(key, attempts)
+    return true
+  }
+  attempts.push(now)
+  matServiceRateBuckets.set(key, attempts)
+  if (matServiceRateBuckets.size > 2_000) {
+    for (const [bucketKey, bucket] of matServiceRateBuckets.entries()) {
+      const active = bucket.filter((attemptedAt) => attemptedAt > now - windowMs)
+      if (active.length > 0) matServiceRateBuckets.set(bucketKey, active)
+      else matServiceRateBuckets.delete(bucketKey)
+    }
+  }
+  return false
+}
+
+const matContactHtml = (title, contact) => `
+  <h3 style="margin:18px 0 8px;">${escapeHtml(title)}</h3>
+  <p style="margin:0;">
+    ${escapeHtml(`${contact.firstName} ${contact.lastName}`.trim())}<br />
+    ${escapeHtml(contact.company)}${contact.businessId ? `, Y-tunnus ${escapeHtml(contact.businessId)}` : ''}<br />
+    ${contact.locationName ? `${escapeHtml(contact.locationName)}<br />` : ''}
+    ${escapeHtml(contact.address)}<br />
+    ${escapeHtml(`${contact.postalCode} ${contact.city}`.trim())}<br />
+    ${escapeHtml(contact.email)}<br />
+    ${escapeHtml(contact.phone)}
+  </p>
+`
+
+const getMatOrderPriceSummary = (selections) => {
+  const pricedSelections = selections.filter((selection) => Number.isFinite(selection.weeklyTotal))
+  const hasQuoteOnlySelections = selections.some((selection) => selection.quoteOnly)
+  if (pricedSelections.length === 0) {
+    return { label: 'Hinta', value: 'Vahvistetaan tarjouksessa' }
+  }
+  const total = pricedSelections.reduce((sum, selection) => sum + selection.weeklyTotal, 0)
+  return {
+    label: hasQuoteOnlySelections ? 'Hinnoitellut matot yhteensä' : 'Matot yhteensä',
+    value: `${formatMatPrice(total)} € / vko + alv`,
+  }
+}
+
+const matSelectionsHtml = (selections) => selections.map((selection, index) => `
+  <h3 style="margin:18px 0 8px;">Matto ${index + 1}: ${escapeHtml(selection.serviceLabel)}</h3>
+  <table style="border-collapse:collapse;width:100%;max-width:680px;">
+    <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Koko</th><td style="padding:7px;border:1px solid #d9e2f2;">${escapeHtml(selection.sizeLabel)}</td></tr>
+    <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Väri / kuosi</th><td style="padding:7px;border:1px solid #d9e2f2;">${escapeHtml(selection.colorLabel)}</td></tr>
+    <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Vaihtoväli</th><td style="padding:7px;border:1px solid #d9e2f2;">${escapeHtml(selection.intervalLabel)}</td></tr>
+    <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Määrä</th><td style="padding:7px;border:1px solid #d9e2f2;">${selection.quantity} kpl</td></tr>
+    ${selection.quoteOnly
+      ? '<tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Hinta</th><td style="padding:7px;border:1px solid #d9e2f2;"><strong>Vahvistetaan tarjouksessa</strong></td></tr>'
+      : `<tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Hinta / matto</th><td style="padding:7px;border:1px solid #d9e2f2;">${formatMatPrice(selection.unitPrice)} € / vko + alv</td></tr><tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Yhteensä</th><td style="padding:7px;border:1px solid #d9e2f2;"><strong>${formatMatPrice(selection.weeklyTotal)} € / vko + alv</strong></td></tr>`}
+    ${selection.notes ? `<tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Lisätiedot</th><td style="padding:7px;border:1px solid #d9e2f2;">${escapeHtml(selection.notes)}</td></tr>` : ''}
+  </table>
+`).join('')
+
+const matOrderOwnerHtml = ({ selections, startMode, startWeek, delivery, billing, billingSame, payload }) => `
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+    <h2 style="margin:0 0 12px;">Lindström mattopalvelun uusi tilauspyyntö</h2>
+    ${matSelectionsHtml(selections)}
+    <table style="border-collapse:collapse;width:100%;max-width:680px;">
+      <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">${getMatOrderPriceSummary(selections).label}</th><td style="padding:7px;border:1px solid #d9e2f2;"><strong>${getMatOrderPriceSummary(selections).value}</strong></td></tr>
+      <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Aloitus</th><td style="padding:7px;border:1px solid #d9e2f2;">${startMode === 'asap' ? 'Niin pian kuin mahdollista' : escapeHtml(startWeek)}</td></tr>
+      <tr><th style="padding:7px;border:1px solid #d9e2f2;text-align:left;">Laskutustapa</th><td style="padding:7px;border:1px solid #d9e2f2;">${payload.billingMethod === 'einvoice' ? `E-lasku<br /><strong>E-laskuosoite:</strong> ${escapeHtml(payload.eInvoiceAddress)}<br /><strong>Verkkolaskuoperaattori:</strong> ${escapeHtml(payload.eInvoiceOperator)}` : 'Lasku'}</td></tr>
+    </table>
+    ${matContactHtml('Toimitustiedot', delivery)}
+    ${billingSame ? '<h3 style="margin:18px 0 8px;">Laskutustiedot</h3><p>Sama kuin toimitustiedot.</p>' : matContactHtml('Laskutustiedot', billing)}
+    ${payload.deliveryNotes ? `<h3 style="margin:18px 0 8px;">Toimituksen lisätiedot</h3><p>${escapeHtml(payload.deliveryNotes)}</p>` : ''}
+  </div>
+`
+
+const matOrderCustomerHtml = ({ selections, startMode, startWeek }) => `
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+    <h2 style="margin:0 0 10px;">Mattopalvelun tilauspyyntö vastaanotettu</h2>
+    <p>Kiitos tilauspyynnöstäsi. Vahvistamme palvelun saatavuuden ja aloituksen erikseen. Ensimmäinen toimitus onnistuu aikaisintaan 5–6 arkipäivän kuluttua.</p>
+    ${matSelectionsHtml(selections)}
+    <p><strong>${getMatOrderPriceSummary(selections).label}:</strong> ${getMatOrderPriceSummary(selections).value}<br />
+    <strong>Aloitus:</strong> ${startMode === 'asap' ? 'Niin pian kuin mahdollista' : escapeHtml(startWeek)}</p>
+    ${emailFooter('fi')}
+  </div>
+`
+
+const matQuoteOwnerHtml = ({ kind, quote, hasInvoice }) => `
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+    <h2 style="margin:0 0 10px;">${kind === 'lindstrom' ? 'Lindström-laskun vertailutarjous' : 'Uusi Lindström-vaihtomattojen tarjouspyyntö'}</h2>
+    <p><strong>Yritys:</strong> ${escapeHtml(quote.company)}<br />
+    <strong>Y-tunnus:</strong> ${escapeHtml(quote.businessId || '-')}<br />
+    <strong>Yhteyshenkilö:</strong> ${escapeHtml(quote.contactName)}<br />
+    <strong>Sähköposti:</strong> ${escapeHtml(quote.email)}<br />
+    <strong>Puhelin:</strong> ${escapeHtml(quote.phone)}<br />
+    <strong>Toimitusosoite / paikkakunta:</strong> ${escapeHtml(quote.location || '-')}<br />
+    <strong>Arvio mattojen määrästä:</strong> ${escapeHtml(quote.matCount || '-')}<br />
+    <strong>Toivottu vaihtoväli:</strong> ${escapeHtml(matServiceConfig.intervals[quote.interval] || quote.interval || '-')}<br />
+    ${kind === 'lindstrom' ? `<strong>Liite:</strong> ${hasInvoice ? 'Kyllä' : 'Ei'}` : ''}</p>
+    ${quote.notes ? `<p><strong>Lisätiedot:</strong><br />${escapeHtml(quote.notes)}</p>` : ''}
+  </div>
+`
+
+const matQuoteCustomerHtml = (kind) => `
+  <div style="font-family:Arial,Helvetica,sans-serif;color:#13233f;line-height:1.5;">
+    <h2 style="margin:0 0 10px;">${kind === 'lindstrom' ? 'Vertailutarjouspyyntö vastaanotettu' : 'Tarjouspyyntö vastaanotettu'}</h2>
+    <p>Kiitos! ${kind === 'lindstrom' ? 'Saimme laskusi ja käymme nykyisen mattopalvelusi läpi.' : 'Saimme Lindström-vaihtomattoja koskevan tarjouspyyntösi.'} Palaamme tarjouksen kanssa.</p>
+    ${emailFooter('fi')}
+  </div>
+`
 
 const sendRegistrationEmails = async (customer) =>
   sendMailBatch(
@@ -1735,6 +1914,169 @@ app.get('/api/health', (_req, res) => {
     mailConfigured: Boolean(smtpUser && smtpPass),
     paytrailConfigured: paytrailConfig.enabled,
   })
+})
+
+app.post('/api/mat-service/order-request', async (req, res) => {
+  if (normalizeMatText(req.body?.website, 200)) {
+    res.status(201).json({ ok: true })
+    return
+  }
+  if (isMatServiceRateLimited(req, 'order')) {
+    res.status(429).json({ message: 'Liian monta lähetystä. Yritä myöhemmin uudelleen.' })
+    return
+  }
+
+  try {
+    const resolvedSelections = resolveMatSelections(req.body)
+    if (!resolvedSelections) {
+      res.status(400).json({ message: 'Tarkista maton koko, väri, vaihtoväli ja määrä.' })
+      return
+    }
+    const requestedSelections = Array.isArray(req.body?.selections) ? req.body.selections : [req.body]
+    const selections = resolvedSelections.map((selection, index) => ({
+      ...selection,
+      notes: normalizeMatText(requestedSelections[index]?.notes, 2_000),
+    }))
+
+    const startMode = req.body?.startMode === 'selectedWeek' ? 'selectedWeek' : 'asap'
+    const startWeek = normalizeMatText(req.body?.startWeek, 10)
+    if (startMode === 'selectedWeek' && (!/^\d{4}-W\d{2}$/.test(startWeek) || startWeek < getNextIsoWeek())) {
+      res.status(400).json({ message: 'Valitse aikaisintaan seuraava aloitusviikko.' })
+      return
+    }
+
+    const delivery = normalizeMatContact(req.body?.deliveryDetails)
+    const contactError = validateMatContact(delivery)
+    if (contactError) {
+      res.status(400).json({ message: contactError })
+      return
+    }
+    const billingSame = req.body?.billingSameAsDelivery !== false
+    const billing = billingSame ? delivery : normalizeMatContact(req.body?.billingDetails)
+    const billingError = billingSame ? '' : validateMatContact(billing)
+    if (billingError) {
+      res.status(400).json({ message: `Laskutustiedot: ${billingError}` })
+      return
+    }
+
+    const payload = {
+      deliveryNotes: normalizeMatText(req.body?.deliveryNotes, 2_000),
+      billingMethod: req.body?.billingMethod === 'einvoice' ? 'einvoice' : 'invoice',
+      eInvoiceAddress: normalizeMatText(req.body?.eInvoiceAddress, 100),
+      eInvoiceOperator: normalizeMatText(req.body?.eInvoiceOperator, 200),
+    }
+    if (payload.billingMethod === 'einvoice' && (!payload.eInvoiceAddress || !payload.eInvoiceOperator)) {
+      res.status(400).json({ message: 'Täytä E-laskuosoite ja verkkolaskuoperaattori.' })
+      return
+    }
+    const ownerHtml = matOrderOwnerHtml({ selections, startMode, startWeek, delivery, billing, billingSame, payload })
+    const simulateLocalMail = !smtpUser && !smtpPass && ['localhost', '127.0.0.1', '::1'].includes(String(req.hostname).toLowerCase())
+    const mailResult = simulateLocalMail ? { ok: true, message: '' } : await sendMailBatch(
+      createMatOrderMailMessages({
+        from: mailFrom,
+        ownerRecipients: ownerNotificationRecipients,
+        customerEmail: delivery.email,
+        ownerHtml,
+        customerHtml: matOrderCustomerHtml({ selections, startMode, startWeek }),
+      }),
+      'mat-service-order',
+      { redactRecipients: true },
+    )
+
+    if (simulateLocalMail) {
+      console.info('[mail] mat-service-order simulated on localhost because SMTP credentials are missing; no email was sent.')
+    }
+
+    if (!mailResult.ok) {
+      res.status(502).json({ message: 'Tilauspyynnön lähettäminen epäonnistui. Tietoja ei tallennettu. Yritä uudelleen tai ota yhteyttä asiakaspalveluun.' })
+      return
+    }
+    res.status(201).json({ ok: true, ...(simulateLocalMail ? { simulated: true } : {}) })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Tilauspyynnön lähettäminen epäonnistui.'
+    const status = /Liite|tiedosto/i.test(message) ? 400 : 500
+    if (status === 500) console.error('[mat-service] Order request failed without logging customer payload.', error)
+    res.status(status).json({ message })
+  }
+})
+
+app.post('/api/mat-service/quote-request', async (req, res) => {
+  if (normalizeMatText(req.body?.website, 200)) {
+    res.status(201).json({ ok: true })
+    return
+  }
+  if (isMatServiceRateLimited(req, 'quote')) {
+    res.status(429).json({ message: 'Liian monta lähetystä. Yritä myöhemmin uudelleen.' })
+    return
+  }
+
+  try {
+    const kind = req.body?.kind === 'lindstrom' ? 'lindstrom' : 'general'
+    const quote = {
+      company: normalizeMatText(req.body?.company, 200),
+      businessId: normalizeBusinessId(req.body?.businessId),
+      contactName: normalizeMatText(req.body?.contactName, 200),
+      email: normalizeEmail(req.body?.email),
+      phone: normalizeMatText(req.body?.phone, 40),
+      location: normalizeMatText(req.body?.location, 300),
+      matCount: normalizeMatText(req.body?.matCount, 20),
+      interval: normalizeMatText(req.body?.interval, 30),
+      currentCost: normalizeMatText(req.body?.currentCost, 100),
+      notes: normalizeMatText(req.body?.notes, 2_000),
+      hasCurrentService: Boolean(req.body?.hasCurrentService),
+    }
+    if (!quote.company || !quote.contactName || !quote.email || !quote.phone || (kind === 'general' && !quote.location)) {
+      res.status(400).json({ message: 'Täytä kaikki pakolliset tarjouspyynnön tiedot.' })
+      return
+    }
+    if (!isValidEmail(quote.email) || !isValidPhone(quote.phone)) {
+      res.status(400).json({ message: 'Tarkista sähköpostiosoite ja puhelinnumero.' })
+      return
+    }
+    if (quote.businessId && !isValidBusinessId(quote.businessId)) {
+      res.status(400).json({ message: 'Tarkista Y-tunnus.' })
+      return
+    }
+    if (quote.interval && !(quote.interval in matServiceConfig.intervals)) {
+      res.status(400).json({ message: 'Tarkista vaihtoväli.' })
+      return
+    }
+
+    const attachment = decodePrivateAttachment(req.body?.invoice)
+    if (kind === 'lindstrom' && !attachment) {
+      res.status(400).json({ message: 'Liitä nykyinen Lindström-lasku.' })
+      return
+    }
+
+    const subject = kind === 'lindstrom' ? 'Lindström-laskun vertailutarjous' : 'Uusi Lindström-vaihtomattojen tarjouspyyntö'
+    const mailResult = await sendMailBatch([
+      {
+        from: mailFrom,
+        to: ownerNotificationRecipients.join(','),
+        replyTo: quote.email,
+        subject,
+        html: matQuoteOwnerHtml({ kind, quote, hasInvoice: Boolean(attachment) }),
+        ...(attachment ? { attachments: [attachment] } : {}),
+      },
+      {
+        from: mailFrom,
+        to: quote.email,
+        subject: kind === 'lindstrom' ? 'Vertailutarjouspyyntö vastaanotettu' : 'Mattopalvelun tarjouspyyntö vastaanotettu',
+        html: matQuoteCustomerHtml(kind),
+      },
+    ], `mat-service-quote:${kind}`, { redactRecipients: true })
+
+    if (!mailResult.ok) {
+      res.status(502).json({ message: 'Tarjouspyynnön lähettäminen epäonnistui. Tietoja ei tallennettu. Yritä uudelleen tai ota yhteyttä asiakaspalveluun.' })
+      return
+    }
+    res.status(201).json({ ok: true })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Tarjouspyynnön lähettäminen epäonnistui.'
+    const status = /Liite|tiedosto/i.test(message) ? 400 : 500
+    if (status === 500) console.error('[mat-service] Quote request failed without logging customer payload.', error)
+    res.status(status).json({ message })
+  }
 })
 
 app.get('/api/customer/session', (req, res) => {
@@ -2872,6 +3214,14 @@ app.get('/google-merchant.xml', (req, res) => {
       catalog: readPublicCatalog(),
     }),
   )
+})
+
+app.get(['/vuokramatot-yrityksille', '/lindstrom-mattopalvelu'], (_req, res) => {
+  res.redirect(301, '/vaihtomatot-yrityksille')
+})
+
+app.get('/vaihtomatot-yrityksille', (req, res) => {
+  res.type('html').send(renderMatServicePage({ siteUrl: getSiteUrl(req) }))
 })
 
 app.get('/og/product/:slug.svg', (req, res) => {
