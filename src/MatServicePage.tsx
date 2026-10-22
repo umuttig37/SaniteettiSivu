@@ -59,7 +59,7 @@ type MatOptionSize = {
   id: string
   label: string
   prices?: MatPrices
-  intervalPrices?: Record<IntervalId, number>
+  intervalPrices?: Partial<Record<IntervalId, number>>
 }
 type MatServiceDefinition = {
   enabled?: boolean
@@ -852,7 +852,7 @@ export default function MatServicePage() {
                             {service.images.map((image, index) => <i className={index === imageIndex ? 'active' : ''} key={image} />)}
                           </span>}
                         </span>
-                        <span className="mat-choice-card-copy"><strong>{service.label}</strong><span>{service.description}</span><small>{isSelected ? 'Valittu' : service.quoteOnly ? 'Pyydä tarjous' : 'Valitse'}</small></span>
+                        <span className="mat-choice-card-copy"><strong>{service.label}</strong><span>{service.description}</span><small>{isSelected ? 'Valittu' : 'Valitse'}</small></span>
                       </button>
                       {service.images.length > 1 && <div className="mat-gallery-controls" aria-label={`${service.label} kuvat`}>
                         <button type="button" aria-label="Edellinen kuva" onClick={() => changeGalleryImage(service.id, -1)}>‹</button>

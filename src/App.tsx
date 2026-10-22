@@ -7493,18 +7493,23 @@ function App() {
             />
             <div className="home-service-card-body">
               <div className="invoice-comparison-home-copy">
-                <span>{lang === 'fi' ? 'Laskuvertailu yrityksille' : 'Invoice comparison for businesses'}</span>
                 <h2 id="invoice-comparison-home-title">
-                  {lang === 'fi' ? 'Yrityksesi maksaa turhaan liikaa' : 'Your business is paying too much'}
+                  {lang === 'fi' ? 'Maksatko tuotteista liikaa?' : 'Are you paying too much for products?'}
                 </h2>
-                <p>
-                  {lang === 'fi'
-                    ? 'Lähetä nykyinen laskusi, ja lupaamme merkittävästi edullisemman tarjouksen samoista tuotteista!'
-                    : 'Send us your current invoice and we promise a significantly more affordable offer for the same products.'}
+                <p className="invoice-comparison-home-message">
+                  {lang === 'fi' ? <>
+                    Lähetä nykyinen laskusi, ja <strong>lupaamme</strong> merkittävästi edullisen tarjouksen samoista tuotteista!
+                  </> : <>
+                    Send us your current invoice, and <strong>we promise</strong> a significantly more affordable offer for the same products!
+                  </>}
+                </p>
+                <p className="invoice-comparison-home-reassurance">
+                  <span aria-hidden="true">✓</span>
+                  {lang === 'fi' ? ' Maksutta ja ilman sitoutumista.' : ' Free of charge and with no commitment.'}
                 </p>
               </div>
               <a className="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">
-                {lang === 'fi' ? 'Lähetä lasku' : 'Send invoice'}
+                {lang === 'fi' ? 'Tarkista säästösi →' : 'Check your savings →'}
               </a>
             </div>
           </aside>

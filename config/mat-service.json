@@ -79,19 +79,21 @@
     },
     "industrial": {
       "enabled": true,
-      "quoteOnly": true,
       "label": "Teollisuusmatto",
       "description": "Kestää kovaa kulutusta ja sitoo tehokkaasti likaa.",
       "images": [
         "/images/mattopalvelu/industrial-1.jpg",
         "/images/mattopalvelu/industrial-2.jpg"
       ],
-      "sizeIds": ["85x150", "115x200", "115x240"],
+      "sizes": [
+        { "id": "85x150", "label": "85 x 150 cm", "intervalPrices": { "weekly": 5.93, "twiceMonthly": 3.79 } },
+        { "id": "115x200", "label": "115 x 200 cm", "intervalPrices": { "weekly": 6.91, "twiceMonthly": 4.25 } },
+        { "id": "115x240", "label": "115 x 240 cm", "intervalPrices": { "weekly": 10.48, "twiceMonthly": 6.54 } }
+      ],
       "intervalIds": ["weekly", "twiceMonthly"],
       "colors": [
         { "id": "industrial-dark", "label": "Tummanharmaa", "hex": "#343a40" }
-      ],
-      "unitWeeklyPrice": 0
+      ]
     }
   },
   "marketingMessage": "Sama toimittaja. Sama palvelu. Pienempi lasku.",

@@ -608,11 +608,11 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
             <div class="home-service-card-image invoice-comparison-home-image" role="img" aria-label="L&auml;het&auml; yrityksesi lasku Suomen Paperitukulle"></div>
             <div class="home-service-card-body">
               <div class="invoice-comparison-home-copy">
-                <span>Laskuvertailu yrityksille</span>
-                <h2 id="invoice-comparison-home-title">Yrityksesi maksaa turhaan liikaa</h2>
-                <p>L&auml;het&auml; nykyinen laskusi, ja lupaamme merkitt&auml;v&auml;sti edullisemman tarjouksen samoista tuotteista!</p>
+                <h2 id="invoice-comparison-home-title">Maksatko tuotteista liikaa?</h2>
+                <p class="invoice-comparison-home-message">L&auml;het&auml; nykyinen laskusi, ja <strong>lupaamme</strong> merkitt&auml;v&auml;sti edullisen tarjouksen samoista tuotteista!</p>
+                <p class="invoice-comparison-home-reassurance"><span aria-hidden="true">&#10003;</span> Maksutta ja ilman sitoutumista.</p>
               </div>
-              <a class="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">L&auml;het&auml; lasku</a>
+              <a class="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">Tarkista s&auml;&auml;st&ouml;si &rarr;</a>
             </div>
           </aside>
 

@@ -58,6 +58,12 @@ const expectedDesignPrices = {
   '150x250': [30.55, 18.95, 13.90],
 }
 
+const expectedIndustrialPrices = {
+  '85x150': [5.93, 3.79],
+  '115x200': [6.91, 4.25],
+  '115x240': [10.48, 6.54],
+}
+
 const intervalTuple = (prices) => [prices.weekly, prices.twiceMonthly, prices.monthly]
 
 test('mat service resolves the required public price examples', () => {
@@ -126,10 +132,29 @@ test('design and industrial mats resolve from the shared service config', () => 
   })
   assert.ok(industrial)
   assert.equal(industrial.serviceLabel, 'Teollisuusmatto')
-  assert.equal(industrial.quoteOnly, true)
-  assert.equal(industrial.unitPrice, null)
-  assert.equal(industrial.weeklyTotal, null)
-  assert.deepEqual(matServiceConfig.services.industrial.sizeIds, ['85x150', '115x200', '115x240'])
+  assert.equal(industrial.quoteOnly, false)
+  assert.equal(industrial.unitPrice, 10.48)
+  assert.equal(industrial.weeklyTotal, 20.96)
+  assert.deepEqual(
+    Object.fromEntries(matServiceConfig.services.industrial.sizes.map((size) => [
+      size.id,
+      [size.intervalPrices.weekly, size.intervalPrices.twiceMonthly],
+    ])),
+    expectedIndustrialPrices,
+  )
+  for (const [size, prices] of Object.entries(expectedIndustrialPrices)) {
+    for (const [index, interval] of ['weekly', 'twiceMonthly'].entries()) {
+      const result = resolveMatSelection({
+        serviceType: 'industrial',
+        size,
+        color: 'industrial-dark',
+        interval,
+        quantity: 1,
+      })
+      assert.ok(result)
+      assert.equal(result.unitPrice, prices[index])
+    }
+  }
   assert.deepEqual(matServiceConfig.services.industrial.intervalIds, ['weekly', 'twiceMonthly'])
   assert.equal(resolveMatSelection({ serviceType: 'industrial', size: '115x240', color: 'industrial-dark', interval: 'monthly', quantity: 1 }), null)
 })
@@ -144,7 +169,7 @@ test('multiple mat selections are validated and priced independently', () => {
   })
   assert.ok(selections)
   assert.equal(selections.length, 3)
-  assert.deepEqual(selections.map((selection) => selection.weeklyTotal), [3.98, 26.75, null])
+  assert.deepEqual(selections.map((selection) => selection.weeklyTotal), [3.98, 26.75, 19.62])
 })
 
 test('multiple mat selections reject an invalid item and excessive item counts', () => {
