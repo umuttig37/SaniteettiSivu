@@ -1330,8 +1330,16 @@ const matchesProductSearch = (query: string, values: Array<string | undefined>) 
     return true
   }
 
-  const normalizedContent = normalizeSearchText(values.filter(Boolean).join(' '))
+  const normalizedValues = values
+    .map((value) => normalizeSearchText(value ?? ''))
+    .filter(Boolean)
+  const normalizedContent = normalizedValues.join(' ')
   if (normalizedContent.includes(normalizedQuery)) {
+    return true
+  }
+
+  const compactQuery = normalizedQuery.replace(/\s+/g, '')
+  if (normalizedValues.some((value) => value.replace(/\s+/g, '').includes(compactQuery))) {
     return true
   }
 
