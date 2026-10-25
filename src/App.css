@@ -2978,9 +2978,55 @@ html {
   flex-wrap: wrap;
 }
 
+.admin-categories {
+  min-width: 0;
+}
+
+.admin-categories-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+
+.admin-categories-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.admin-categories-toggle::after {
+  content: '+';
+  color: var(--primary);
+  font-size: 1.2rem;
+  line-height: 1;
+}
+
+.admin-categories[open] .admin-categories-toggle::after {
+  content: '-';
+}
+
+.admin-categories-label-open {
+  display: none;
+}
+
+.admin-categories[open] .admin-categories-label-closed {
+  display: none;
+}
+
+.admin-categories[open] .admin-categories-label-open {
+  display: inline;
+}
+
 .admin-categories-list {
   display: grid;
   gap: 0.6rem;
+  margin-top: 0.6rem;
 }
 
 .admin-category-chip {

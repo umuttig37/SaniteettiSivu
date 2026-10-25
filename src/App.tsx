@@ -5724,7 +5724,16 @@ function App() {
                 </form>
 
                 <div className="admin-list">
-                  <div className="admin-categories-list">
+                  <details className="admin-categories">
+                    <summary className="admin-categories-toggle">
+                      <span className="admin-categories-label-closed">
+                        {lang === 'fi' ? 'Avaa kategoriat' : 'Show categories'} ({adminCategoriesForDisplay.length})
+                      </span>
+                      <span className="admin-categories-label-open">
+                        {lang === 'fi' ? 'Piilota kategoriat' : 'Hide categories'} ({adminCategoriesForDisplay.length})
+                      </span>
+                    </summary>
+                    <div className="admin-categories-list">
                     {adminCategoriesForDisplay.map((category) => (
                       <div key={category.id} className={`admin-category-chip ${category.parentId ? 'is-subcategory' : ''}`}>
                         <div className="admin-category-fields">
@@ -5773,7 +5782,8 @@ function App() {
                         </div>
                       </div>
                     ))}
-                  </div>
+                    </div>
+                  </details>
 
                   <div className="admin-list-head">
                     <input
