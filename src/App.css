@@ -3409,6 +3409,12 @@ html {
   border-color: #b7e2c5;
 }
 
+.order-badge.is-delivered {
+  background: #d9f1e2;
+  color: #126333;
+  border-color: #8fcda6;
+}
+
 .order-badge.is-interrupted {
   background: #fff0f0;
   color: #9b2525;
@@ -3489,6 +3495,12 @@ html {
   border-color: #9fb9e8;
   color: #174fbd;
   font-size: 0.72rem;
+}
+
+.admin-order-delivered-button {
+  border-color: #8fcda6;
+  background: #edf9f1;
+  color: #126333;
 }
 
 .admin-customer-grid {

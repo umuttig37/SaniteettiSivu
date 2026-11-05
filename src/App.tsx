@@ -239,7 +239,7 @@ declare global {
   }
 }
 
-type OrderStatus = 'new' | 'shipped'
+type OrderStatus = 'new' | 'shipped' | 'delivered'
 
 type AdminOrderItem = {
   productId: string
@@ -2606,6 +2606,7 @@ function App() {
   const [customerActionCustomerId, setCustomerActionCustomerId] = useState<string | null>(null)
   const [customerActionType, setCustomerActionType] = useState<'approve' | 'delete' | 'save' | null>(null)
   const [shipActionOrderId, setShipActionOrderId] = useState<string | null>(null)
+  const [deliverActionOrderId, setDeliverActionOrderId] = useState<string | null>(null)
   const isGuestCheckout = routeState.type === 'checkout' && routeState.guestCheckout && !customerProfile
   const selectedPaymentMethod = isGuestCheckout ? 'card' : checkoutForm.paymentMethod
   const previousStorePageRef = useRef(currentPage)
@@ -4507,6 +4508,32 @@ function App() {
     }
   }
 
+  const markOrderDelivered = async (orderId: string) => {
+    setDeliverActionOrderId(orderId)
+    setAdminOrdersError('')
+    try {
+      const response = await adminFetch(`/api/orders/${orderId}/delivered`, {
+        method: 'POST',
+      })
+      const payload = (await response.json()) as { order?: AdminOrder; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok) {
+        setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Tilauksen merkitseminen toimitetuksi epäonnistui.' : 'Failed to mark the order as delivered.'))
+        return
+      }
+      if (payload.order) {
+        setAdminOrders((prev) => prev.map((item) => (item.id === orderId ? payload.order! : item)))
+      }
+    } catch {
+      setAdminOrdersError(lang === 'fi' ? 'Tilauksen merkitseminen toimitetuksi epäonnistui.' : 'Failed to mark the order as delivered.')
+    } finally {
+      setDeliverActionOrderId(null)
+    }
+  }
+
   const archiveAdminOrder = async (orderId: string) => {
     const confirmed = window.confirm(
       lang === 'fi'
@@ -5977,10 +6004,12 @@ function App() {
                                 <strong>{order.id}</strong>
                                 <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
                               </div>
-                              <span className={`order-badge ${order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
-                                {order.status === 'shipped'
-                                  ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
-                                  : (lang === 'fi' ? 'Uusi' : 'New')}
+                              <span className={`order-badge ${order.status === 'delivered' ? 'is-delivered' : order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
+                                {order.status === 'delivered'
+                                  ? (lang === 'fi' ? 'Toimitettu' : 'Delivered')
+                                  : order.status === 'shipped'
+                                    ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
+                                    : (lang === 'fi' ? 'Uusi' : 'New')}
                               </span>
                             </div>
                             <p className="small">
@@ -6013,22 +6042,34 @@ function App() {
                             <div className="admin-order-footer">
                               <strong>{lang === 'fi' ? 'Yhteens\u00E4' : 'Total'}: {formatPrice(order.total, lang)} {'\u20AC'}</strong>
                               <span className="admin-order-actions">
-                                <button
-                                  className="ghost tiny"
-                                  type="button"
-                                  disabled={order.status === 'shipped' || shipActionOrderId === order.id || archiveActionOrderId === order.id}
-                                  onClick={() => void markOrderShipped(order.id)}
-                                >
-                                  {order.status === 'shipped'
-                                    ? (lang === 'fi' ? 'L\u00E4hetetty' : 'Shipped')
-                                    : shipActionOrderId === order.id
+                                {order.status === 'new' && (
+                                  <button
+                                    className="ghost tiny"
+                                    type="button"
+                                    disabled={shipActionOrderId === order.id || archiveActionOrderId === order.id}
+                                    onClick={() => void markOrderShipped(order.id)}
+                                  >
+                                    {shipActionOrderId === order.id
                                       ? (lang === 'fi' ? 'L\u00E4hetet\u00E4\u00E4n...' : 'Sending...')
                                       : (lang === 'fi' ? 'Merkitse matkalla + email' : 'Mark shipped + email')}
-                                </button>
+                                  </button>
+                                )}
+                                {order.status === 'shipped' && (
+                                  <button
+                                    className="ghost tiny admin-order-delivered-button"
+                                    type="button"
+                                    disabled={deliverActionOrderId === order.id || archiveActionOrderId === order.id}
+                                    onClick={() => void markOrderDelivered(order.id)}
+                                  >
+                                    {deliverActionOrderId === order.id
+                                      ? (lang === 'fi' ? 'Tallennetaan...' : 'Saving...')
+                                      : (lang === 'fi' ? 'Toimitettu' : 'Delivered')}
+                                  </button>
+                                )}
                                 <button
                                   className="ghost tiny danger admin-order-archive-button"
                                   type="button"
-                                  disabled={archiveActionOrderId === order.id || shipActionOrderId === order.id}
+                                  disabled={archiveActionOrderId === order.id || shipActionOrderId === order.id || deliverActionOrderId === order.id}
                                   onClick={() => void archiveAdminOrder(order.id)}
                                 >
                                   {archiveActionOrderId === order.id
@@ -6752,10 +6793,12 @@ function App() {
                               <strong>{lang === 'fi' ? 'Tilaus' : 'Order'} #{order.id}</strong>
                               <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
                             </div>
-                            <span className={`order-badge ${order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
-                              {order.status === 'shipped'
-                                ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
-                                : (lang === 'fi' ? 'Vastaanotettu' : 'Received')}
+                            <span className={`order-badge ${order.status === 'delivered' ? 'is-delivered' : order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
+                              {order.status === 'delivered'
+                                ? (lang === 'fi' ? 'Toimitettu' : 'Delivered')
+                                : order.status === 'shipped'
+                                  ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
+                                  : (lang === 'fi' ? 'Vastaanotettu' : 'Received')}
                             </span>
                           </div>
                           <div className="account-order-items">

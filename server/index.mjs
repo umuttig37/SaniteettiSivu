@@ -504,7 +504,7 @@ const isAcceptedOrderPayment = (order) =>
 
 const toCustomerOrder = (order, productsById = new Map()) => ({
   id: String(order?.id ?? ''),
-  status: order?.status === 'shipped' ? 'shipped' : 'new',
+  status: order?.status === 'delivered' ? 'delivered' : order?.status === 'shipped' ? 'shipped' : 'new',
   createdAt: String(order?.createdAt ?? ''),
   shippedAt: order?.shippedAt ? String(order.shippedAt) : null,
   paymentMethod: order?.paymentMethod === 'paytrail' ? 'paytrail' : 'invoice',
@@ -3271,7 +3271,7 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
       res.status(409).json({ message: 'Archived order cannot be shipped' })
       return
     }
-    if (order.status === 'shipped') {
+    if (order.status === 'shipped' || order.status === 'delivered') {
       res.json({ ok: true, order, alreadyShipped: true })
       return
     }
@@ -3314,6 +3314,41 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
   } finally {
     shippingOrdersInProgress.delete(orderId)
   }
+})
+
+app.post('/api/orders/:orderId/delivered', requireAdmin, (req, res) => {
+  const orderId = String(req.params.orderId ?? '').trim()
+  if (!orderId) {
+    res.status(400).json({ message: 'Order ID is required' })
+    return
+  }
+  if (shippingOrdersInProgress.has(orderId)) {
+    res.status(409).json({ message: 'Order shipment is currently being processed' })
+    return
+  }
+
+  const orders = readOrders()
+  const order = orders.find((item) => item?.id === orderId)
+  if (!order) {
+    res.status(404).json({ message: 'Order not found' })
+    return
+  }
+  if (order.archivedAt) {
+    res.status(409).json({ message: 'Archived order cannot be marked as delivered' })
+    return
+  }
+  if (order.status === 'delivered') {
+    res.json({ ok: true, order, alreadyDelivered: true })
+    return
+  }
+  if (order.status !== 'shipped') {
+    res.status(409).json({ message: 'Only a shipped order can be marked as delivered' })
+    return
+  }
+
+  order.status = 'delivered'
+  writeOrders(orders)
+  res.json({ ok: true, order })
 })
 
 app.get('/robots.txt', (req, res) => {
