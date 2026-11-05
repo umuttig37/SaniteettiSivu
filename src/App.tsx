@@ -243,6 +243,7 @@ type OrderStatus = 'new' | 'shipped'
 
 type AdminOrderItem = {
   productId: string
+  sku?: string
   name: string
   quantity: number
   unitPrice: number
@@ -259,6 +260,8 @@ type AdminOrder = {
   paymentMethod?: 'invoice' | 'paytrail'
   paymentStatus?: string
   confirmationEmailSentAt?: string | null
+  archivedAt?: string | null
+  archivedBy?: string | null
   customer: {
     company: string
     contact: string
@@ -283,6 +286,13 @@ type AdminOrder = {
   vatAmount?: number
   grossTotal?: number
 }
+
+type CustomerOrder = Omit<AdminOrder, 'customer' | 'confirmationEmailSentAt'> & {
+  deliveryDate?: string
+}
+
+const isAcceptedOrderPayment = (order: Pick<AdminOrder, 'paymentMethod' | 'paymentStatus'>) =>
+  order.paymentMethod !== 'paytrail' || order.paymentStatus === 'paid'
 
 type AdminCustomer = {
   id: string
@@ -2568,9 +2578,13 @@ function App() {
   const [placingOrder, setPlacingOrder] = useState(false)
   const [lastOrderId, setLastOrderId] = useState(initialCheckoutSuccess?.orderId ?? '')
   const [checkoutSuccess, setCheckoutSuccess] = useState<CheckoutSuccessState | null>(initialCheckoutSuccess)
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrder[]>([])
+  const [customerOrdersLoading, setCustomerOrdersLoading] = useState(false)
+  const [customerOrdersError, setCustomerOrdersError] = useState('')
   const [adminOrders, setAdminOrders] = useState<AdminOrder[]>([])
   const [adminOrdersLoading, setAdminOrdersLoading] = useState(false)
   const [adminOrdersError, setAdminOrdersError] = useState('')
+  const [archiveActionOrderId, setArchiveActionOrderId] = useState<string | null>(null)
   const [adminInvoiceComparisons, setAdminInvoiceComparisons] = useState<AdminInvoiceComparison[]>([])
   const [adminInvoiceComparisonsLoading, setAdminInvoiceComparisonsLoading] = useState(false)
   const [adminInvoiceComparisonsError, setAdminInvoiceComparisonsError] = useState('')
@@ -2875,6 +2889,57 @@ function App() {
       active = false
     }
   }, [customerProfile?.id, customerSessionLoading, routeState.type])
+
+  useEffect(() => {
+    if (!customerProfile) {
+      setCustomerOrders([])
+      setCustomerOrdersError('')
+      setCustomerOrdersLoading(false)
+      return
+    }
+
+    if (routeState.type !== 'auth') {
+      return
+    }
+
+    let active = true
+    const controller = new AbortController()
+    setCustomerOrdersLoading(true)
+    setCustomerOrdersError('')
+
+    const loadCustomerOrders = async () => {
+      try {
+        const response = await fetch('/api/customer/orders', {
+          credentials: 'include',
+          cache: 'no-store',
+          signal: controller.signal,
+        })
+        const payload = (await response.json()) as { orders?: CustomerOrder[]; message?: string }
+        if (!active) {
+          return
+        }
+        if (!response.ok) {
+          setCustomerOrdersError(localizeAuthMessage(payload.message, lang) ?? (lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.'))
+          return
+        }
+        setCustomerOrders(Array.isArray(payload.orders) ? payload.orders : [])
+      } catch {
+        if (active && !controller.signal.aborted) {
+          setCustomerOrdersError(lang === 'fi' ? 'Tilausten haku epäonnistui.' : 'Failed to load orders.')
+        }
+      } finally {
+        if (active) {
+          setCustomerOrdersLoading(false)
+        }
+      }
+    }
+
+    void loadCustomerOrders()
+    return () => {
+      active = false
+      controller.abort()
+    }
+  }, [customerProfile, lang, routeState.type])
 
   useEffect(() => {
     setCurrentPage(1)
@@ -3775,7 +3840,7 @@ function App() {
       setCustomerProfile(payload.customer ?? null)
       setAuthNotice('')
       setLoginForm((prev) => ({ ...prev, password: '' }))
-      navigateTo(routeState.nextPath || '/kassa', true)
+      navigateTo(routeState.nextPath || '/', true)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch {
       setAuthError(lang === 'fi' ? 'Kirjautuminen epäonnistui.' : 'Sign in failed.')
@@ -3839,7 +3904,7 @@ function App() {
         return
       }
 
-      const nextPath = routeState.nextPath || '/kassa'
+      const nextPath = routeState.nextPath || '/'
       setAuthNotice(
         payload.mailWarning
           ? (lang === 'fi'
@@ -4442,6 +4507,63 @@ function App() {
     }
   }
 
+  const archiveAdminOrder = async (orderId: string) => {
+    const confirmed = window.confirm(
+      lang === 'fi'
+        ? `Oletko varma, että haluat siirtää tilauksen ${orderId} poistettuihin tilauksiin? Tilaus säilyy järjestelmässä.`
+        : `Are you sure you want to move order ${orderId} to deleted orders? The order will remain in the system.`,
+    )
+    if (!confirmed) {
+      return
+    }
+
+    setArchiveActionOrderId(orderId)
+    setAdminOrdersError('')
+    try {
+      const response = await adminFetch(`/api/orders/${encodeURIComponent(orderId)}/archive`, {
+        method: 'POST',
+      })
+      const payload = (await response.json()) as { order?: AdminOrder; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.order) {
+        setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Tilauksen siirtäminen poistettuihin epäonnistui.' : 'Failed to archive the order.'))
+        return
+      }
+      setAdminOrders((current) => current.map((order) => (order.id === orderId ? payload.order! : order)))
+    } catch {
+      setAdminOrdersError(lang === 'fi' ? 'Tilauksen siirtäminen poistettuihin epäonnistui.' : 'Failed to archive the order.')
+    } finally {
+      setArchiveActionOrderId(null)
+    }
+  }
+
+  const restoreAdminOrder = async (orderId: string) => {
+    setArchiveActionOrderId(orderId)
+    setAdminOrdersError('')
+    try {
+      const response = await adminFetch(`/api/orders/${encodeURIComponent(orderId)}/restore`, {
+        method: 'POST',
+      })
+      const payload = (await response.json()) as { order?: AdminOrder; message?: string }
+      if (response.status === 401) {
+        handleAdminUnauthorized()
+        return
+      }
+      if (!response.ok || !payload.order) {
+        setAdminOrdersError(payload.message ?? (lang === 'fi' ? 'Tilauksen palauttaminen epäonnistui.' : 'Failed to restore the order.'))
+        return
+      }
+      setAdminOrders((current) => current.map((order) => (order.id === orderId ? payload.order! : order)))
+    } catch {
+      setAdminOrdersError(lang === 'fi' ? 'Tilauksen palauttaminen epäonnistui.' : 'Failed to restore the order.')
+    } finally {
+      setArchiveActionOrderId(null)
+    }
+  }
+
   const approveAdminCustomer = async (customerId: string) => {
     setCustomerActionCustomerId(customerId)
     setCustomerActionType('approve')
@@ -5035,6 +5157,10 @@ function App() {
   const safeAdminPage = Math.min(adminPage, adminPages)
   const adminPageItems = adminFilteredProducts.slice((safeAdminPage - 1) * pageSize, safeAdminPage * pageSize)
   const pendingAdminCustomersCount = adminCustomers.filter((customer) => customer.approvalStatus === 'pending').length
+  const activeAdminOrders = adminOrders.filter((order) => !order.archivedAt)
+  const acceptedAdminOrders = activeAdminOrders.filter(isAcceptedOrderPayment)
+  const interruptedAdminOrders = activeAdminOrders.filter((order) => !isAcceptedOrderPayment(order))
+  const archivedAdminOrders = adminOrders.filter((order) => Boolean(order.archivedAt))
   const customerDisplayName = getDisplayName(customerProfile)
   const renderOrderSuccessCard = () => (
     <div className="order-success-shell">
@@ -5840,11 +5966,11 @@ function App() {
                     {adminOrdersError && <div className="error">{adminOrdersError}</div>}
                     {adminOrdersLoading ? (
                       <p className="muted">{lang === 'fi' ? 'Haetaan tilauksia...' : 'Loading orders...'}</p>
-                    ) : adminOrders.length === 0 ? (
+                    ) : acceptedAdminOrders.length === 0 ? (
                       <p className="muted">{lang === 'fi' ? 'Ei tilauksia viel\u00E4.' : 'No orders yet.'}</p>
                     ) : (
                       <div className="admin-orders-list">
-                        {adminOrders.map((order) => (
+                        {acceptedAdminOrders.map((order) => (
                           <div key={order.id} className="admin-order-card">
                             <div className="admin-order-top">
                               <div>
@@ -5886,24 +6012,143 @@ function App() {
                             </div>
                             <div className="admin-order-footer">
                               <strong>{lang === 'fi' ? 'Yhteens\u00E4' : 'Total'}: {formatPrice(order.total, lang)} {'\u20AC'}</strong>
-                              <button
-                                className="ghost tiny"
-                                type="button"
-                                disabled={order.status === 'shipped' || shipActionOrderId === order.id}
-                                onClick={() => void markOrderShipped(order.id)}
-                              >
-                                {order.status === 'shipped'
-                                  ? (lang === 'fi' ? 'L\u00E4hetetty' : 'Shipped')
-                                  : shipActionOrderId === order.id
-                                    ? (lang === 'fi' ? 'L\u00E4hetet\u00E4\u00E4n...' : 'Sending...')
-                                    : (lang === 'fi' ? 'Merkitse matkalla + email' : 'Mark shipped + email')}
-                              </button>
+                              <span className="admin-order-actions">
+                                <button
+                                  className="ghost tiny"
+                                  type="button"
+                                  disabled={order.status === 'shipped' || shipActionOrderId === order.id || archiveActionOrderId === order.id}
+                                  onClick={() => void markOrderShipped(order.id)}
+                                >
+                                  {order.status === 'shipped'
+                                    ? (lang === 'fi' ? 'L\u00E4hetetty' : 'Shipped')
+                                    : shipActionOrderId === order.id
+                                      ? (lang === 'fi' ? 'L\u00E4hetet\u00E4\u00E4n...' : 'Sending...')
+                                      : (lang === 'fi' ? 'Merkitse matkalla + email' : 'Mark shipped + email')}
+                                </button>
+                                <button
+                                  className="ghost tiny danger admin-order-archive-button"
+                                  type="button"
+                                  disabled={archiveActionOrderId === order.id || shipActionOrderId === order.id}
+                                  onClick={() => void archiveAdminOrder(order.id)}
+                                >
+                                  {archiveActionOrderId === order.id
+                                    ? (lang === 'fi' ? 'Siirretään...' : 'Moving...')
+                                    : (lang === 'fi' ? 'Poista' : 'Delete')}
+                                </button>
+                              </span>
                             </div>
                           </div>
                         ))}
                       </div>
                     )}
                   </div>
+
+                  <details className="admin-interrupted-orders">
+                    <summary>
+                      <span>
+                        {lang === 'fi' ? 'Keskeytyneet tai keskeneräiset korttimaksut' : 'Interrupted or incomplete card payments'}
+                      </span>
+                      <span className="admin-interrupted-count">{interruptedAdminOrders.length}</span>
+                    </summary>
+                    {interruptedAdminOrders.length === 0 ? (
+                      <p className="muted small">{lang === 'fi' ? 'Ei keskeytyneitä korttimaksuja.' : 'No interrupted card payments.'}</p>
+                    ) : (
+                      <div className="admin-orders-list">
+                        {interruptedAdminOrders.map((order) => (
+                          <div key={order.id} className="admin-order-card is-interrupted">
+                            <div className="admin-order-top">
+                              <div>
+                                <strong>{order.id}</strong>
+                                <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
+                              </div>
+                              <span className="order-badge is-interrupted">
+                                {order.paymentStatus === 'pending'
+                                  ? (lang === 'fi' ? 'Maksu kesken' : 'Payment pending')
+                                  : (lang === 'fi' ? 'Maksu keskeytyi' : 'Payment interrupted')}
+                              </span>
+                            </div>
+                            <p className="small">
+                              <strong>{order.customer.company}</strong> {'\u00B7'} {order.customer.contact} {'\u00B7'} {order.customer.email}
+                            </p>
+                            <div className="admin-order-items">
+                              {order.items.map((item, index) => (
+                                <div key={`${order.id}-${item.productId}-${index}`} className="admin-order-item">
+                                  <span>{item.name}</span>
+                                  <span>{item.quantity} {'\u00D7'} {formatPrice(item.unitPrice, lang)} {'\u20AC'}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="admin-order-footer">
+                              <strong>{lang === 'fi' ? 'Yhteens\u00E4' : 'Total'}: {formatPrice(order.total, lang)} {'\u20AC'}</strong>
+                              <span className="muted small">
+                                {lang === 'fi' ? 'Ei käsitellä tilauksena' : 'Not processed as an order'}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </details>
+
+                  <details className="admin-archived-orders">
+                    <summary>
+                      <span>{lang === 'fi' ? 'Poistetut tilaukset' : 'Deleted orders'}</span>
+                      <span className="admin-archived-count">{archivedAdminOrders.length}</span>
+                    </summary>
+                    {archivedAdminOrders.length === 0 ? (
+                      <p className="muted small">{lang === 'fi' ? 'Ei poistettuja tilauksia.' : 'No deleted orders.'}</p>
+                    ) : (
+                      <div className="admin-orders-list">
+                        {archivedAdminOrders.map((order) => (
+                          <div key={order.id} className="admin-order-card is-archived">
+                            <div className="admin-order-top">
+                              <div>
+                                <strong>{order.id}</strong>
+                                <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
+                              </div>
+                              <span className="order-badge is-archived">
+                                {lang === 'fi' ? 'Poistettu' : 'Deleted'}
+                              </span>
+                            </div>
+                            <p className="small">
+                              <strong>{order.customer.company}</strong> {'\u00B7'} {order.customer.contact} {'\u00B7'} {order.customer.email}
+                            </p>
+                            <div className="admin-order-items">
+                              {order.items.map((item, index) => (
+                                <div key={`${order.id}-${item.productId}-${index}`} className="admin-order-item">
+                                  <span>
+                                    {item.name}
+                                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                                      <span className="admin-order-option-text">{formatSelectedOptionsText(item.selectedOptions)}</span>
+                                    )}
+                                  </span>
+                                  <span>{item.quantity} {'\u00D7'} {formatPrice(item.unitPrice, lang)} {'\u20AC'}</span>
+                                </div>
+                              ))}
+                            </div>
+                            <div className="admin-order-footer">
+                              <strong>{lang === 'fi' ? 'Yhteensä' : 'Total'}: {formatPrice(order.total, lang)} {'\u20AC'}</strong>
+                              <span className="admin-order-actions">
+                                <span className="muted small">
+                                  {lang === 'fi' ? 'Siirretty poistettuihin' : 'Moved to deleted orders'}: {formatDateTime(order.archivedAt ?? '', lang)}
+                                </span>
+                                <button
+                                  className="ghost tiny admin-order-restore-button"
+                                  type="button"
+                                  disabled={archiveActionOrderId === order.id}
+                                  onClick={() => void restoreAdminOrder(order.id)}
+                                >
+                                  {archiveActionOrderId === order.id
+                                    ? (lang === 'fi' ? 'Palautetaan...' : 'Restoring...')
+                                    : (lang === 'fi' ? 'Palauta' : 'Restore')}
+                                </button>
+                              </span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </details>
 
                   <div className="admin-invoice-comparisons">
                     <div className="admin-orders-head">
@@ -6432,13 +6677,28 @@ function App() {
           <section className="section utility-page auth-page">
             <div className="utility-page-head">
               <div>
-                <h1>{routeState.authMode === 'register' ? (lang === 'fi' ? 'Rekisteröidy' : 'Register') : (lang === 'fi' ? 'Kirjaudu' : 'Sign in')}</h1>
+                <h1>
+                  {customerProfile
+                    ? (lang === 'fi' ? 'Oma tili' : 'My account')
+                    : routeState.authMode === 'register'
+                      ? (lang === 'fi' ? 'Rekisteröidy' : 'Register')
+                      : (lang === 'fi' ? 'Kirjaudu' : 'Sign in')}
+                </h1>
                 <p className="muted">
-                  {lang === 'fi'
-                    ? 'Luo yritystili tai kirjaudu sisään, jotta voit tehdä tilauksia verkossa.'
-                    : 'Create a company account or sign in to place orders online.'}
+                  {customerProfile
+                    ? (lang === 'fi'
+                        ? 'Tarkastele tilauksiasi ja yrityksesi tietoja yhdessä paikassa.'
+                        : 'View your orders and company details in one place.')
+                    : lang === 'fi'
+                      ? 'Luo yritystili tai kirjaudu sisään, jotta voit tehdä tilauksia verkossa.'
+                      : 'Create a company account or sign in to place orders online.'}
                 </p>
               </div>
+              {customerProfile && (
+                <button className="ghost account-continue-button" type="button" onClick={() => goToSection('products')}>
+                  {lang === 'fi' ? 'Jatka ostoksia' : 'Continue shopping'} <span aria-hidden="true">{'\u2192'}</span>
+                </button>
+              )}
             </div>
 
             {customerSessionLoading ? (
@@ -6448,30 +6708,166 @@ function App() {
                 </div>
               </div>
             ) : customerProfile ? (
-              <div className="auth-shell">
-                <div className="card auth-card account-card">
-                  <span className="auth-kicker">{lang === 'fi' ? 'Yritystili aktiivinen' : 'Company account active'}</span>
-                  <h2>{customerProfile.companyName}</h2>
-                  <p className="muted">
-                    {customerDisplayName} · {customerProfile.email}
-                  </p>
-                  <div className="account-grid">
-                    <div>
-                      <span className="muted small">{lang === 'fi' ? 'Y-tunnus' : 'Business ID'}</span>
-                      <strong>{customerProfile.businessId}</strong>
+              <div className="account-dashboard" id="account-overview">
+                <details className="card account-orders-section" id="account-orders">
+                  <summary className="account-orders-toggle">
+                    <span className="account-orders-toggle-copy">
+                      <strong>{lang === 'fi' ? 'Tilaukset' : 'Orders'}</strong>
+                      <span className="account-orders-toggle-closed">
+                        {lang === 'fi' ? 'Avaa tilaushistoria' : 'Show order history'}
+                      </span>
+                      <span className="account-orders-toggle-open">
+                        {lang === 'fi' ? 'Piilota tilaushistoria' : 'Hide order history'}
+                      </span>
+                    </span>
+                    <span className="account-orders-count">
+                      {customerOrders.length} {lang === 'fi' ? 'tilausta' : 'orders'}
+                    </span>
+                  </summary>
+                  <div className="account-orders-content">
+                    <div className="account-orders-head">
+                      <div>
+                        <h2>{lang === 'fi' ? 'Viimeisimmät tilaukset' : 'Latest orders'}</h2>
+                        <p className="muted small">
+                          {lang === 'fi' ? 'Seuraa toimituksia ja tarkastele aiempia ostoksia.' : 'Track deliveries and review previous purchases.'}
+                        </p>
+                      </div>
                     </div>
-                    <div>
-                      <span className="muted small">{lang === 'fi' ? 'Puhelin' : 'Phone'}</span>
-                      <strong>{customerProfile.phone}</strong>
-                    </div>
+                    {customerOrdersError && <div className="error" role="alert">{customerOrdersError}</div>}
+                    {customerOrdersLoading ? (
+                      <p className="muted">{lang === 'fi' ? 'Haetaan tilauksia...' : 'Loading orders...'}</p>
+                    ) : customerOrders.length === 0 ? (
+                      <div className="account-orders-empty">
+                        <strong>{lang === 'fi' ? 'Ei aiempia tilauksia' : 'No previous orders'}</strong>
+                        <span className="muted small">
+                          {lang === 'fi' ? 'Hyväksytyt tilaukset näkyvät täällä.' : 'Confirmed orders will appear here.'}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="account-orders-list">
+                        {customerOrders.map((order) => (
+                          <article className="account-order-card" key={order.id}>
+                          <div className="account-order-top">
+                            <div>
+                              <strong>{lang === 'fi' ? 'Tilaus' : 'Order'} #{order.id}</strong>
+                              <p className="muted small">{formatDateTime(order.createdAt, lang)}</p>
+                            </div>
+                            <span className={`order-badge ${order.status === 'shipped' ? 'is-shipped' : 'is-new'}`}>
+                              {order.status === 'shipped'
+                                ? (lang === 'fi' ? 'Matkalla' : 'Shipped')
+                                : (lang === 'fi' ? 'Vastaanotettu' : 'Received')}
+                            </span>
+                          </div>
+                          <div className="account-order-items">
+                            {order.items.map((item, index) => (
+                              <div className="account-order-item" key={`${order.id}-${item.productId}-${index}`}>
+                                <div className="account-order-product">
+                                  <span className="account-product-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="m4 7.5 8-4 8 4-8 4z" />
+                                      <path d="M4 7.5v9l8 4 8-4v-9" />
+                                      <path d="M12 11.5v9" />
+                                    </svg>
+                                  </span>
+                                  <span>
+                                    <strong>{item.name}</strong>
+                                    <span className="muted small">
+                                      {item.quantity} {lang === 'fi' ? 'kpl' : 'pcs'}
+                                    </span>
+                                    {item.selectedOptions && item.selectedOptions.length > 0 && (
+                                      <span className="admin-order-option-text">{formatSelectedOptionsText(item.selectedOptions)}</span>
+                                    )}
+                                    <span className="account-product-sku muted small">
+                                      {lang === 'fi' ? 'Tuotenumero' : 'Product number'}: {item.sku ?? item.productId}
+                                    </span>
+                                  </span>
+                                </div>
+                                <strong>{item.quantity} {'\u00D7'} {formatPrice(item.unitPrice, lang)} {'\u20AC'}</strong>
+                              </div>
+                            ))}
+                          </div>
+                          {order.deliveryDate && (
+                            <p className="account-order-delivery-date muted small">
+                              {lang === 'fi' ? 'Toivottu toimituspäivä' : 'Requested delivery date'}: {formatCalendarDate(order.deliveryDate, lang)}
+                            </p>
+                          )}
+                          <div className="account-order-footer">
+                            <span className="account-order-footer-meta muted small">
+                              <span>{lang === 'fi' ? 'Toimitus' : 'Delivery'} {formatPrice(order.shipping, lang)} {'\u20AC'} ({lang === 'fi' ? 'alv 0 %' : 'VAT 0%'})</span>
+                              <span>
+                                {order.paymentMethod === 'paytrail'
+                                  ? (lang === 'fi' ? 'Maksutapa: kortti' : 'Payment method: card')
+                                  : (lang === 'fi' ? 'Maksutapa: lasku' : 'Payment method: invoice')}
+                              </span>
+                            </span>
+                            <span className="account-order-total">
+                              <span className="muted small">{lang === 'fi' ? 'Yhteensä alv 0 %' : 'Total VAT 0%'}</span>
+                              <strong>{formatPrice(order.total, lang)} {'\u20AC'}</strong>
+                            </span>
+                          </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                    <p className="account-vat-note muted small">
+                      {lang === 'fi' ? 'Kaikki hinnat näytetään ilman arvonlisäveroa (alv 0 %).' : 'All prices are shown excluding VAT (VAT 0%).'}
+                    </p>
                   </div>
-                  <div className="account-password-section">
-                    <div>
-                      <h3>{lang === 'fi' ? 'Vaihda salasana' : 'Change password'}</h3>
-                      <p className="muted small">
-                        {lang === 'fi' ? 'Vahvista nykyinen salasanasi ja aseta uusi salasana.' : 'Confirm your current password and set a new one.'}
-                      </p>
+                </details>
+
+                <aside className="account-side-column">
+                  <section className="card account-company-card" id="account-company">
+                    <h2>{lang === 'fi' ? 'Yrityksen tiedot' : 'Company details'}</h2>
+                    <span className="account-active-status">
+                      <span aria-hidden="true" /> {lang === 'fi' ? 'Yritystili aktiivinen' : 'Company account active'}
+                    </span>
+                    <dl className="account-company-details">
+                      <div>
+                        <dt>{lang === 'fi' ? 'Yrityksen nimi' : 'Company name'}</dt>
+                        <dd>{customerProfile.companyName}</dd>
+                      </div>
+                      <div>
+                        <dt>{lang === 'fi' ? 'Yhteyshenkilö' : 'Contact person'}</dt>
+                        <dd>{customerDisplayName}</dd>
+                      </div>
+                      <div>
+                        <dt>{lang === 'fi' ? 'Sähköpostiosoite' : 'Email address'}</dt>
+                        <dd>{customerProfile.email}</dd>
+                      </div>
+                      <div className="account-company-details-row">
+                        <span>
+                          <dt>{lang === 'fi' ? 'Y-tunnus' : 'Business ID'}</dt>
+                          <dd>{customerProfile.businessId}</dd>
+                        </span>
+                        <span>
+                          <dt>{lang === 'fi' ? 'Puhelin' : 'Phone'}</dt>
+                          <dd>{customerProfile.phone}</dd>
+                        </span>
+                      </div>
+                    </dl>
+                  </section>
+                  <section className="card account-help-card">
+                    <div className="account-help-title">
+                      <span className="account-help-icon" aria-hidden="true">?</span>
+                      <h3>{lang === 'fi' ? 'Tarvitsetko apua?' : 'Need help?'}</h3>
                     </div>
+                    <p className="muted small">
+                      {lang === 'fi'
+                        ? 'Autamme mielellämme tilauksiin ja yritysasiakkuuteen liittyvissä kysymyksissä.'
+                        : 'We are happy to help with orders and business account questions.'}
+                    </p>
+                    <button className="account-help-link" type="button" onClick={goToContact}>
+                      {lang === 'fi' ? 'Ota yhteyttä' : 'Contact us'} {'\u2192'}
+                    </button>
+                  </section>
+                </aside>
+
+                <details className="card account-password-details account-password-card" id="account-password">
+                  <summary>{lang === 'fi' ? 'Vaihda salasana' : 'Change password'}</summary>
+                  <div className="account-password-section">
+                    <p className="muted small">
+                      {lang === 'fi' ? 'Vahvista nykyinen salasanasi ja aseta uusi salasana.' : 'Confirm your current password and set a new one.'}
+                    </p>
                     {passwordChangeNotice && <div className="success" role="status">{passwordChangeNotice}</div>}
                     {passwordChangeError && <div className="error" role="alert">{passwordChangeError}</div>}
                     <form
@@ -6522,15 +6918,7 @@ function App() {
                       </button>
                     </form>
                   </div>
-                  <div className="auth-actions">
-                    <button className="primary" type="button" onClick={goToCheckout}>
-                      {lang === 'fi' ? 'Jatka kassalle' : 'Continue to checkout'}
-                    </button>
-                    <button className="ghost" type="button" onClick={handleCustomerLogout}>
-                      {lang === 'fi' ? 'Kirjaudu ulos' : 'Log out'}
-                    </button>
-                  </div>
-                </div>
+                </details>
               </div>
             ) : (
               <div className="auth-shell auth-shell-grid">

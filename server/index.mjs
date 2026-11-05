@@ -438,6 +438,18 @@ const writeOrders = (orders) => {
   fs.writeFileSync(ordersFile, JSON.stringify(orders, null, 2), 'utf8')
 }
 
+const updateStoredOrder = (orderId, update) => {
+  const orders = readOrders()
+  const order = orders.find((item) => item?.id === orderId)
+  if (!order) {
+    return null
+  }
+
+  update(order)
+  writeOrders(orders)
+  return order
+}
+
 const makeOrderId = (orders) => {
   const numericIds = orders
     .map((order) => Number(order.id))
@@ -486,6 +498,36 @@ const normalizeSelectedOptions = (selectedOptions) =>
         })
         .filter(Boolean)
     : []
+
+const isAcceptedOrderPayment = (order) =>
+  order?.paymentMethod !== 'paytrail' || order?.paymentStatus === 'paid'
+
+const toCustomerOrder = (order, productsById = new Map()) => ({
+  id: String(order?.id ?? ''),
+  status: order?.status === 'shipped' ? 'shipped' : 'new',
+  createdAt: String(order?.createdAt ?? ''),
+  shippedAt: order?.shippedAt ? String(order.shippedAt) : null,
+  paymentMethod: order?.paymentMethod === 'paytrail' ? 'paytrail' : 'invoice',
+  paymentStatus: String(order?.paymentStatus ?? ''),
+  deliveryDate: String(order?.customer?.deliveryDate ?? ''),
+  items: (Array.isArray(order?.items) ? order.items : []).map((item) => {
+    const productId = String(item?.productId ?? '')
+    return {
+      productId,
+      sku: String(item?.sku ?? '').trim() || String(productsById.get(productId)?.sku ?? productId),
+      name: String(item?.name ?? ''),
+      quantity: Number(item?.quantity ?? 0),
+      unitPrice: Number(item?.unitPrice ?? 0),
+      priceUnit: String(item?.priceUnit ?? ''),
+      selectedOptions: normalizeSelectedOptions(item?.selectedOptions),
+    }
+  }),
+  subtotal: Number(order?.subtotal ?? 0),
+  shipping: Number(order?.shipping ?? 0),
+  total: Number(order?.total ?? 0),
+  vatAmount: Number(order?.vatAmount ?? 0),
+  grossTotal: Number(order?.grossTotal ?? order?.total ?? 0),
+})
 
 const getResolvedUnitPrice = (product, selectedOptions) =>
   normalizeSelectedOptions(selectedOptions).find((item) => item.valuePrice !== undefined)?.valuePrice ?? Number(product.price ?? 0)
@@ -1887,7 +1929,9 @@ const finalizePaytrailOrder = async (req, source = 'redirect') => {
     mailResult = await sendOrderEmails(order, { attachReceipt: true })
     if (mailResult.ok) {
       order.confirmationEmailSentAt = now
-      writeOrders(orders)
+      updateStoredOrder(order.id, (storedOrder) => {
+        storedOrder.confirmationEmailSentAt = now
+      })
     }
   }
 
@@ -2091,6 +2135,18 @@ app.get('/api/customer/session', (req, res) => {
     authenticated: true,
     customer: toPublicCustomer(session.customer),
   })
+})
+
+app.get('/api/customer/orders', requireCustomer, (req, res) => {
+  const customerId = req.customer.id
+  const productsById = new Map(readCatalog().products.map((product) => [product.id, product]))
+  const orders = readOrders()
+    .filter((order) => order?.customerId === customerId && !order?.archivedAt && isAcceptedOrderPayment(order))
+    .sort((a, b) => String(b?.createdAt ?? '').localeCompare(String(a?.createdAt ?? '')))
+    .map((order) => toCustomerOrder(order, productsById))
+
+  res.setHeader('Cache-Control', 'private, no-store')
+  res.json({ orders })
 })
 
 app.post('/api/customer/register', async (req, res) => {
@@ -2785,7 +2841,9 @@ app.post('/api/checkout/invoice', requireCustomer, async (req, res) => {
     const mailResult = await sendOrderEmails(order)
     if (mailResult.ok) {
       order.confirmationEmailSentAt = new Date().toISOString()
-      writeOrders(orders)
+      updateStoredOrder(order.id, (storedOrder) => {
+        storedOrder.confirmationEmailSentAt = order.confirmationEmailSentAt
+      })
     }
 
     res.status(201).json({
@@ -3063,7 +3121,60 @@ app.get('/api/paytrail/callback/:result', async (req, res) => {
 
 app.get('/api/orders', requireAdmin, (req, res) => {
   const orders = readOrders().sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+  res.setHeader('Cache-Control', 'private, no-store')
   res.json({ orders })
+})
+
+app.post('/api/orders/:orderId/archive', requireAdmin, (req, res) => {
+  const orderId = String(req.params.orderId ?? '').trim()
+  if (!orderId) {
+    res.status(400).json({ message: 'Order ID is required' })
+    return
+  }
+  if (shippingOrdersInProgress.has(orderId)) {
+    res.status(409).json({ message: 'Order shipment is currently being processed' })
+    return
+  }
+
+  const orders = readOrders()
+  const order = orders.find((item) => item?.id === orderId)
+  if (!order) {
+    res.status(404).json({ message: 'Order not found' })
+    return
+  }
+  if (order.archivedAt) {
+    res.json({ ok: true, order, alreadyArchived: true })
+    return
+  }
+
+  order.archivedAt = new Date().toISOString()
+  order.archivedBy = adminUser
+  writeOrders(orders)
+  res.json({ ok: true, order })
+})
+
+app.post('/api/orders/:orderId/restore', requireAdmin, (req, res) => {
+  const orderId = String(req.params.orderId ?? '').trim()
+  if (!orderId) {
+    res.status(400).json({ message: 'Order ID is required' })
+    return
+  }
+
+  const orders = readOrders()
+  const order = orders.find((item) => item?.id === orderId)
+  if (!order) {
+    res.status(404).json({ message: 'Order not found' })
+    return
+  }
+  if (!order.archivedAt) {
+    res.json({ ok: true, order, alreadyActive: true })
+    return
+  }
+
+  delete order.archivedAt
+  delete order.archivedBy
+  writeOrders(orders)
+  res.json({ ok: true, order })
 })
 
 app.post('/api/orders', async (req, res) => {
@@ -3130,7 +3241,9 @@ app.post('/api/orders', async (req, res) => {
     const mailResult = await sendOrderEmails(order)
     if (mailResult.ok) {
       order.confirmationEmailSentAt = new Date().toISOString()
-      writeOrders(orders)
+      updateStoredOrder(order.id, (storedOrder) => {
+        storedOrder.confirmationEmailSentAt = order.confirmationEmailSentAt
+      })
     }
 
     res.status(201).json({ orderId: order.id, mailWarning: !mailResult.ok })
@@ -3152,6 +3265,10 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
     const order = orders.find((item) => item.id === orderId)
     if (!order) {
       res.status(404).json({ message: 'Order not found' })
+      return
+    }
+    if (order.archivedAt) {
+      res.status(409).json({ message: 'Archived order cannot be shipped' })
       return
     }
     if (order.status === 'shipped') {
@@ -3187,10 +3304,11 @@ app.post('/api/orders/:orderId/shipped', requireAdmin, async (req, res) => {
       ],
     })
 
-    order.status = 'shipped'
-    order.shippedAt = shippedAt
-    writeOrders(orders)
-    res.json({ ok: true, order })
+    const storedOrder = updateStoredOrder(order.id, (latestOrder) => {
+      latestOrder.status = 'shipped'
+      latestOrder.shippedAt = shippedAt
+    })
+    res.json({ ok: true, order: storedOrder ?? order })
   } catch (error) {
     res.status(500).json({ message: error instanceof Error ? error.message : 'Failed to send shipped email' })
   } finally {
