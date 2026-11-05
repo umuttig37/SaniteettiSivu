@@ -450,7 +450,7 @@ const rawText = {
     related: 'Ehdotetut tuotteet',
     cartTitle: 'Ostoskori',
     cartEmpty: 'Ostoskori on tyhjä',
-    subtotal: 'Välisummaa',
+    subtotal: 'Välisumma',
     delivery: 'Toimitus',
     total: 'Yhteensä',
     clearCart: 'Tyhjennä kori',
@@ -3000,6 +3000,18 @@ function App() {
       return changed ? next : prev
     })
   }, [isGuestCheckout])
+
+  useEffect(() => {
+    if (routeState.type !== 'checkout' || !customerProfile) {
+      return
+    }
+
+    setCheckoutForm((prev) => (
+      prev.paymentMethod === 'invoice'
+        ? prev
+        : { ...prev, paymentMethod: 'invoice' }
+    ))
+  }, [customerProfile, routeState.type])
 
   useEffect(() => {
     if (routeState.type !== 'reset-password') {
@@ -7241,7 +7253,7 @@ function App() {
                 </div>
                 <div className="cart-summary">
                   <div>
-                    <span>{lang === 'fi' ? 'Välisummaa alv 0%' : 'Subtotal excl. VAT'}</span>
+                    <span>{lang === 'fi' ? 'Välisumma alv 0%' : 'Subtotal excl. VAT'}</span>
                     <strong>{formatPrice(subtotal, lang)} €</strong>
                   </div>
                   <div>
@@ -7397,16 +7409,16 @@ function App() {
                         <div className="checkout-form-block">
                           <h2>{lang === 'fi' ? 'Toimitusosoite' : 'Delivery address'}</h2>
                           <div className="field">
-                            <label>{t.form.address}</label>
+                            <label>{t.form.address} *</label>
                             <input value={checkoutForm.deliveryAddress} onChange={(event) => updateForm('deliveryAddress', event.target.value)} />
                           </div>
                           <div className="form-row">
                             <div className="field">
-                              <label>{t.form.zip}</label>
+                              <label>{t.form.zip} *</label>
                               <input value={checkoutForm.deliveryZip} inputMode="numeric" onChange={(event) => updateForm('deliveryZip', formatPostalCodeInput(event.target.value))} />
                             </div>
                             <div className="field">
-                              <label>{t.form.city}</label>
+                              <label>{t.form.city} *</label>
                               <input value={checkoutForm.deliveryCity} onChange={(event) => updateForm('deliveryCity', event.target.value)} />
                             </div>
                           </div>
@@ -7431,7 +7443,7 @@ function App() {
                             </span>
                           </div>
                           <div className="field">
-                            <label>{t.form.billingCompany}</label>
+                            <label>{t.form.billingCompany}{selectedPaymentMethod === 'invoice' ? ' *' : ''}</label>
                             <input value={checkoutForm.billingCompany} onChange={(event) => updateForm('billingCompany', event.target.value)} />
                           </div>
                           <div className="field e-invoice-field">
@@ -7570,7 +7582,7 @@ function App() {
                   )}
                   <div className="cart-summary">
                     <div>
-                      <span>{lang === 'fi' ? 'Välisummaa alv 0%' : 'Subtotal excl. VAT'}</span>
+                      <span>{lang === 'fi' ? 'Välisumma alv 0%' : 'Subtotal excl. VAT'}</span>
                       <strong>{formatPrice(subtotal, lang)} €</strong>
                     </div>
                   <div>
