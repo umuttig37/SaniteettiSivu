@@ -587,8 +587,9 @@ html {
 
 .home-service-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
+  max-width: 650px;
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
 }
@@ -615,10 +616,6 @@ html {
 
 .invoice-comparison-home-image {
   background: url('./assets/invoice-comparison-savings.png') center / cover no-repeat;
-  object-position: center;
-}
-
-.mat-service-home-image {
   object-position: center;
 }
 
@@ -694,94 +691,6 @@ html {
 .invoice-comparison-home-link:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(36, 88, 198, 0.2);
-}
-
-.mat-service-home-topline {
-  width: 100%;
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 0.75rem;
-  padding-right: 0.25rem;
-}
-
-.mat-service-home-logo {
-  width: 128px;
-  height: 26px;
-  flex: 0 0 128px;
-  margin-top: 0.3rem;
-  display: block;
-  object-fit: contain;
-  object-position: left center;
-}
-
-.mat-service-home-price-wrap {
-  position: relative;
-  flex: 0 0 auto;
-}
-
-.mat-service-home-price {
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  gap: 0.42rem;
-  padding: 0.5rem 0.78rem;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #3475f2 0%, #1552d1 100%);
-  color: #fff;
-  box-shadow: 0 8px 18px rgba(31, 91, 219, 0.3);
-  font-size: 0.75rem;
-  font-weight: 700;
-  line-height: 1;
-  white-space: nowrap;
-}
-
-.mat-service-home-price b {
-  font-size: 0.94rem;
-  font-weight: 900;
-}
-
-.mat-service-home-price-icon {
-  width: 17px;
-  height: 17px;
-  flex: 0 0 auto;
-  fill: none;
-  stroke: currentColor;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-  stroke-width: 2;
-}
-
-.mat-service-home-spark {
-  position: absolute;
-  top: -12px;
-  right: -20px;
-  width: 28px;
-  height: 24px;
-  overflow: visible;
-  fill: none;
-  stroke: #2d6cf0;
-  stroke-linecap: round;
-  stroke-width: 2;
-  pointer-events: none;
-}
-
-.mat-service-home-copy {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.mat-service-home-copy h2 {
-  margin: 0;
-  font-size: 1.28rem;
-  line-height: 1.2;
-}
-
-.mat-service-home-copy p {
-  margin: 0;
-  color: var(--ink);
-  font-size: 0.84rem;
-  line-height: 1.45;
 }
 
 .category-landing {
@@ -4351,21 +4260,6 @@ html {
     width: 100%;
     height: 170px;
     min-height: 170px;
-  }
-
-  .mat-service-home-image {
-    object-position: center 70%;
-  }
-
-  .mat-service-home-topline {
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-
-  .mat-service-home-logo {
-    width: 128px;
-    height: 26px;
-    flex-basis: 128px;
   }
 
   .invoice-comparison-home-link {
