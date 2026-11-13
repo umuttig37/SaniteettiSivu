@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import './App.css'
+import featureFlags from '../config/feature-flags.json'
 import brandLogo from './assets/paperitukkuLogo-removebg-preview.png'
 import heroBgImage from './assets/hero-background-new.jpg'
 import invoiceComparisonImage from './assets/invoice-comparison-savings.png'
@@ -7862,7 +7863,7 @@ function App() {
 
         {utilityHighlights}
 
-        <section className="section home-service-grid" aria-label={lang === 'fi' ? 'Palvelut yrityksille' : 'Services for businesses'}>
+        {featureFlags.invoiceComparison && <section className="section home-service-grid" aria-label={lang === 'fi' ? 'Palvelut yrityksille' : 'Services for businesses'}>
           <aside className="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
             <img
               className="home-service-card-image invoice-comparison-home-image"
@@ -7893,7 +7894,7 @@ function App() {
             </div>
           </aside>
 
-        </section>
+        </section>}
 
         <section className="section mobile-store-tools" aria-label={lang === 'fi' ? 'Mobiilin kauppatyökalut' : 'Mobile store tools'}>
           <div className="mobile-store-tools-shell">

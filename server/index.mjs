@@ -91,6 +91,7 @@ import {
 } from './invoice-comparison-store.mjs'
 import { renderInvoiceComparisonPage } from './invoice-comparison-page.mjs'
 import { createInvoiceComparisonMailMessages } from './invoice-comparison-mail.mjs'
+import { featureFlags } from './feature-flags.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const envFiles = [
@@ -2030,6 +2031,11 @@ app.post('/api/customer/logout', (req, res) => {
 })
 
 app.post('/api/invoice-comparisons', async (req, res) => {
+  if (!featureFlags.invoiceComparison) {
+    res.status(404).json({ message: 'Not found' })
+    return
+  }
+
   res.setHeader('Cache-Control', 'no-store')
 
   if (isInvoiceComparisonRateLimited(req)) {
@@ -3072,6 +3078,11 @@ app.get('/tuote/:slug', (req, res) => {
 })
 
 app.get('/laheta-laskusi', (req, res) => {
+  if (!featureFlags.invoiceComparison) {
+    res.status(404).type('text/plain').send('Not found')
+    return
+  }
+
   res.setHeader('Cache-Control', 'no-cache')
   res.type('html').send(renderInvoiceComparisonPage({ siteUrl: getSiteUrl(req) }))
 })

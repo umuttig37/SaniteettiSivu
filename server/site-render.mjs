@@ -1,6 +1,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { featureFlags } from './feature-flags.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
 const distIndexFile = path.join(distDir, 'index.html')
@@ -595,7 +596,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           <p>Suomen edullisimpia saniteettitarvikkeita laskulla?<br />Meilt&auml; mahdollista tilata helposti, nopeasti ja kilpailukykyisin hinnoin.</p>
         </section>
 
-        <section class="section home-service-grid" aria-label="Palvelut yrityksille">
+        ${featureFlags.invoiceComparison ? `<section class="section home-service-grid" aria-label="Palvelut yrityksille">
           <aside class="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
             <div class="home-service-card-image invoice-comparison-home-image" role="img" aria-label="L&auml;het&auml; yrityksesi lasku Suomen Paperitukulle"></div>
             <div class="home-service-card-body">
@@ -608,7 +609,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
             </div>
           </aside>
 
-        </section>
+        </section>` : ''}
 
         <section class="section" id="categories">
           <h2>Kategoriat</h2>

@@ -817,6 +817,8 @@ test('server-rendered category pages expose product links without JavaScript', (
   assert.doesNotMatch(childHtml, /href="\/tuote\/product-main"/)
   assert.match(homeHtml, /href="\/tuote\/product-transition"/)
   assert.match(homeHtml, /class="nav-button header-contact-link" href="\/#contact">Yhteystiedot<\/a>/)
+  assert.doesNotMatch(homeHtml, /laheta-laskusi/)
+  assert.doesNotMatch(homeHtml, /Maksatko tuotteista liikaa/)
   assert.doesNotMatch(homeHtml, /Lindstr(?:ö|&ouml;)m/i)
   assert.doesNotMatch(homeHtml, /vaihtomatot-yrityksille/)
   assert.match(mainHtml, /<link rel="canonical" href="https:\/\/example\.test\/main"/)
