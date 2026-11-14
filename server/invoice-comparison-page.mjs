@@ -1,3 +1,5 @@
+import { renderSiteFooter } from './site-footer.mjs'
+
 const escapeHtml = (value) =>
   String(value ?? '')
     .replace(/&/g, '&amp;')
@@ -23,6 +25,7 @@ export const renderInvoiceComparisonPage = ({ siteUrl }) => {
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/invoice-comparison.css" />
+    <link rel="stylesheet" href="/site-footer.css" />
     <script src="/invoice-comparison.js" defer></script>
   </head>
   <body>
@@ -112,10 +115,7 @@ export const renderInvoiceComparisonPage = ({ siteUrl }) => {
         </section>
       </main>
 
-      <footer class="invoice-footer" id="contact">
-        <div><strong>Suomen Paperitukku</strong><span>Asiakaspalvelu</span><a href="tel:+358449782446">+358 44 978 2446</a><a href="mailto:info@suomenpaperitukku.fi">info@suomenpaperitukku.fi</a></div>
-        <div><span>3590057-8</span><a href="/ehdot">Tilaus- ja toimitusehdot</a></div>
-      </footer>
+      ${renderSiteFooter({ className: 'site-footer', id: 'contact' })}
     </div>
   </body>
 </html>`

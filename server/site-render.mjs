@@ -2,6 +2,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { featureFlags } from './feature-flags.mjs'
+import { renderSiteFooter } from './site-footer.mjs'
 import {
   getDefaultGrossProductPrice,
   getDefaultSelectedOptionPrice,
@@ -751,21 +752,7 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           </div>
         </section>
       </main>
-      <footer class="footer">
-        <div>
-          <strong>Suomen Paperitukku</strong>
-          <p>Asiakaspalvelu</p>
-          <p>+358 44 978 2446</p>
-          <p>info@suomenpaperitukku.fi</p>
-        </div>
-        <div class="footer-center">
-          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
-        </div>
-        <div class="footer-meta">
-          <p>3590057-8</p>
-          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
-        </div>
-      </footer>
+      ${renderSiteFooter()}
     </div>
   `
 }
@@ -889,21 +876,7 @@ const renderProductMarkup = ({ product, category, related }) => {
           ${relatedMarkup}
         </section>
       </main>
-      <footer class="footer">
-        <div>
-          <strong>Suomen Paperitukku</strong>
-          <p>Asiakaspalvelu</p>
-          <p>+358 44 978 2446</p>
-          <p>info@suomenpaperitukku.fi</p>
-        </div>
-        <div class="footer-center">
-          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
-        </div>
-        <div class="footer-meta">
-          <p>3590057-8</p>
-          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
-        </div>
-      </footer>
+      ${renderSiteFooter()}
     </div>
   `
 }
@@ -1002,21 +975,7 @@ const renderCategoryMarkup = ({ catalog, category }) => {
           </div>
         </section>
       </main>
-      <footer class="footer">
-        <div>
-          <strong>Suomen Paperitukku</strong>
-          <p>Asiakaspalvelu</p>
-          <p>+358 44 978 2446</p>
-          <p>info@suomenpaperitukku.fi</p>
-        </div>
-        <div class="footer-center">
-          <p>&copy; 2026 Suomen Paperitukku - Kastamonu Tmi</p>
-        </div>
-        <div class="footer-meta">
-          <p>3590057-8</p>
-          <p><a class="footer-text-link" href="/ehdot">Tilaus- ja toimitusehdot</a></p>
-        </div>
-      </footer>
+      ${renderSiteFooter()}
     </div>
   `
 }
