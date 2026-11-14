@@ -1,3 +1,5 @@
+import { getDefaultGrossProductPrice } from './product-pricing.mjs'
+
 const GOOGLE_NAMESPACE = 'http://base.google.com/ns/1.0'
 const ARTIFICIAL_SPT_SKU_PATTERN = /^37[0-2]\d{2,3}$/
 const GTIN_LENGTHS = new Set([8, 12, 13, 14])
@@ -430,7 +432,7 @@ export const buildGoogleMerchantItems = ({ siteUrl, catalog }) => {
   return products.map((product) => {
     const identifiers = getIdentifiers(product)
     const image = String(product.image ?? product.images?.[0] ?? '').trim()
-    const numericPrice = Number(product.price)
+    const numericPrice = getDefaultGrossProductPrice(product)
     return {
       id: String(product.id ?? product.slug ?? '').trim(),
       title: truncate(product.name, 150),

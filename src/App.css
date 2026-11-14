@@ -725,6 +725,7 @@ html {
   margin: 0.4rem 0 0;
   color: var(--ink);
   font-size: 0.82rem;
+  font-weight: 650;
   line-height: 1.4;
 }
 

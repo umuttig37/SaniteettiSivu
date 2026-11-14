@@ -847,10 +847,40 @@ test('product pages retain one canonical URL and Product structured data', () =>
   assert.match(html, /"@type":"Product"/)
   assert.match(html, /"url":"https:\/\/example\.test\/tuote\/product-child"/)
   assert.match(html, /"brand":\{"@type":"Brand","name":"Tork"\}/)
+  assert.match(html, /"price":"12\.55"/)
   assert.equal((html.match(/"@type":"Product"/g) ?? []).length, 1)
   assert.equal((html.match(/data-seo="structured-data"/g) ?? []).length, 1)
   assert.match(html, /https:\/\/example\.test\/child/)
   assert.match(html, /<title>Tork Existing product \| Suomen Paperitukku<\/title>/)
+})
+
+test('product JSON-LD and SSR use the VAT-inclusive default option price', () => {
+  const catalog = createCatalog()
+  const product = {
+    ...catalog.products[0],
+    price: 10,
+    optionGroups: [
+      {
+        id: 'unit',
+        name: 'Unit',
+        values: [
+          { id: 'package', label: 'Package', detail: '1', price: 12 },
+          { id: 'case', label: 'Case', detail: '4', price: 48 },
+        ],
+      },
+    ],
+  }
+  const html = renderProductPage({
+    siteUrl: 'https://example.test',
+    catalog,
+    product,
+    category: catalog.categories[0],
+    related: [],
+  })
+
+  assert.match(html, /"price":"15\.06"/)
+  assert.match(html, /class="price-main">12,00/)
+  assert.match(html, /class="muted">15,06/)
 })
 
 test('sitemap includes every existing product and category URL', () => {

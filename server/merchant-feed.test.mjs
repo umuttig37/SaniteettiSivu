@@ -90,9 +90,56 @@ test('maps stock and price to Merchant values', () => {
   const items = buildGoogleMerchantItems({ siteUrl: 'https://suomenpaperitukku.fi', catalog })
 
   assert.equal(items[0].availability, 'in_stock')
-  assert.equal(items[0].price, '12.50 EUR')
+  assert.equal(items[0].price, '15.69 EUR')
   assert.equal(items[1].availability, 'out_of_stock')
-  assert.equal(items[1].price, '3.00 EUR')
+  assert.equal(items[1].price, '3.77 EUR')
+})
+
+test('uses the default landing-page option and its VAT-inclusive price', () => {
+  const product = {
+    ...catalog.products[0],
+    price: 10,
+    optionGroups: [
+      {
+        name: 'Unit',
+        values: [
+          { label: 'Package', price: 12 },
+          { label: 'Case', price: 48 },
+        ],
+      },
+    ],
+  }
+  const [item] = buildGoogleMerchantItems({
+    siteUrl: 'https://suomenpaperitukku.fi',
+    catalog: { products: [product] },
+  })
+
+  assert.equal(item.price, '15.06 EUR')
+})
+
+test('later base and option price changes are reflected without reloading the feed module', () => {
+  const baseProduct = { ...catalog.products[0], price: 10 }
+  const first = buildGoogleMerchantItems({
+    siteUrl: 'https://suomenpaperitukku.fi',
+    catalog: { products: [baseProduct] },
+  })
+  const changedBase = buildGoogleMerchantItems({
+    siteUrl: 'https://suomenpaperitukku.fi',
+    catalog: { products: [{ ...baseProduct, price: 20 }] },
+  })
+  const changedOption = buildGoogleMerchantItems({
+    siteUrl: 'https://suomenpaperitukku.fi',
+    catalog: {
+      products: [{
+        ...baseProduct,
+        optionGroups: [{ name: 'Unit', values: [{ label: 'Package', price: 30 }] }],
+      }],
+    },
+  })
+
+  assert.equal(first[0].price, '12.55 EUR')
+  assert.equal(changedBase[0].price, '25.10 EUR')
+  assert.equal(changedOption[0].price, '37.65 EUR')
 })
 
 test('audit counts every current catalog product dynamically', () => {

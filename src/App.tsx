@@ -1842,6 +1842,11 @@ const isValidEmail = (value: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.
 
 const grossPrice = (value: number) => roundCurrency(value * vatMultiplier)
 
+const grossProductDisplayPrice = (value: number) => {
+  const netMinorUnits = Math.round((value + Number.EPSILON) * 100)
+  return Math.round((netMinorUnits * 12_550) / 10_000) / 100
+}
+
 const normalizeCategoryId = (rawCategory: string) => {
   const trimmed = rawCategory.trim()
   if (!trimmed) {
@@ -7703,7 +7708,7 @@ function App() {
                 <p className="muted detail-description">{selectedProduct.description}</p>
                 <div className="price-block">
                   <span className="muted">
-                    {formatPrice(grossPrice(selectedProductUnitPrice), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
+                    {formatPrice(grossProductDisplayPrice(selectedProductUnitPrice), lang)} € {lang === 'fi' ? '(sis. alv)' : '(incl. VAT)'}
                   </span>
                   <span className="price-top">
                     <span className="price-main">{formatPrice(selectedProductUnitPrice, lang)} €</span>

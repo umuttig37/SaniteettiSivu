@@ -2,6 +2,11 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { featureFlags } from './feature-flags.mjs'
+import {
+  getDefaultGrossProductPrice,
+  getDefaultSelectedOptionPrice,
+  getGrossProductPrice,
+} from './product-pricing.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const distDir = path.resolve(__dirname, '..', 'dist')
 const distIndexFile = path.join(distDir, 'index.html')
@@ -321,19 +326,6 @@ const getDisplayOptionGroups = (product) => {
   ]
 }
 
-const getDefaultSelectedOptionPrice = (product) => {
-  const groups = getDisplayOptionGroups(product)
-
-  for (const group of groups) {
-    const firstWithPrice = Array.isArray(group?.values) ? group.values.find((value) => Number.isFinite(Number(value?.price))) : null
-    if (firstWithPrice) {
-      return Number(firstWithPrice.price)
-    }
-  }
-
-  return Number(product?.price ?? 0)
-}
-
 const formatOptionValueMeta = (groupName, value, priceUnit) => {
   const isUnitGroup = /yksikk|unit/i.test(String(groupName ?? ''))
   const parts = []
@@ -358,6 +350,7 @@ const productSeo = (siteUrl, product, category) => {
   const image = absoluteUrl(siteUrl, `/og/product/${product.slug}.svg`)
   const keywords = Array.isArray(product.searchKeywords) ? repairText(product.searchKeywords.join(', ')) : ''
   const effectivePrice = getDefaultSelectedOptionPrice(product)
+  const googlePrice = getDefaultGrossProductPrice(product)
   const brand = getProductBrand(product)
 
   const breadcrumbData = {
@@ -406,7 +399,7 @@ const productSeo = (siteUrl, product, category) => {
       '@type': 'Offer',
       url: canonical,
       priceCurrency: 'EUR',
-      price: Number(effectivePrice ?? 0).toFixed(2),
+      price: googlePrice.toFixed(2),
       availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
       seller: {
         '@type': 'Organization',
@@ -484,7 +477,7 @@ const buildHomeStructuredData = (siteUrl, catalog) => {
         offers: {
           '@type': 'Offer',
           priceCurrency: 'EUR',
-          price: Number(product.price ?? 0).toFixed(2),
+          price: getDefaultGrossProductPrice(product).toFixed(2),
           availability: product.stock > 0 ? 'https://schema.org/InStock' : 'https://schema.org/OutOfStock',
           url: absoluteUrl(siteUrl, `/tuote/${product.slug}`),
         },
@@ -880,7 +873,7 @@ const renderProductMarkup = ({ product, category, related }) => {
               <h1>${escapeHtml(product.name)}</h1>
               <p class="muted detail-description">${escapeHtml(product.description)}</p>
               <div class="price-block">
-                <span class="muted">${formatPrice(Number(effectivePrice) * 1.255)} € (sis. alv)</span>
+                <span class="muted">${formatPrice(getGrossProductPrice(effectivePrice, product))} € (sis. alv)</span>
                 <span class="price-top"><span class="price-main">${formatPrice(effectivePrice)} €</span><span class="price-suffix">${escapeHtml(getPriceUnitSuffix(product.priceUnit))}</span></span>
                 ${product.unitNote ? `<span class="muted">${escapeHtml(product.unitNote)}</span>` : ''}
               </div>
