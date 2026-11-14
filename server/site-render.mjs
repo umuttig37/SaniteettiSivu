@@ -596,8 +596,8 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
           <p>Suomen edullisimpia saniteettitarvikkeita laskulla?<br />Meilt&auml; mahdollista tilata helposti, nopeasti ja kilpailukykyisin hinnoin.</p>
         </section>
 
-        ${featureFlags.invoiceComparison ? `<section class="section home-service-grid" aria-label="Palvelut yrityksille">
-          <aside class="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
+        <section class="section home-service-grid" aria-label="Palvelut yrityksille">
+          ${featureFlags.invoiceComparison ? `<aside class="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
             <div class="home-service-card-image invoice-comparison-home-image" role="img" aria-label="L&auml;het&auml; yrityksesi lasku Suomen Paperitukulle"></div>
             <div class="home-service-card-body">
               <div class="invoice-comparison-home-copy">
@@ -607,9 +607,13 @@ const renderHomeMarkup = ({ catalog, activeCategory = null }) => {
               </div>
               <a class="home-service-card-link invoice-comparison-home-link" href="/laheta-laskusi">Tarkista s&auml;&auml;st&ouml;si &rarr;</a>
             </div>
-          </aside>
+          </aside>` : ''}
 
-        </section>` : ''}
+          <article class="home-service-card business-quote-home-card" aria-labelledby="business-quote-home-title">
+            <div class="home-service-card-image business-quote-home-image" role="img" aria-label="Paperi- ja hygieniatuotteiden toimitus yritysasiakkaalle"></div>
+            <div class="home-service-card-body"><span class="business-quote-home-kicker">Yrityksille</span><div class="business-quote-home-copy"><h2 id="business-quote-home-title">Tilaatko suurempia määriä?</h2><p>Pyydä yrityksellesi yksilöllinen tarjous suuremmista tai säännöllisistä tilauksista.</p><p class="invoice-comparison-home-reassurance"><span aria-hidden="true">&#10003;</span> Maksuton tarjous &middot; <span aria-hidden="true">&#10003;</span> Ei sitoutumista.</p></div><a class="home-service-card-link invoice-comparison-home-link" href="/yritystarjous">Kysy yrityshintaa</a></div>
+          </article>
+        </section>
 
         <section class="section" id="categories">
           <h2>Kategoriat</h2>

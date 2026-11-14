@@ -92,6 +92,8 @@ import {
 import { renderInvoiceComparisonPage } from './invoice-comparison-page.mjs'
 import { createInvoiceComparisonMailMessages } from './invoice-comparison-mail.mjs'
 import { featureFlags } from './feature-flags.mjs'
+import { BusinessQuoteError, createBusinessQuoteMailMessages, receiveBusinessQuote } from './business-quote.mjs'
+import { renderBusinessQuotePage } from './business-quote-page.mjs'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const projectRoot = path.resolve(__dirname, '..')
 const envFiles = [
@@ -2072,6 +2074,39 @@ app.post('/api/invoice-comparisons', async (req, res) => {
   }
 })
 
+app.post('/api/business-quotes', async (req, res) => {
+  if (isInvoiceComparisonRateLimited(req)) {
+    res.status(429).json({ message: 'Liian monta lähetystä. Yritä myöhemmin uudelleen.' })
+    return
+  }
+  let received = null
+  try {
+    received = await receiveBusinessQuote(req)
+    const simulateLocalMail = !smtpUser && !smtpPass && ['localhost', '127.0.0.1', '::1'].includes(String(req.hostname).toLowerCase())
+    const mailResult = simulateLocalMail ? { ok: true } : await sendMailBatch(
+      createBusinessQuoteMailMessages({
+        quote: received.quote,
+        attachment: received.attachment,
+        from: mailFrom,
+        ownerRecipients: ownerNotificationRecipients.join(','),
+      }),
+      'business-quote',
+      { redactRecipients: true },
+    )
+    if (!mailResult.ok) {
+      res.status(502).json({ message: 'Tarjouspyynnön lähettäminen epäonnistui. Yritä uudelleen tai ota yhteyttä asiakaspalveluun.' })
+      return
+    }
+    res.status(201).json({ ok: true, ...(simulateLocalMail ? { simulated: true } : {}) })
+  } catch (error) {
+    const status = error instanceof BusinessQuoteError ? error.status : 500
+    if (status === 500) console.error('[business-quote] Request failed without logging customer payload.', error)
+    res.status(status).json({ message: error instanceof BusinessQuoteError ? error.message : 'Tarjouspyynnön lähettäminen epäonnistui.' })
+  } finally {
+    await received?.cleanup?.()
+  }
+})
+
 app.get('/api/admin/session', (req, res) => {
   const session = getAdminSession(req)
   if (!session) {
@@ -3085,6 +3120,11 @@ app.get('/laheta-laskusi', (req, res) => {
 
   res.setHeader('Cache-Control', 'no-cache')
   res.type('html').send(renderInvoiceComparisonPage({ siteUrl: getSiteUrl(req) }))
+})
+
+app.get('/yritystarjous', (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache')
+  res.type('html').send(renderBusinessQuotePage({ siteUrl: getSiteUrl(req) }))
 })
 
 app.get(/^(?!\/api\/|\/robots\.txt$|\/sitemap\.xml$|\/og\/).*/, (req, res) => {

@@ -587,9 +587,8 @@ html {
 
 .home-service-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
-  max-width: 650px;
   padding-top: 0.75rem;
   padding-bottom: 0.75rem;
 }
@@ -691,6 +690,48 @@ html {
 .invoice-comparison-home-link:focus-visible {
   transform: translateY(-1px);
   box-shadow: 0 8px 18px rgba(36, 88, 198, 0.2);
+}
+
+.business-quote-home-card {
+  background: #fff;
+  color: var(--ink);
+}
+
+.business-quote-home-image {
+  background: url('/business-quote-warehouse.png') 64% center / cover no-repeat;
+}
+
+.business-quote-home-card .home-service-card-body {
+  gap: 0.4rem;
+  padding: 0.75rem 0.9rem;
+}
+
+.business-quote-home-kicker {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.business-quote-home-copy h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 1.2rem;
+  line-height: 1.2;
+}
+
+.business-quote-home-copy p {
+  margin: 0.4rem 0 0;
+  color: var(--ink);
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.business-quote-home-copy .invoice-comparison-home-reassurance {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 600;
 }
 
 .category-landing {

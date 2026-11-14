@@ -7863,8 +7863,8 @@ function App() {
 
         {utilityHighlights}
 
-        {featureFlags.invoiceComparison && <section className="section home-service-grid" aria-label={lang === 'fi' ? 'Palvelut yrityksille' : 'Services for businesses'}>
-          <aside className="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
+        <section className="section home-service-grid" aria-label={lang === 'fi' ? 'Palvelut yrityksille' : 'Services for businesses'}>
+          {featureFlags.invoiceComparison && <aside className="home-service-card invoice-comparison-home-card" aria-labelledby="invoice-comparison-home-title">
             <img
               className="home-service-card-image invoice-comparison-home-image"
               src={invoiceComparisonImage}
@@ -7892,9 +7892,26 @@ function App() {
                 {lang === 'fi' ? 'Tarkista säästösi →' : 'Check your savings →'}
               </a>
             </div>
-          </aside>
+          </aside>}
 
-        </section>}
+          <article className="home-service-card business-quote-home-card" aria-labelledby="business-quote-home-title">
+            <div
+              className="home-service-card-image business-quote-home-image"
+              role="img"
+              aria-label="Paperi- ja hygieniatuotteiden toimitus yritysasiakkaalle"
+            />
+            <div className="home-service-card-body">
+              <span className="business-quote-home-kicker">Yrityksille</span>
+              <div className="business-quote-home-copy">
+                <h2 id="business-quote-home-title">Tilaatko suurempia määriä?</h2>
+                <p>Pyydä yrityksellesi yksilöllinen tarjous suuremmista tai säännöllisistä tilauksista.</p>
+                <p className="invoice-comparison-home-reassurance"><span aria-hidden="true">✓</span> Maksuton tarjous · <span aria-hidden="true">✓</span> Ei sitoutumista.</p>
+              </div>
+              <a className="home-service-card-link invoice-comparison-home-link" href="/yritystarjous">Kysy yrityshintaa</a>
+            </div>
+          </article>
+
+        </section>
 
         <section className="section mobile-store-tools" aria-label={lang === 'fi' ? 'Mobiilin kauppatyökalut' : 'Mobile store tools'}>
           <div className="mobile-store-tools-shell">
