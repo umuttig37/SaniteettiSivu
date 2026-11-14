@@ -3049,8 +3049,8 @@ app.post('/api/orders/:orderId/delivered', requireAdmin, (req, res) => {
     res.json({ ok: true, order, alreadyDelivered: true })
     return
   }
-  if (order.status !== 'shipped') {
-    res.status(409).json({ message: 'Only a shipped order can be marked as delivered' })
+  if (order.status !== 'new' && order.status !== 'shipped') {
+    res.status(409).json({ message: 'Only an active order can be marked as delivered' })
     return
   }
 

@@ -5982,7 +5982,7 @@ function App() {
                                   <button
                                     className="ghost tiny"
                                     type="button"
-                                    disabled={shipActionOrderId === order.id || archiveActionOrderId === order.id}
+                                    disabled={shipActionOrderId === order.id || deliverActionOrderId === order.id || archiveActionOrderId === order.id}
                                     onClick={() => void markOrderShipped(order.id)}
                                   >
                                     {shipActionOrderId === order.id
@@ -5990,11 +5990,11 @@ function App() {
                                       : (lang === 'fi' ? 'Merkitse matkalla + email' : 'Mark shipped + email')}
                                   </button>
                                 )}
-                                {order.status === 'shipped' && (
+                                {order.status !== 'delivered' && (
                                   <button
                                     className="ghost tiny admin-order-delivered-button"
                                     type="button"
-                                    disabled={deliverActionOrderId === order.id || archiveActionOrderId === order.id}
+                                    disabled={deliverActionOrderId === order.id || shipActionOrderId === order.id || archiveActionOrderId === order.id}
                                     onClick={() => void markOrderDelivered(order.id)}
                                   >
                                     {deliverActionOrderId === order.id

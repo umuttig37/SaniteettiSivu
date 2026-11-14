@@ -35,7 +35,7 @@ const waitForServer = async (baseUrl, child) => {
   throw new Error('Test server did not start in time')
 }
 
-test('admin marks only a shipped order as delivered without changing any other data', async () => {
+test('admin marks new or shipped orders as delivered without email or unrelated data changes', async () => {
   fs.mkdirSync(testTempDir, { recursive: true })
   const root = fs.mkdtempSync(path.join(testTempDir, 'paperitukku-order-delivered-test-'))
   const serverDir = path.join(root, 'server')
@@ -124,11 +124,14 @@ test('admin marks only a shipped order as delivered without changing any other d
     assert.equal(adminLogin.status, 200)
     const adminCookie = adminLogin.headers.get('set-cookie').split(';')[0]
 
-    const invalidTransition = await fetch(`${baseUrl}/api/orders/${newOrder.id}/delivered`, {
+    const directResponse = await fetch(`${baseUrl}/api/orders/${newOrder.id}/delivered`, {
       method: 'POST',
       headers: { Cookie: adminCookie },
     })
-    assert.equal(invalidTransition.status, 409)
+    const directPayload = await directResponse.json()
+    assert.equal(directResponse.status, 200)
+    assert.equal(directPayload.order.status, 'delivered')
+    assert.equal(directPayload.order.shippedAt, null)
 
     const response = await fetch(`${baseUrl}/api/orders/${shippedOrder.id}/delivered`, {
       method: 'POST',
@@ -141,7 +144,7 @@ test('admin marks only a shipped order as delivered without changing any other d
     const storedOrders = JSON.parse(fs.readFileSync(path.join(dataDir, 'orders.json'), 'utf8'))
     const deliveredOrder = storedOrders.find((order) => order.id === shippedOrder.id)
     assert.deepEqual(deliveredOrder, { ...shippedOrder, status: 'delivered' })
-    assert.deepEqual(storedOrders.find((order) => order.id === newOrder.id), newOrder)
+    assert.deepEqual(storedOrders.find((order) => order.id === newOrder.id), { ...newOrder, status: 'delivered' })
     assert.equal(fs.readFileSync(path.join(dataDir, 'customers.json'), 'utf8'), customersBefore)
     assert.equal(fs.readFileSync(path.join(dataDir, 'catalog.json'), 'utf8'), catalogBefore)
     assert.equal(fs.readFileSync(path.join(dataDir, 'customer-prices.json'), 'utf8'), pricesBefore)
